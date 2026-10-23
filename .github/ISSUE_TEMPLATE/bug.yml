@@ -1,0 +1,25 @@
+name: Bug
+description: Something does not work as it should. A security problem? Do not file it here; report it privately as SECURITY.md explains.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use the sample company or invented data, never real people.
+      value: |
+        1.
+        2.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen, and what happens instead
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: Local (npm run dev), the live server, or the public demo. Browser and look if it matters.

@@ -1,0 +1,3030 @@
+/*
+  Look: Trading desk. Fixed dark palette (never follows the OS setting or the app's light/dark choice).
+  A professional trading terminal for running a company's people like a portfolio: the feel of a
+  Bloomberg or Eikon workstation, a broker's order screen and a modern exchange's advanced view,
+  without copying any one of them.
+
+  The metaphor, applied consistently:
+  - The page is a near-black workspace. Panels are terminal windows docked in a grid: square
+    bordered tiles with a thin header bar (amber title, gray meta), no shadows, no gradients.
+  - Amber is the terminal's own voice: panel titles, labels, the brand, the primary order button.
+    One key per view is lit (amber fill, black text, like Execute on an order ticket): the page
+    header's action, a sheet's or modal's foot, + New. A primary inside content is the same key
+    armed but unlit (a dark key with an amber edge and an amber glyph). Cyan is the user's: links,
+    focus, selection and chosen options. White carries the figures, cool gray the secondary text.
+  - Green and red only ever mean good/up and bad/down, always next to a word and usually an arrow
+    or a square marker. They are never decoration. Settled states (done, active, strong yes) stay
+    quiet (green text, no box; done checks neutral) so warn and bad boxes are what the eye finds.
+  - Dense: thin one-line panel bars, 6px table rows, 12px gutters between docked windows, 40px keys
+    (the smallest target the rules allow), page titles at window-title size.
+  - Every number, id, table cell and key cap is set in IBM Plex Mono with tabular figures; labels and
+    reading text stay in Geist. Tables are order-book grids: hairline rules, small uppercase gray
+    column heads, a highlighted row under the pointer.
+  - Everything is square (2px at most). The headcount chart is a price chart: a thin cyan line, a
+    faint area, a dotted grid and the last value in a price-label box. Bars read as volume bars.
+  - Decor (trading/decor.tsx): a ticker tape of real figures over the header, a quote block with a
+    sparkline in the rail, and a function-key bar of real links at the bottom.
+
+  Contrast (computed): --ink 14.7:1 or better, --ink-2 7.8:1 or better and --ink-3 5.3:1 or better on
+  --paper, --surface, --surface-2, --surface-3 and every soft tint; tone inks (--good, --warn, --bad,
+  cyan, amber) 5.1:1 or better on all of them; black on amber 9.7:1, white on the red danger fill
+  5.4:1; --control-border 3.1:1 or better and --focus 7.7:1 or better against every surface.
+
+  Scoping: every selector is under [data-look="trading"] (docs/LOOKS.md). Hook rules sit in one nested
+  block whose parent also skips anything inside another look's Display menu preview card.
+*/
+
+[data-look="trading"] {
+  /* Color: a black workspace, slightly lifted panels, hairline grid. */
+  --paper: #07090c;
+  --surface: #0e1217;
+  --surface-2: #151a21;
+  --surface-3: #1d242d;
+  --ink: #e8ecf1;
+  --ink-2: #aeb8c4;
+  --ink-3: #8c98a6;
+  --line: #252e39;
+  --line-strong: #36414e;
+  --control-border: #617082;
+  /* The accent is the user's color (links, selection, chosen options): cyan. Amber is --tr-amber. */
+  --accent: #4cc2ff;
+  --accent-hover: #7ad3ff;
+  --accent-ink: #04121a;
+  --accent-soft: #0c2633;
+  --accent-soft-ink: #7fd4ff;
+  --good: #2fd27f;
+  --good-soft: #0b2619;
+  /* Warn is a clear yellow (hue 50), far enough from the amber labels (hue 33) that a warn tag and an
+     amber key never read as the same object. */
+  --warn: #f2d335;
+  --warn-soft: #29250b;
+  --bad: #ff5c5f;
+  --bad-soft: #2d1214;
+  --focus: #38c2ff;
+  --scrim: rgb(0 0 0 / 0.64);
+  /* Categorical chart colors: pass the dataviz validator (dark) on --surface. */
+  /* Green sits last: in this look green means good or up, so the first slots never draw it. */
+  --cat-1: #2690d8;
+  --cat-2: #d9661f;
+  --cat-3: #9085e9;
+  --cat-4: #d55181;
+  --cat-5: #c98500;
+  --cat-6: #1a9e74;
+  color-scheme: dark;
+
+  /* Look-only values. */
+  --tr-amber: #ffa028;
+  --tr-amber-hover: #ffb550;
+  --tr-amber-ink: #0a0a0a;
+  --tr-amber-soft: #2a1d09;
+  --tr-cyan: #4cc2ff;
+  /* Panel header bars, menus and toasts: a step above the panel. */
+  --tr-head: #11161c;
+  /* Window frames: a touch stronger than the hairline grid inside them. */
+  --tr-frame: #2c3642;
+  /* Input wells sit below the panel, like a terminal's entry line. */
+  --tr-field: #0a0d11;
+  --tr-row-hover: #141b23;
+  --tr-red-fill: #c62f36;
+  --tr-red-fill-hover: #b3282f;
+  --tr-hatch: repeating-linear-gradient(135deg, #2c3642 0 2px, #12171d 2px 5px);
+
+  /* Type */
+  --font-display: "Geist Variable", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Geist Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+  --font-size-base: 14px;
+  --line-height-base: 1.45;
+  --heading-weight: 600;
+  --heading-transform: none;
+  --heading-tracking: -0.005em;
+  --eyebrow-transform: uppercase;
+  --eyebrow-tracking: 0.1em;
+
+  /* Shape and depth: square, flat. Overlays separate by frame and scrim, never by a drop shadow. */
+  --r-sm: 0px;
+  --r-md: 2px;
+  --r-lg: 2px;
+  --r-xl: 2px;
+  --r-2xl: 2px;
+  --r-pill: 2px;
+  --border-w: 1px;
+  --border-w-strong: 2px;
+  --shadow-sm: 0 0 #0000;
+  --shadow: 0 0 #0000;
+  --shadow-lg: 0 0 #0000;
+  --focus-width: 2px;
+  --focus-style: solid;
+  --focus-offset: 2px;
+}
+
+/* ================================================================== Workspace (page level) */
+
+[data-look="trading"] body {
+  background: var(--paper);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-look="trading"] ::selection {
+  background: #1d4d66;
+  color: #ffffff;
+}
+
+[data-look="trading"] .scroll-thin {
+  scrollbar-color: #36414e transparent;
+}
+
+[data-look="trading"] .ft-main {
+  /* Mono figures run wide: a long id breaks only when it would overflow. */
+  overflow-wrap: break-word;
+}
+
+/* The Display menu card shows the workspace too. */
+.ft-lookpreview[data-look="trading"] {
+  background: var(--paper);
+}
+
+/* ================================================================== Hook rules */
+
+[data-look="trading"] :not(.ft-lookpreview:not([data-look="trading"]) *) {
+  /* ---------------------------------------------------------------- Figures and type */
+
+  /* Every aligned number, id and amount is a terminal figure. */
+  &.num,
+  &.tabular,
+  &.ft-private,
+  &.ft-empno,
+  &:is(kbd, code, samp) {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  /*
+    Density. Reading text steps down one notch (15px to 14, 14.5 to 13.5, 16 to 18 to 15) and windows
+    dock with 12px gutters instead of 20 to 24, so a page holds visibly more than the default look.
+    Hook rules further down set their own sizes and win over these (same weight, later in the file).
+  */
+  &:is([class~="text-[15px]"], [class~="text-[15.5px]"]) {
+    font-size: 14px;
+  }
+
+  &[class~="text-[14.5px]"] {
+    font-size: 13.5px;
+  }
+
+  &:is([class~="text-[16px]"], [class~="text-[17px]"], [class~="text-[18px]"]) {
+    font-size: 15px;
+  }
+
+  .ft-main &:is([class~="gap-5"], [class~="gap-6"]) {
+    gap: 12px;
+  }
+
+  /* A figure inside a running sentence: Plex runs larger and wider than Geist, so it steps down to
+     sit in the line instead of reading as inline code. */
+  p &:is(.num, .tabular, .ft-private):not(.ft-badge *, .ft-stat__value, .ft-ministat__value) {
+    font-size: 0.93em;
+    letter-spacing: -0.02em;
+  }
+
+  &.eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--tr-amber);
+  }
+
+  &.ft-pagehead__eyebrow {
+    margin-bottom: 0.2rem;
+  }
+
+  /* A terminal titles a window; it does not headline a page. */
+  &.ft-pagehead__title {
+    font-size: 18px;
+    line-height: 1.3;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+
+    @container app (width >= 38.75rem) {
+      font-size: 20px;
+    }
+  }
+
+  &.ft-pagehead__subtitle {
+    margin-top: 0.15rem;
+    color: var(--ink-3);
+    font-size: 13px;
+  }
+
+  &.ft-pagehead {
+    padding-bottom: 1rem;
+  }
+
+  &.ft-pagehead__back {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--tr-cyan);
+  }
+
+  &.ft-pagehead__back:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  /* Employee numbers read like a symbol: '#5' in amber figures. */
+  &.ft-empno {
+    color: var(--tr-amber);
+    font-weight: 600;
+  }
+
+  /* See-through tints over the black page read as smudges: on a terminal a tint is a solid step. */
+  &:is([class~="bg-surface-2/40"], [class~="bg-surface-2/50"], [class~="bg-surface-2/60"], [class~="bg-surface-2/70"]) {
+    background-color: var(--surface-2);
+  }
+
+  &:is([class~="hover:bg-surface-2/50"], [class~="hover:bg-surface-2/60"], [class~="hover:bg-surface-2/70"]):hover {
+    background-color: var(--tr-row-hover);
+  }
+
+  /* Hand-built text links (the accent is cyan here, but some hover to it from ink). */
+  &:is(a, button)[class~="text-accent"]:not(.ft-btn, .ft-iconbtn, .ft-chip, .ft-segmented__item, .ft-tab) {
+    color: var(--tr-cyan);
+    text-decoration-color: color-mix(in oklab, var(--tr-cyan) 45%, transparent);
+  }
+
+  &:is(a, button)[class~="text-accent"]:not(.ft-btn, .ft-iconbtn, .ft-chip, .ft-segmented__item, .ft-tab):hover {
+    color: var(--accent-hover);
+    text-decoration-color: currentColor;
+  }
+
+  /* Small icons that remain are drawn square, like terminal glyphs. */
+  &:is(svg)[viewBox="0 0 24 24"] > :is(path, line, polyline) {
+    stroke-linecap: square;
+    stroke-linejoin: miter;
+  }
+
+  /* ---------------------------------------------------------------- Windows (panels) */
+
+  &.ft-panel {
+    background: var(--surface);
+    border: 1px solid var(--tr-frame);
+    border-radius: 2px;
+    box-shadow: none;
+  }
+
+  /*
+    The title bar: one thin bar, amber title and gray meta on one line at the left, actions at the
+    right. The title block gives up the kit's 14rem floor so a header link stays on the bar; on a
+    narrow panel the title or the meta wraps instead. Actions bleed into the bar's padding, so a
+    40px target makes the bar 40px, not 52.
+  */
+  &.ft-panel__head {
+    background: var(--tr-head);
+    border-bottom: 1px solid var(--tr-frame);
+    padding: 6px 14px;
+    min-height: 31px;
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 4px;
+  }
+
+  .ft-panel__head > &:is(div):first-child {
+    flex: 1 1 0%;
+    min-width: min(100%, 8rem);
+    align-items: center;
+  }
+
+  .ft-panel__head > div:first-child > &:is(div) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 10px;
+    row-gap: 1px;
+  }
+
+  .ft-panel__head > &.ft-panel__actions {
+    margin-block: -4px;
+    column-gap: 6px;
+  }
+
+  &.ft-panel__title,
+  &.ft-sheet__title,
+  &.ft-modal__title {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.4;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--tr-amber);
+  }
+
+  &.ft-sheet__title,
+  &.ft-modal__title {
+    font-size: 13px;
+  }
+
+  &.ft-panel__subtitle {
+    margin-top: 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.4;
+    letter-spacing: -0.01em;
+    color: var(--ink-3);
+  }
+
+  /* Padded bodies sit tight to the bar, like a terminal window's content. */
+  &.ft-panel__body--padded {
+    padding: 12px 14px;
+  }
+
+  /* Hand-built rows docked in a window (job rows, planned slots, list sections) keep the same rhythm:
+     the screens' 20px by 16px padding tightens to 14px by 10px. */
+  .ft-panel__body > :is(ul, ol, div)[class~="divide-y"] > &[class~="px-5"],
+  .ft-panel__body > &[class~="px-5"] {
+    padding-inline: 14px;
+  }
+
+  .ft-panel__body > :is(ul, ol, div)[class~="divide-y"] > &[class~="py-4"],
+  .ft-panel__body > &[class~="py-4"] {
+    padding-block: 10px;
+  }
+
+  /* Checklist and background check rows. */
+  &:is(li):has(.ft-checkmark):is([class~="py-3"], [class~="py-3.5"], [class~="py-4"]) {
+    padding-block: 8px;
+  }
+
+  /* 'Why this matters' is a small mono command under the task, not a second heading (still 40px). */
+  &.ft-why {
+    /* The 40px target overlaps the row's own padding (nothing else is there), so the command costs
+       one text line, not a 40px band. */
+    margin-top: -6px;
+    margin-bottom: -8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3);
+  }
+
+  &.ft-why[aria-expanded="true"] {
+    margin-bottom: 0;
+  }
+
+  &.ft-why:hover {
+    color: var(--ink);
+  }
+
+  .ft-why > &:is(svg) {
+    width: 13px;
+    height: 13px;
+  }
+
+  &.ft-panel__icon {
+    display: none;
+  }
+
+  /* Hand-built header links and toggles ('Open plan', 'Milestones', 'Show everyone'): small cyan commands. */
+  .ft-panel__actions > &:is(a, button[class~="text-accent"]):not(.ft-btn, .ft-iconbtn, [class~="bg-accent"]) {
+    height: 40px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--tr-cyan);
+    border-radius: 2px;
+  }
+
+  .ft-panel__actions > &:is(a, button[class~="text-accent"]):not(.ft-btn, .ft-iconbtn, [class~="bg-accent"]):hover {
+    background: var(--accent-soft);
+    color: var(--accent-hover);
+  }
+
+  /* A kit TextLink in a bar ('See all tasks') is the same command: no underline, centered in a 40px
+     target like its neighbors. */
+  .ft-panel__actions > &.ft-link {
+    display: inline-flex;
+    align-items: center;
+    padding-inline: 4px;
+    text-decoration: none;
+  }
+
+  &.ft-sectionlabel {
+    font-family: var(--font-mono);
+    color: var(--tr-amber);
+  }
+
+  &.ft-sectionlabel::after {
+    background: var(--line-strong);
+  }
+
+  /*
+    Sections inside a window (the candidate page's Next step, Interviews and scorecards, Offer,
+    Background check): no window inside the window. A section opens on a hairline with a mono caps
+    sub-label in gray (amber stays reserved for window titles), the way a ticket groups its fields.
+  */
+  &.ft-subpanel {
+    border: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 0;
+    padding: 10px 0 0;
+    background: transparent;
+  }
+
+  &.ft-subpanel__head {
+    margin-bottom: 8px;
+    align-items: center;
+  }
+
+  &.ft-subpanel__icon {
+    display: none;
+  }
+
+  /* Sub-labels: section heads inside windows, sheets and modals (the offer ticket's Base pay, Equity,
+     Exempt check; Vesting; Anonymize queue; kit sections; scorecard attributes). Text-transform only:
+     the words stay the same. A head that carries a count, an eyebrow, a calendar's month title and the
+     board's column heads keep their own rules. */
+  &.ft-subpanel__title,
+  :is(.ft-panel__body, .ft-sheet__body, .ft-modal__body)
+    &:is(h3):not([class*="ft-"], .eyebrow, [class~="font-display"], :has(> .ft-count), .ft-board__col h3) {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.4;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+  }
+
+  &.ft-subpanel__title,
+  :is(.ft-panel__body, .ft-sheet__body, .ft-modal__body)
+    &:is(h3):not([class*="ft-"], .eyebrow, [class~="font-display"], :has(> .ft-count), .ft-board__col h3, [class~="text-accent"]) {
+    color: var(--ink-2);
+  }
+
+  /* A free-standing sub-label (not a sub-panel's, which already opens on a hairline) runs a rule to the
+     right, like .ft-sectionlabel, so 'BASE PAY' over 'BASE SALARY (PER YEAR)' reads as group and field. */
+  :is(.ft-panel__body, .ft-sheet__body, .ft-modal__body)
+    &:is(h3):not([class*="ft-"], .eyebrow, [class~="font-display"], :has(> .ft-count), .ft-board__col h3) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  :is(.ft-panel__body, .ft-sheet__body, .ft-modal__body)
+    &:is(h3):not([class*="ft-"], .eyebrow, [class~="font-display"], :has(> .ft-count), .ft-board__col h3)::after {
+    content: "";
+    flex: 1 1 0%;
+    height: 1px;
+    background: var(--line);
+  }
+
+  /* A block head inside a section (Debrief, Fair Chance steps): the same caps, a size down. */
+  .ft-subpanel &:is(h4):not([class*="ft-"], [class~="font-display"]) {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.4;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--ink-2);
+  }
+
+  &.ft-subpanel__subtitle {
+    margin-top: 1px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: -0.01em;
+    color: var(--ink-3);
+  }
+
+  &.ft-dl__term,
+  &.ft-ministat__label,
+  &.ft-stat__label {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-3);
+  }
+
+  &.ft-dl {
+    row-gap: 10px;
+  }
+
+  &.ft-dl__value {
+    color: var(--ink);
+  }
+
+  &.ft-ministat__value {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  /* Figures in a quote row share a line: when one label wraps, the label grows, not the gap above
+     the figure (the grid row stretches every cell to the same height). */
+  &.ft-ministat:not(.ft-ministat--tile) {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ft-ministat:not(.ft-ministat--tile) > &.ft-ministat__label {
+    flex: 1 0 auto;
+  }
+
+  /* Me > Summary balances: small quote tiles. */
+  &.ft-ministat--tile {
+    background: var(--surface-2);
+    border: 1px solid var(--tr-frame);
+    border-radius: 2px;
+  }
+
+  /* Empty states: no icon, a terminal status line. */
+  &.ft-empty__icon {
+    display: none;
+  }
+
+  &.ft-empty__title {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-2);
+  }
+
+  &.ft-empty__body {
+    color: var(--ink-3);
+  }
+
+  /* Stats: quote tiles. Label small and gray, the figure big and white in mono. */
+  &.ft-stat {
+    background: var(--surface);
+    border: 1px solid var(--tr-frame);
+    border-radius: 2px;
+    box-shadow: none;
+  }
+
+  &.ft-stat:is(a):hover {
+    background: var(--tr-row-hover);
+    border-color: var(--line-strong);
+  }
+
+  &.ft-stat__value {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 26px;
+    letter-spacing: -0.02em;
+  }
+
+  &.ft-stat__sub {
+    color: var(--ink-3);
+    font-size: 12.5px;
+  }
+
+  /* Meters: a thin square gauge. */
+  &.ft-meter {
+    --tone: var(--tr-cyan);
+    background: var(--surface-3);
+    border-radius: 0;
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+
+  &.ft-meter--good {
+    --tone: var(--good);
+  }
+
+  &.ft-meter--warn {
+    --tone: var(--warn);
+  }
+
+  &.ft-meter--bad {
+    --tone: var(--bad);
+  }
+
+  &.ft-meter__bar {
+    border-radius: 0;
+    background: var(--tone);
+  }
+
+  /*
+    Callouts: terminal notes. A neutral slip with a hairline frame and a 2px tone edge; the icon takes
+    the tone and the words carry the status. No tints (a tint over prose reads as a smudge), except a
+    faint one on bad. An info note's edge is light gray, not cyan: cyan means selection here.
+  */
+  &.ft-callout {
+    --tone: var(--ink-2);
+    background: var(--surface-2);
+    border: 1px solid var(--tr-frame);
+    border-left: 2px solid var(--tone);
+    border-radius: 2px;
+  }
+
+  &.ft-callout--good {
+    --tone: var(--good);
+  }
+
+  &.ft-callout--warn {
+    --tone: var(--warn);
+  }
+
+  &.ft-callout--bad {
+    --tone: var(--bad);
+    background: color-mix(in oklab, var(--bad) 5%, var(--surface-2));
+  }
+
+  &.ft-callout--neutral {
+    --tone: var(--line-strong);
+  }
+
+  &.ft-callout__icon {
+    color: var(--tone);
+  }
+
+  &.ft-callout:not(.ft-callout--good, .ft-callout--warn, .ft-callout--bad, .ft-callout--neutral) > &.ft-callout__icon {
+    color: var(--tr-cyan);
+  }
+
+  .ft-callout--neutral > &.ft-callout__icon {
+    color: var(--ink-3);
+  }
+
+  &.ft-callout__title {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  &.ft-callout__body {
+    color: var(--ink-2);
+  }
+
+  /* ---------------------------------------------------------------- Order buttons */
+
+  &.ft-btn,
+  &.ft-iconbtn {
+    border-radius: 2px;
+    box-shadow: none;
+    transition:
+      background-color 0.12s,
+      border-color 0.12s,
+      color 0.12s;
+  }
+
+  &.ft-btn {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &.ft-btn--sm {
+    font-size: 12px;
+  }
+
+  /* Compact order keys: every size is a 40px rectangle (the smallest target the rules allow), so a
+     row action is never wider or taller than the row it acts on. Button-like links set a fixed
+     height in their own classes; height auto lets the 40px floor apply to them too. */
+  &:is(.ft-btn--md, .ft-btn--lg) {
+    min-height: 40px;
+    height: auto;
+    padding-inline: 13px;
+    font-size: 12px;
+  }
+
+  &:is(.ft-iconbtn--md, .ft-iconbtn--lg) {
+    width: 40px;
+    height: 40px;
+  }
+
+  :is(.ft-btn--md, .ft-btn--lg) > &.ft-btn__icon {
+    width: 15px;
+    height: 15px;
+  }
+
+  /*
+    Primary: the Execute key. One lit key per view: the page header's action, a sheet's or modal's
+    foot, and + New keep the amber fill with black text. A primary inside content (a board card, an
+    inbox row, a panel) is the same key armed but unlit: a dark key with a 2px amber edge and an amber
+    glyph, white words. A screen of row actions then reads as keys, not as a wall of amber frames
+    beside the yellow warn tags. Hover and keyboard focus light it (amber fill, black text).
+  */
+  &.ft-btn--primary,
+  &.ft-iconbtn--primary {
+    background: var(--surface-2);
+    border: 1px solid var(--line-strong);
+    box-shadow: inset 2px 0 0 var(--tr-amber);
+    color: var(--ink);
+  }
+
+  :is(.ft-btn--primary, .ft-iconbtn--primary):not(:hover, :focus-visible, :disabled) > &:is(.ft-btn__icon, svg),
+  .ft-btn--primary:not(:hover, :focus-visible, :disabled) > span > &.ft-kbd {
+    color: var(--tr-amber);
+  }
+
+  &.ft-btn--primary:is(:hover, :focus-visible):not(:disabled),
+  &.ft-iconbtn--primary:is(:hover, :focus-visible):not(:disabled),
+  :is(.ft-pagehead__actions, .ft-sheet__foot, .ft-modal__foot, .ft-lookpreview) &:is(.ft-btn--primary, .ft-iconbtn--primary):not(:disabled),
+  &.ft-newmenu {
+    background: var(--tr-amber);
+    border-color: var(--tr-amber);
+    box-shadow: none;
+    color: var(--tr-amber-ink);
+  }
+
+  /* The glyph follows the words on a lit key (the armed rule above names it, so this names it back). */
+  :is(.ft-pagehead__actions, .ft-sheet__foot, .ft-modal__foot, .ft-lookpreview) :is(.ft-btn--primary, .ft-iconbtn--primary) > &:is(.ft-btn__icon, svg),
+  .ft-newmenu.ft-newmenu > &:is(.ft-btn__icon, svg) {
+    color: inherit;
+  }
+
+  :is(.ft-pagehead__actions, .ft-sheet__foot, .ft-modal__foot, .ft-lookpreview) &:is(.ft-btn--primary, .ft-iconbtn--primary):hover:not(:disabled),
+  &.ft-newmenu:hover {
+    background: var(--tr-amber-hover);
+    border-color: var(--tr-amber-hover);
+    color: var(--tr-amber-ink);
+  }
+
+  /* An unavailable key is grayed out, never a muddy half-amber. */
+  &:is(.ft-btn--primary, .ft-iconbtn--primary):disabled {
+    background: var(--surface-2);
+    border-color: var(--line-strong);
+    box-shadow: none;
+    color: var(--ink-3);
+    opacity: 1;
+  }
+
+  /* Secondary: an outlined gray key. */
+  &.ft-btn--secondary,
+  &.ft-iconbtn--secondary {
+    background: transparent;
+    border: 1px solid var(--control-border);
+    color: var(--ink);
+  }
+
+  &.ft-btn--secondary:hover:not(:disabled),
+  &.ft-iconbtn--secondary:hover:not(:disabled) {
+    background: var(--surface-2);
+    border-color: var(--ink-2);
+  }
+
+  &.ft-btn--ghost,
+  &.ft-iconbtn--ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--ink-2);
+  }
+
+  &.ft-btn--ghost:hover:not(:disabled),
+  &.ft-iconbtn--ghost:hover:not(:disabled) {
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+
+  &.ft-btn--quiet,
+  &.ft-iconbtn--quiet {
+    background: var(--surface-2);
+    border: 1px solid var(--tr-frame);
+    color: var(--ink);
+  }
+
+  &.ft-btn--quiet:hover:not(:disabled),
+  &.ft-iconbtn--quiet:hover:not(:disabled) {
+    background: var(--surface-3);
+    border-color: var(--line-strong);
+  }
+
+  /* Danger: the Sell key. Red fill, white text. */
+  &.ft-btn--danger,
+  &.ft-iconbtn--danger {
+    background: var(--tr-red-fill);
+    border-color: var(--tr-red-fill);
+    color: #ffffff;
+  }
+
+  &.ft-btn--danger:hover:not(:disabled),
+  &.ft-iconbtn--danger:hover:not(:disabled) {
+    background: var(--tr-red-fill-hover);
+    border-color: var(--tr-red-fill-hover);
+    opacity: 1;
+  }
+
+  /* A pressed toggle (privacy blur on): a lit cyan key. */
+  &.ft-iconbtn--on,
+  &.ft-iconbtn--on:hover:not(:disabled) {
+    background: var(--accent-soft);
+    border-color: color-mix(in oklab, var(--tr-cyan) 55%, transparent);
+    color: var(--accent-soft-ink);
+  }
+
+  /* The header's + New is the primary order button too. */
+  &.ft-newmenu {
+    letter-spacing: 0.05em;
+  }
+
+  /* Links: cyan, a quiet underline that firms up on hover. */
+  &.ft-link {
+    color: var(--tr-cyan);
+    text-decoration-line: underline;
+    text-decoration-color: color-mix(in oklab, var(--tr-cyan) 40%, transparent);
+    text-underline-offset: 3px;
+  }
+
+  &.ft-link:hover {
+    color: var(--accent-hover);
+    text-decoration-color: currentColor;
+  }
+
+  &.ft-kbd {
+    font-family: var(--font-mono);
+    border-radius: 2px;
+    border: 1px solid var(--line-strong);
+    background: var(--surface-2);
+    color: var(--ink-2);
+    box-shadow: inset 0 -1px 0 var(--tr-frame);
+  }
+
+  /* ---------------------------------------------------------------- Tags (badges) */
+
+  /*
+    Compact terminal tags: mono caps in the tone's ink, a hairline frame in the same ink and a
+    small square marker for the states that matter (warn, bad, info). Neutral is gray with no
+    marker. Good is quieter still: green caps and the marker with no box, the way a blotter lets
+    filled orders go quiet, so a screen of done or active rows stays calm and the warn and bad
+    boxes are the ones the eye finds. The word always carries the status; the color only repeats it.
+  */
+  &.ft-badge {
+    --t: var(--ink-2);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--t);
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--t) 38%, transparent);
+    /* Two screens give their badges rounded-xl!; a tag stays square there too. */
+    border-radius: 2px !important;
+    padding-inline: 6px;
+    min-height: 20px;
+    padding-block: 2px;
+  }
+
+  &.ft-badge > svg {
+    display: none;
+  }
+
+  &.ft-badge:is(.ft-badge--good, .ft-badge--warn, .ft-badge--bad, .ft-badge--accent)::before {
+    content: "";
+    flex: none;
+    width: 6px;
+    height: 6px;
+    background: currentColor;
+  }
+
+  &.ft-badge--good {
+    --t: var(--good);
+    background: transparent;
+    box-shadow: none;
+    padding-inline: 0 2px;
+  }
+
+  &.ft-badge--warn {
+    --t: var(--warn);
+    background: var(--warn-soft);
+  }
+
+  &.ft-badge--bad {
+    --t: var(--bad);
+    background: var(--bad-soft);
+  }
+
+  &.ft-badge--accent {
+    --t: var(--accent-soft-ink);
+    background: var(--accent-soft);
+  }
+
+  &.ft-badge--outline {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+
+  /* A count is a figure, not a status: no marker, tabular mono. */
+  &.ft-count {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    border-radius: 2px;
+    letter-spacing: 0;
+  }
+
+  &.ft-count::before,
+  &.ft-badge.ft-count::before {
+    content: none;
+  }
+
+  &.ft-count:not(.ft-badge) {
+    background: var(--surface-3);
+    color: var(--ink-2);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+
+  /* Source and candidate tags: gray symbols. */
+  &.ft-tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--ink-2);
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+
+  &.ft-tag--source > svg {
+    display: none;
+  }
+
+  &.ft-dot {
+    border-radius: 0;
+  }
+
+  &.ft-dot--accent {
+    background: var(--tr-cyan);
+  }
+
+  /* Avatars: initials in a square chip with only a trace of the person's hue, so a colored square
+     beside a name never reads as a status chip. */
+  &.ft-avatar {
+    border-radius: 2px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    letter-spacing: 0;
+    background: color-mix(in oklab, var(--ft-avatar-hue, var(--ink-3)) 8%, var(--surface-2));
+    color: var(--ink-2);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ft-avatar-hue, var(--ink-3)) 25%, var(--line-strong));
+  }
+
+  &.ft-avatar--muted {
+    background: var(--surface-2);
+    color: var(--ink-3);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+
+  &.ft-avatar--more {
+    background: var(--surface-3);
+    color: var(--ink-2);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+
+  /* ---------------------------------------------------------------- Entry fields */
+
+  &.ft-input,
+  &.ft-select,
+  &.ft-textarea {
+    border-radius: 2px;
+    border: 1px solid var(--control-border);
+    background-color: var(--tr-field);
+    color: var(--ink);
+    box-shadow: none;
+    caret-color: var(--tr-amber);
+  }
+
+  /* Single-line entries match the 40px order keys beside them. */
+  &:is(input.ft-input, .ft-select) {
+    height: 40px;
+  }
+
+  &.ft-input.num {
+    letter-spacing: 0;
+  }
+
+  &:is(.ft-input, .ft-textarea)::placeholder {
+    color: var(--ink-3);
+    opacity: 1;
+  }
+
+  &.ft-input:hover:not(:disabled),
+  &.ft-select:hover:not(:disabled),
+  &.ft-textarea:hover:not(:disabled) {
+    border-color: var(--ink-3);
+  }
+
+  &.ft-input:focus,
+  &.ft-select:focus,
+  &.ft-textarea:focus {
+    border-color: var(--tr-cyan);
+    box-shadow: 0 0 0 1px var(--tr-cyan);
+  }
+
+  &.ft-input:disabled,
+  &.ft-select:disabled,
+  &.ft-textarea:disabled {
+    background-color: var(--surface-2);
+    border-style: dashed;
+  }
+
+  &.ft-select__chevron,
+  &.ft-searchbox__icon {
+    color: var(--ink-3);
+  }
+
+  /* Order-ticket labels: small mono caps. */
+  &.ft-field__label {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-2);
+  }
+
+  &.ft-field__hint {
+    color: var(--ink-3);
+  }
+
+  &.ft-field__error {
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  &.ft-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    border: 1.5px solid var(--control-border);
+    border-radius: 2px;
+    background: var(--tr-field);
+
+    /* Windows high contrast: hand the box back to the system. */
+    @media (forced-colors: active) {
+      appearance: auto;
+      -webkit-appearance: auto;
+    }
+  }
+
+  &.ft-checkbox:hover:not(:disabled) {
+    border-color: var(--ink-2);
+  }
+
+  &.ft-checkbox:checked {
+    background: var(--tr-cyan)
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.2 6.3l2.5 2.4 5-5.4' fill='none' stroke='%2304121a' stroke-width='2' stroke-linecap='square'/%3E%3C/svg%3E")
+      center / 12px no-repeat;
+    border-color: var(--tr-cyan);
+  }
+
+  &.ft-checkbox:indeterminate {
+    background: var(--tr-field)
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Crect x='1.5' y='5' width='9' height='2' fill='%234cc2ff'/%3E%3C/svg%3E")
+      center / 12px no-repeat;
+    border-color: var(--tr-cyan);
+  }
+
+  &.ft-checkbox:disabled {
+    border-style: dashed;
+  }
+
+  &.ft-checkbox-row,
+  &.ft-switch-row {
+    border-radius: 2px;
+  }
+
+  /* Switch: a square slide; on, it lights cyan. */
+  &.ft-switch__track {
+    border-radius: 2px;
+    background: var(--tr-field);
+    box-shadow: inset 0 0 0 1.5px var(--control-border);
+  }
+
+  &.ft-switch__thumb {
+    border-radius: 1px;
+    background: var(--ink-3);
+    box-shadow: none;
+  }
+
+  .ft-switch--on &.ft-switch__track {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1.5px var(--tr-cyan);
+  }
+
+  .ft-switch--on &.ft-switch__thumb {
+    background: var(--tr-cyan);
+  }
+
+  /* Segmented: a framed row of options; the chosen one is lit cyan. */
+  &.ft-segmented {
+    background: var(--tr-field);
+    border: 1px solid var(--tr-frame);
+    border-radius: 2px;
+  }
+
+  &.ft-segmented__item {
+    border-radius: 1px;
+    box-shadow: none;
+    color: var(--ink-2);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 12px;
+  }
+
+  &.ft-segmented__item:hover:not(:disabled) {
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+
+  &.ft-segmented__item--on,
+  &.ft-segmented__item--on:hover:not(:disabled) {
+    background: var(--accent-soft);
+    color: var(--accent-soft-ink);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tr-cyan) 60%, transparent);
+  }
+
+  .ft-segmented__item--on > &.num {
+    color: var(--accent-soft-ink);
+  }
+
+  /* Chips: compact outlined keys; the chosen one is lit cyan. */
+  &.ft-chip {
+    height: 40px;
+    padding-inline: 11px;
+    border-radius: 2px;
+    border: 1px solid var(--control-border);
+    background: transparent;
+    color: var(--ink-2);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  &.ft-chip:hover:not(:disabled) {
+    border-color: var(--ink-2);
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+
+  &.ft-chip--on,
+  &.ft-chip--on:hover:not(:disabled) {
+    border-color: var(--tr-cyan);
+    background: var(--accent-soft);
+    color: var(--accent-soft-ink);
+  }
+
+  /* A ticked filter (several can be on at once) is an armed key, not a lit block: a cyan frame, white
+     words and a cyan check. The fill stays for single-choice selection, so it points at one choice. */
+  &.ft-chip--multi.ft-chip--on,
+  &.ft-chip--multi.ft-chip--on:hover:not(:disabled) {
+    background: transparent;
+    border-color: color-mix(in oklab, var(--tr-cyan) 70%, var(--line-strong));
+    color: var(--ink);
+  }
+
+  &.ft-chip--multi.ft-chip--on:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
+
+  .ft-chip--multi.ft-chip--on > &:is(svg) {
+    color: var(--tr-cyan);
+  }
+
+  &.ft-cite {
+    border-radius: 2px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    background: var(--surface-2);
+    border-color: var(--line-strong);
+    color: var(--ink-2);
+  }
+
+  &.ft-cite-link {
+    border-radius: 2px;
+  }
+
+  &.ft-cite-link:hover .ft-cite {
+    border-color: var(--tr-cyan);
+    color: var(--accent-soft-ink);
+  }
+
+  /* ---------------------------------------------------------------- Tab strip */
+
+  &.ft-tabs {
+    border-bottom: 1px solid var(--tr-frame);
+  }
+
+  &.ft-tab {
+    height: 40px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3);
+    border-radius: 0;
+  }
+
+  &.ft-tab:hover {
+    color: var(--ink);
+    background: var(--surface-2);
+  }
+
+  /* The active tab is a raised terminal tab: lifted fill, side rules, an amber edge on top. */
+  &.ft-tab--active,
+  &.ft-tab--active:hover {
+    color: var(--ink);
+    background: var(--surface);
+    box-shadow:
+      inset 1px 0 0 var(--tr-frame),
+      inset -1px 0 0 var(--tr-frame);
+  }
+
+  &.ft-tab__indicator {
+    top: 0;
+    bottom: auto;
+    left: 0;
+    right: 0;
+    height: 2px;
+    border-radius: 0;
+    background: var(--tr-amber);
+  }
+
+  &.ft-tab__count {
+    border-radius: 2px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0;
+  }
+
+  .ft-tab:not(.ft-tab--active) > &.ft-tab__count {
+    background: var(--surface-3);
+    color: var(--ink-2);
+  }
+
+  .ft-tab--active > &.ft-tab__count {
+    background: var(--tr-amber-soft);
+    color: var(--tr-amber);
+  }
+
+  /* Interview kit list: a symbol list; the chosen one is lit like a selected row. */
+  &.ft-navlist__item {
+    border-radius: 2px;
+  }
+
+  &.ft-navlist__item--on {
+    background: var(--accent-soft);
+    color: var(--accent-soft-ink);
+    box-shadow: inset 2px 0 0 var(--tr-cyan);
+  }
+
+  /* ---------------------------------------------------------------- Order-book tables */
+
+  &.ft-table-wrap {
+    background: transparent;
+  }
+
+  /* A dense grid: 12px figures, tight rows. The header row keeps 40px so each sort key keeps its target. */
+  &.ft-table {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &.ft-table__th {
+    padding-inline: 10px;
+  }
+
+  &.ft-table__cell {
+    padding: 6px 10px;
+  }
+
+  .ft-table--dense &.ft-table__th {
+    padding-inline: 8px;
+  }
+
+  .ft-table--dense &.ft-table__cell {
+    padding: 4px 8px;
+  }
+
+  /* Plex runs wide: in a dense grid a long column head may take two lines rather than push the last
+     column out of a half-width window (it only wraps when the grid is short of room). */
+  .ft-table--dense &.ft-table__th {
+    white-space: normal;
+    line-height: 1.25;
+  }
+
+  &.ft-table__headrow {
+    border-bottom: 1px solid var(--line-strong);
+  }
+
+  &.ft-table__th {
+    background: transparent;
+    color: var(--ink-3);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+  }
+
+  &.ft-table__sort {
+    text-transform: inherit;
+    letter-spacing: inherit;
+  }
+
+  &.ft-table__sort--active {
+    color: var(--tr-amber);
+  }
+
+  /* Only the sorted column shows its chevron; the others show it under the pointer or keyboard focus. */
+  .ft-table__sort:not(.ft-table__sort--active) > &:is(svg) {
+    opacity: 0;
+  }
+
+  .ft-table__sort:not(.ft-table__sort--active):is(:hover, :focus-visible) > &:is(svg) {
+    opacity: 0.7;
+  }
+
+  /* On a numeric column the chevron goes left of the label, so the label's right edge sits on the
+     figures' right edge, as on an order book. */
+  .ft-table__th[class~="text-right"] > &.ft-table__sort {
+    flex-direction: row-reverse;
+  }
+
+  &.ft-table__row {
+    border-bottom-color: var(--line);
+  }
+
+  &.ft-table__cell {
+    line-height: 1.3;
+    color: var(--ink);
+  }
+
+  &.ft-table__row--link:hover {
+    background: var(--tr-row-hover);
+    box-shadow: inset 2px 0 0 var(--tr-cyan);
+  }
+
+  &.ft-table__rowlink {
+    color: var(--ink);
+  }
+
+  &.ft-table__rowlink:hover {
+    color: var(--tr-cyan);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  /* In a cell a tag sits a little tighter. */
+  .ft-table &.ft-badge {
+    font-size: 10.5px;
+    letter-spacing: 0.03em;
+    padding-inline: 5px;
+  }
+
+  .ft-table &.ft-badge--good {
+    padding-inline: 0 2px;
+  }
+
+  /*
+    Plain tables (screens that build their own <table>: pay bands, cost lines, the debrief and
+    training matrices, sources, chart numbers): the same order-book grid.
+  */
+  &:is(table):not(.ft-table, [role="grid"]) {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  table:not(.ft-table) > thead > tr > &:is(th) {
+    color: var(--ink-3);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+  }
+
+  table:not(.ft-table) > thead > &:is(tr) {
+    border-bottom-color: var(--line-strong);
+  }
+
+  /* Interviewer columns carry a name over a role: only the name reads as a header. */
+  table:not(.ft-table) > thead > tr > th > &:is(span):not(:first-child) {
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  table:not(.ft-table, [role="grid"]) > tbody > &:is(tr):hover {
+    background-color: var(--tr-row-hover);
+  }
+
+  /* Tighter rows in hand-built tables too: cells that pad 8 to 12px top and bottom pad 6px. */
+  table:not(.ft-table, [role="grid"]) > tbody > tr > &:is(td, th):is([class~="py-2"], [class~="py-2.5"], [class~="py-3"]) {
+    padding-block: 6px;
+  }
+
+  /* A totals row ('Overall', 'Total, fully loaded'): a rule above, amber figures. */
+  table:not(.ft-table, [role="grid"]) > tbody > &:is(tr[class~="bg-surface-2/40"], tr:last-child:has(> th[scope="row"][class~="font-bold"])) {
+    background-color: var(--tr-head);
+    border-top: 1px solid var(--line-strong);
+  }
+
+  /* The totals row's sticky label paints its own background (sticky cells do): match the row. */
+  table:not(.ft-table, [role="grid"]) > tbody > tr:last-child:has(> th[scope="row"][class~="font-bold"]) > &:is(th) {
+    background-color: var(--tr-head);
+  }
+
+  /*
+    Debrief and training cross tables: names and attributes in Geist (a symbol's description), the
+    cell values in Plex. Cell keys keep the 40px floor instead of 44 to 48px.
+  */
+  &.ft-matrix {
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  /* Row labels in every hand-built grid (matrices, cost lines, metrics) read as names: Geist, with the
+     figures beside them in Plex, the way a quote board sets a description next to its numbers. A
+     totals row keeps its bold. */
+  table:not(.ft-table, [role="grid"]) > tbody > tr > &:is(th[scope="row"]) {
+    font-family: var(--font-body);
+    font-size: 13px;
+    line-height: 1.3;
+    letter-spacing: 0;
+  }
+
+  table:not(.ft-table, [role="grid"]) > tbody > tr > &:is(th[scope="row"]):not([class~="font-bold"]) {
+    font-weight: 500;
+  }
+
+  .ft-matrix > tbody > tr > :is(td, th) > &:is(button) {
+    min-height: 40px;
+    padding-block: 2px;
+  }
+
+  .ft-matrix > tbody > tr > &:is(td) {
+    padding-block: 3px;
+  }
+
+  .ft-matrix > tbody > tr > td > button > &:is(span):not(.ft-badge) {
+    font-size: 11px;
+    letter-spacing: -0.01em;
+  }
+
+  /* Calendar grid: square day cells; days outside the month dim to the grid. */
+  table[role="grid"] &:is(td)[class~="opacity-55"] {
+    opacity: 1;
+    background-color: var(--paper);
+  }
+
+  table[role="grid"] td[class~="opacity-55"] > div > &:is(span):first-child {
+    color: var(--ink-3);
+  }
+
+  /* Weekends are dimmed like non-trading days (down to the workspace), not lifted; the legend swatch
+     follows. */
+  table[role="grid"] &:is(td)[class~="bg-surface-3/60"] {
+    background-color: var(--paper);
+  }
+
+  div:has(+ table[role="grid"]) > span > &:is(span)[class~="bg-surface-3"] {
+    background-color: var(--paper);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+
+  /* Today: a cyan date box. */
+  &:is(span)[class~="bg-accent"][class~="text-accent-ink"]:not(.ft-brand__mark) {
+    border-radius: 2px;
+    font-family: var(--font-mono);
+  }
+
+  /* Time-off entries on the calendar: tinted slips with a tone edge. */
+  &[class~="bg-good-soft"]:not(.ft-badge) {
+    box-shadow: inset 2px 0 0 var(--good);
+  }
+
+  /* ---------------------------------------------------------------- Screen-built widgets */
+
+  /* Checklist and background check marks: square status cells. */
+  &.ft-checkmark {
+    border: 0;
+    border-radius: 2px;
+    font-family: var(--font-mono);
+  }
+
+  /* Done is settled, not news: a neutral check. Only open and overdue work draws the eye. */
+  &.ft-checkmark--done {
+    background: transparent;
+    color: var(--ink-2);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+
+  &.ft-checkmark--open {
+    background: var(--surface-2);
+    color: var(--ink-2);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+
+  &.ft-checkmark--na {
+    background: transparent;
+    color: var(--ink-3);
+    border: 1px dashed var(--line-strong);
+  }
+
+  /*
+    Candidate stage stepper: a route of square stops. Passed stops are neutral with their check, the
+    current one is lit cyan, and a stop that cannot be chosen yet (Hired before an accepted offer) is
+    dashed, the same 'not yet' cue as the default look.
+  */
+  &.ft-stepper__step {
+    height: 40px;
+    padding-inline: 10px;
+    border-radius: 2px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    background: transparent;
+    border-color: var(--line-strong);
+    color: var(--ink-3);
+  }
+
+  &.ft-stepper__step:hover:not(:disabled) {
+    border-color: var(--ink-3);
+    color: var(--ink);
+    background: var(--surface-2);
+  }
+
+  &.ft-stepper__step--done {
+    color: var(--ink-2);
+    border-color: var(--line-strong);
+    background: transparent;
+  }
+
+  &.ft-stepper__step:disabled:not(.ft-stepper__step--current, .ft-stepper__step--done) {
+    border-style: dashed;
+    color: var(--ink-3);
+    opacity: 1;
+  }
+
+  &.ft-stepper__step--current,
+  &.ft-stepper__step--current:hover:not(:disabled) {
+    color: var(--accent-soft-ink);
+    border-color: var(--tr-cyan);
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--tr-cyan);
+  }
+
+  /* Inbox rows: hairline rules, tight rows (a blotter's work queue); an overdue legal row gets a
+     steady red edge on a one-step red tint (solid, no fade). */
+  &.ft-inboxrow {
+    border-bottom-color: var(--line);
+    padding-block: 7px;
+  }
+
+  .ft-inboxrow > :is(button[aria-expanded], p) > &:is(span),
+  .ft-inboxrow > &:is(p) {
+    font-size: 14px;
+    line-height: 1.35;
+  }
+
+  /* The tag and action line sits 4px under the title and wraps with a 4px gap. */
+  .ft-inboxrow > &:is(div):last-child {
+    margin-top: 4px;
+    row-gap: 4px;
+  }
+
+  /* Icon keys in the row (More, Open, the lock) take the 40px floor, not 44. */
+  .ft-inboxrow > div:last-child > div:last-child &:is(a, button, span)[class~="h-11"] {
+    height: 40px;
+  }
+
+  .ft-inboxrow > div:last-child > div:last-child &:is(a, button)[class~="w-11"] {
+    width: 40px;
+  }
+
+  /* In an overdue legal row, one framed red tag (Legal deadline) and the edge are enough: the date
+     tag goes quiet, red words with their square and no frame. */
+  .ft-inboxrow--bad &.ft-badge--bad:has(> svg[data-icon="alert"]) {
+    background: transparent;
+    box-shadow: none;
+    padding-inline: 0 4px;
+  }
+
+  &.ft-inboxrow--bad {
+    background: color-mix(in oklab, var(--bad) 5%, var(--surface));
+  }
+
+  /* A one-line title sits centered in its 40px expand target rather than leaving a gap under it. */
+  .ft-inboxrow > &:is(button[aria-expanded]) {
+    align-items: center;
+  }
+
+  &.ft-inboxrow--bad::before {
+    border-radius: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+  }
+
+  /* Stage and group headings that carry a count ('New 12', 'Overdue 11') read like window titles. */
+  .ft-board__col > header > &:is(h3),
+  &:is(h2, h3, h4):has(> .ft-count) {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--tr-amber);
+  }
+
+  /* Pipeline board: columns are dark wells, cards are small windows. */
+  &.ft-board__col {
+    background: var(--tr-field);
+    border: 1px solid var(--tr-frame);
+    border-radius: 2px;
+  }
+
+  &.ft-boardcard {
+    padding: 10px;
+    background: var(--surface);
+    border-color: var(--tr-frame);
+    border-radius: 2px;
+    box-shadow: none;
+  }
+
+  &.ft-boardcard:hover {
+    border-color: var(--line-strong);
+    background: var(--tr-row-hover);
+  }
+
+  &.ft-boardcard--selected,
+  &.ft-boardcard--selected:hover {
+    border-color: var(--tr-cyan);
+    box-shadow: inset 0 0 0 1px var(--tr-cyan);
+  }
+
+  /*
+    Job > List: a blotter, not a stack of cards. Each stage's candidates dock as rows in one framed
+    list with hairline separators; the row under the pointer and the selected row take the cyan edge
+    the order-book tables use.
+  */
+  &.ft-boardlist__rows {
+    gap: 0;
+    background: var(--surface);
+    border: 1px solid var(--tr-frame);
+    border-radius: 2px;
+  }
+
+  &.ft-boardcard--row {
+    padding: 8px 12px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  &.ft-boardcard--row:last-child {
+    border-bottom: 0;
+  }
+
+  &.ft-boardcard--row:hover {
+    background: var(--tr-row-hover);
+    box-shadow: inset 2px 0 0 var(--tr-cyan);
+  }
+
+  &.ft-boardcard--row.ft-boardcard--selected,
+  &.ft-boardcard--row.ft-boardcard--selected:hover {
+    background: var(--accent-soft);
+    box-shadow: inset 2px 0 0 var(--tr-cyan);
+  }
+
+  /* The 'past SLA' tag already says it is late: the next step reads as plain text, and only its
+     arrow takes the warn color (warn yellow and label amber are close hues; one warm mark is enough). */
+  &.ft-boardcard__next--overdue {
+    color: var(--ink);
+    font-weight: 400;
+  }
+
+  .ft-boardcard__next--overdue > &:is(svg) {
+    color: var(--warn);
+  }
+
+  /*
+    Org chart: a tree grid. Rows dock on hairlines (no box per person, no gaps), 40px tall, the
+    avatar shrinks to a 24px chip so the amber #N leads; the active row takes the cyan edge. Planned
+    seats keep a dashed rule and gray words, contractors a dotted one. Elbows are 1px wiring.
+  */
+  &:is(ul[role="tree"]):has(> li > .ft-orgnode) {
+    gap: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  &.ft-orgnode {
+    min-height: 40px;
+    padding: 0 10px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  &.ft-orgnode:hover {
+    background: var(--tr-row-hover);
+  }
+
+  &.ft-orgnode--planned {
+    border-bottom: 1px dashed var(--line-strong);
+  }
+
+  &.ft-orgnode--contractor {
+    border-bottom: 1px dotted var(--line-strong);
+  }
+
+  &.ft-orgnode--active,
+  &.ft-orgnode--active:hover {
+    background: var(--tr-row-hover);
+    box-shadow: inset 2px 0 0 var(--tr-cyan);
+  }
+
+  /* The expand chevron keeps a 40px row-height target. */
+  .ft-orgnode > &:is(span[title]) {
+    height: 40px;
+  }
+
+  /* The kit sizes avatars inline (style), so the smaller chip needs !important. */
+  .ft-orgnode > &.ft-avatar,
+  .ft-orgnode--planned > &:is(span[aria-hidden]):nth-child(2) {
+    width: 24px !important;
+    height: 24px !important;
+    font-size: 10px !important;
+  }
+
+  .ft-orgnode--planned > &:is(span[aria-hidden]):nth-child(2) {
+    border-width: 1px;
+    border-radius: 2px;
+  }
+
+  .ft-orgnode--planned > &:is(span[aria-hidden]):nth-child(2) > svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  &.ft-orgnode__elbow {
+    border-radius: 0;
+    border-color: var(--line-strong);
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+  }
+
+  /* First twenty wall: seats as quote tiles, the seat number as the symbol. */
+  &.ft-seat {
+    border-radius: 2px;
+    background: var(--surface);
+    border-color: var(--tr-frame);
+    box-shadow: none;
+  }
+
+  &:is(a).ft-seat:hover {
+    background: var(--tr-row-hover);
+    border-color: var(--line-strong);
+  }
+
+  &.ft-seat--incoming {
+    box-shadow: inset 0 2px 0 var(--good);
+  }
+
+  &.ft-seat--alumni {
+    background: var(--tr-field);
+    border-style: dashed;
+  }
+
+  &:is(.ft-seat--planned, .ft-seat--open) {
+    background: transparent;
+    border-style: dashed;
+    border-color: var(--line-strong);
+  }
+
+  &:is(.ft-seat__num, .ft-seat__pos) {
+    font-family: var(--font-mono);
+    color: var(--tr-amber);
+  }
+
+  &.ft-seat__date {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--ink-3);
+  }
+
+  /* Compliance calendar date tiles: a settlement date box. */
+  &.ft-datetile {
+    border-radius: 2px;
+    background: var(--surface-2);
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--tr-frame);
+  }
+
+  &.ft-datetile__weekday {
+    font-family: var(--font-mono);
+    color: var(--tr-amber);
+    letter-spacing: 0.06em;
+  }
+
+  &.ft-datetile__day {
+    font-family: var(--font-mono);
+  }
+
+  &.ft-datetile--bad {
+    background: var(--bad-soft);
+    box-shadow: inset 0 0 0 1px var(--bad);
+  }
+
+  &.ft-datetile--bad .ft-datetile__weekday {
+    color: var(--bad);
+  }
+
+  &.ft-datetile--warn {
+    background: var(--warn-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--warn) 60%, transparent);
+  }
+
+  &.ft-datetile--warn .ft-datetile__weekday {
+    color: var(--warn);
+  }
+
+  /* Cost scenarios: small windows; the chosen one is lit cyan. */
+  &.ft-scenario {
+    border-radius: 2px;
+    background: var(--surface);
+    border-color: var(--tr-frame);
+    box-shadow: none;
+  }
+
+  &.ft-scenario:hover {
+    background: var(--tr-row-hover);
+    border-color: var(--line-strong);
+  }
+
+  /*
+    Upcoming cliffs: an events list, not a grid of cards. Borderless rows on hairlines (two columns
+    when the window is wide), the sentence in Geist so it reads as words, the countdown tag at the
+    right end of the row.
+  */
+  &:is(ul):has(> li > .ft-cliff) {
+    row-gap: 0;
+    column-gap: 24px;
+  }
+
+  &.ft-cliff {
+    align-items: center;
+    gap: 10px;
+    padding: 8px 6px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  &.ft-cliff:hover {
+    background: var(--tr-row-hover);
+    box-shadow: inset 2px 0 0 var(--tr-cyan);
+  }
+
+  .ft-cliff > &.ft-avatar {
+    width: 24px !important;
+    height: 24px !important;
+    font-size: 10px !important;
+  }
+
+  .ft-cliff > &:is(span):last-child {
+    flex: 1 1 auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    column-gap: 12px;
+    row-gap: 4px;
+  }
+
+  .ft-cliff > span:last-child > &:is(span):first-child {
+    flex: 1 1 14rem;
+    font-size: 13.5px;
+    line-height: 1.4;
+  }
+
+  .ft-cliff > span:last-child > span:first-child > &.ft-private {
+    font-family: var(--font-body);
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ft-cliff > span:last-child > &:is(span):last-child {
+    margin-top: 0;
+    margin-left: auto;
+  }
+
+  &.ft-scenario--on,
+  &.ft-scenario--on:hover {
+    background: var(--accent-soft);
+    border-color: var(--tr-cyan);
+    box-shadow: inset 0 0 0 1px var(--tr-cyan);
+  }
+
+  /* SOC 2 gap rows: a red edge. */
+  &.ft-row--gap {
+    box-shadow: inset 2px 0 0 var(--bad);
+  }
+
+  /* The option pool bar: square segments. */
+  &.ft-poolbar__seg {
+    border-radius: 0;
+  }
+
+  /* ---------------------------------------------------------------- Overlays */
+
+  &.ft-scrim {
+    background: var(--scrim);
+  }
+
+  &.ft-sheet {
+    background: var(--surface);
+    border-left: 1px solid var(--line-strong);
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  &.ft-sheet__head,
+  &.ft-modal__head {
+    background: var(--tr-head);
+    box-shadow: inset 0 2px 0 var(--tr-amber);
+  }
+
+  &.ft-sheet__head {
+    border-bottom: 1px solid var(--tr-frame);
+  }
+
+  &.ft-modal__head {
+    border-bottom: 1px solid var(--tr-frame);
+    padding-bottom: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  &.ft-sheet__subtitle {
+    color: var(--ink-3);
+  }
+
+  &.ft-sheet__foot,
+  &.ft-modal__foot {
+    background: var(--tr-head);
+    border-top: 1px solid var(--tr-frame);
+  }
+
+  &.ft-modal,
+  &.ft-palette {
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    box-shadow: none;
+  }
+
+  &.ft-modal {
+    overflow: hidden;
+  }
+
+  &.ft-menu {
+    background: var(--tr-head);
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px #000000;
+  }
+
+  &.ft-menuitem {
+    border-radius: 1px;
+    color: var(--ink);
+  }
+
+  &.ft-menuitem:hover:not(:disabled),
+  &.ft-menuitem:focus-visible {
+    background: var(--surface-3);
+    box-shadow: inset 2px 0 0 var(--tr-cyan);
+  }
+
+  &.ft-menuitem--danger {
+    color: var(--bad);
+  }
+
+  &.ft-menuitem--danger:hover:not(:disabled) {
+    background: var(--bad-soft);
+    box-shadow: inset 2px 0 0 var(--bad);
+  }
+
+  &.ft-menu__divider {
+    background: var(--line-strong);
+  }
+
+  /* The command palette is the terminal's command line: an amber prompt, mono entry. */
+  &.ft-palette {
+    box-shadow: inset 0 2px 0 var(--tr-amber);
+  }
+
+  &.ft-palette__head {
+    background: var(--tr-field);
+    border-bottom: 1px solid var(--line-strong);
+  }
+
+  &.ft-palette__head > svg {
+    display: none;
+  }
+
+  &.ft-palette__head::before {
+    content: ">" / "";
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--tr-amber);
+  }
+
+  &.ft-palette__input {
+    font-family: var(--font-mono);
+    font-size: 15px;
+    caret-color: var(--tr-amber);
+  }
+
+  &.ft-palette__input::placeholder {
+    color: var(--ink-3);
+  }
+
+  /* The entry line is always focused while the palette is open: the frame shows it, not a ring. */
+  &.ft-palette__input:focus-visible {
+    outline: none;
+  }
+
+  &.ft-palette__head:focus-within {
+    box-shadow: inset 0 -1px 0 var(--tr-cyan);
+  }
+
+  &.ft-palette__group {
+    font-family: var(--font-mono);
+    color: var(--tr-amber);
+  }
+
+  &.ft-palette__item {
+    border-radius: 1px;
+  }
+
+  &.ft-palette__item:hover {
+    background: var(--surface-2);
+  }
+
+  &.ft-palette__item--active,
+  &.ft-palette__item--active:hover {
+    background: var(--accent-soft);
+    box-shadow: inset 2px 0 0 var(--tr-cyan);
+  }
+
+  &.ft-palette__icon {
+    color: var(--ink-3);
+  }
+
+  /* Toasts: a status line from the order desk, with a tone edge. */
+  &.ft-toast {
+    --tone: var(--ink-3);
+    background: var(--tr-head);
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    box-shadow:
+      inset 2px 0 0 var(--tone),
+      0 0 0 1px #000000;
+  }
+
+  &.ft-toast--good {
+    --tone: var(--good);
+  }
+
+  &.ft-toast--bad {
+    --tone: var(--bad);
+  }
+
+  &.ft-toast__text {
+    color: var(--ink);
+  }
+
+  &.ft-toast__action {
+    border-radius: 2px;
+    color: var(--tr-cyan);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tr-cyan) 45%, transparent);
+  }
+
+  &.ft-toast__action:hover {
+    background: var(--accent-soft);
+    color: var(--accent-hover);
+  }
+
+  &.ft-toast__dismiss {
+    border-radius: 2px;
+  }
+
+  &.ft-toast__dismiss:hover {
+    background: var(--surface-3);
+  }
+
+  /* ---------------------------------------------------------------- Charts */
+
+  /* Axis text and tooltips read as terminal figures. */
+  &.ft-chart text {
+    font-family: var(--font-mono);
+  }
+
+  /* A price chart: dotted grid, thin square-jointed lines, a faint area, cyan like the rest of the
+     user's data (amber stays the terminal's own voice: labels and keys). */
+  .ft-chart--step &:is(line)[stroke="var(--line)"] {
+    stroke: var(--line-strong);
+    stroke-dasharray: 1 3;
+  }
+
+  .ft-chart--step &:is(line)[stroke="var(--line-strong)"] {
+    stroke: #4a5766;
+    stroke-dasharray: 4 3;
+  }
+
+  /* A threshold's number sits past the end of its line, centered on it like a price-axis label, on a
+     panel-colored backing, so no series runs through it. */
+  &.ft-chart__reflabel {
+    text-anchor: start;
+    transform: translate(3px, 8.5px);
+    font-size: 10px;
+    fill: var(--ink-2);
+    paint-order: stroke;
+    stroke: var(--surface);
+    stroke-width: 4px;
+    stroke-linejoin: miter;
+  }
+
+  /* Plex runs wider than Geist: on a narrow column the time axis steps down and drops every other
+     label, so 'Mar 2025' and 'Sep' never run together. */
+  &.ft-chart__xtick {
+    @container app (width < 38.75rem) {
+      font-size: 10px;
+      letter-spacing: -0.04em;
+    }
+  }
+
+  .ft-chart--step &.ft-chart__xtick--odd {
+    @container app (width < 38.75rem) {
+      display: none;
+    }
+  }
+
+  &.ft-chart__today {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    fill: var(--ink-3);
+  }
+
+  .ft-chart--step &:is(path)[stroke]:not([stroke="none"]) {
+    stroke-width: 1.5px;
+    stroke-linejoin: miter;
+    stroke-linecap: square;
+  }
+
+  .ft-chart--step &:is(path)[opacity="0.1"] {
+    opacity: 0.09;
+  }
+
+  /* The last value sits in a price-label box in the series color, dark figures on it. */
+  &.ft-chart__enddot {
+    r: 3px;
+    stroke: var(--paper);
+    stroke-width: 1.5px;
+  }
+
+  &.ft-chart__endtag {
+    fill: var(--ft-series, var(--accent));
+  }
+
+  &.ft-chart__endlabel {
+    fill: var(--accent-ink);
+    stroke: none;
+    font-weight: 600;
+  }
+
+  &.ft-chart__tip {
+    border-radius: 2px;
+    border: 1px solid var(--line-strong);
+    background: var(--tr-head);
+    box-shadow: 0 0 0 1px #000000;
+    font-family: var(--font-mono);
+  }
+
+  &.ft-chart__legend {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+
+  .ft-chart__data > &:is(summary) {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--tr-cyan);
+  }
+
+  &.ft-chart__track {
+    border-radius: 0;
+  }
+
+  /* Bars read as volume bars: square, on a baseline, no well behind them. */
+  .ft-chart--bars &.ft-chart__track {
+    background: transparent;
+    box-shadow: inset 0 -1px 0 var(--line-strong);
+  }
+
+  &.ft-chart__bar {
+    border-radius: 0;
+  }
+
+  .ft-chart--bars &.ft-chart__bar[class~="bg-accent"] {
+    background: color-mix(in oklab, var(--tr-cyan) 70%, var(--surface));
+  }
+
+  /* The option pool and segment bars: square segments with a hairline gap. The Hiring funnel
+     (rounded-r-[4px]) and the jobs list's stage volume bars (rounded-t-[3px]) have no hook yet and
+     hard-code a rounding; they stay square here too. */
+  .ft-chart--segments &.ft-chart__bar,
+  &[class~="first:rounded-l-[4px]"],
+  &[class~="rounded-r-[4px]"],
+  &[class~="rounded-t-[3px]"] {
+    border-radius: 0;
+  }
+
+  /* ---------------------------------------------------------------- Privacy: a masked field */
+
+  &.ft-private--on {
+    filter: none;
+    color: transparent !important;
+    text-shadow: none;
+    background: var(--tr-hatch);
+    border-radius: 1px;
+  }
+
+  .ft-private--on & {
+    color: transparent !important;
+    visibility: hidden;
+  }
+
+  &.ft-input--blurred {
+    color: transparent;
+    text-shadow: none;
+    background-image: var(--tr-hatch);
+    background-size: min(9rem, calc(100% - 3.5rem)) 0.9em;
+    background-position: 1.75rem center;
+    background-repeat: no-repeat;
+  }
+
+  /* ---------------------------------------------------------------- Shell: the watchlist rail */
+
+  &.ft-rail {
+    background: #0a0d11;
+    border-right: 1px solid var(--tr-frame);
+  }
+
+  &.ft-rail--sheet {
+    border-right: 1px solid var(--line-strong);
+  }
+
+  &.ft-brand {
+    border-radius: 2px;
+  }
+
+  &.ft-brand__mark {
+    border-radius: 2px;
+    background: var(--tr-amber);
+    color: var(--tr-amber-ink);
+  }
+
+  &.ft-brand__name {
+    font-size: 15px;
+    letter-spacing: 0;
+  }
+
+  &.ft-brand__meta {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-3);
+  }
+
+  /* The headcount quote: symbol line (decor), last value and change (shell), chart (decor). */
+  &.ft-headcount {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    background: var(--surface);
+    border: 1px solid var(--tr-frame);
+    border-radius: 2px;
+  }
+
+  &.ft-headcount:is(a):hover {
+    background: var(--tr-row-hover);
+    border-color: var(--line-strong);
+  }
+
+  &.ft-headcount__meter {
+    display: contents;
+  }
+
+  &.ft-headcount__value {
+    font-family: var(--font-mono);
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    color: var(--ink);
+  }
+
+  &.ft-headcount__label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3);
+  }
+
+  /* '+2 starting' is the change line: green, with an up triangle. */
+  &.ft-headcount__incoming {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--good);
+  }
+
+  &.ft-headcount__incoming::before {
+    content: "";
+    width: 7px;
+    height: 6px;
+    background: currentColor;
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  }
+
+  /* Nav: watchlist rows. The current one carries an amber edge. */
+  &.ft-navitem {
+    border-radius: 0;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-2);
+    box-shadow: none;
+  }
+
+  &.ft-navitem__icon {
+    color: var(--ink-3);
+    width: 16px;
+    height: 16px;
+  }
+
+  &.ft-navitem:hover {
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+
+  &.ft-navitem--active,
+  &.ft-navitem--active:hover {
+    background: var(--surface-2);
+    color: var(--ink);
+    box-shadow: inset 2px 0 0 var(--tr-amber);
+  }
+
+  .ft-navitem--active > &.ft-navitem__icon {
+    color: var(--tr-amber);
+  }
+
+  &.ft-viewas {
+    background: var(--surface);
+    border: 1px solid var(--tr-frame);
+    border-radius: 2px;
+  }
+
+  &.ft-viewas__title {
+    white-space: nowrap;
+    padding-right: 1ch;
+  }
+
+  .ft-viewas__roles &.ft-segmented__item {
+    letter-spacing: 0.01em;
+    font-size: 11.5px;
+  }
+
+  &.ft-rail__note {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-3);
+  }
+
+  &.ft-topbar {
+    background: #0a0d11;
+    border-bottom: 1px solid var(--tr-frame);
+  }
+
+  &.ft-topbar__count {
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 11.5px;
+  }
+
+  /* Header: the search field is the command line, '>' prompt included. */
+  &.ft-search {
+    height: 40px;
+    background: var(--tr-field);
+    border-color: var(--control-border);
+    border-radius: 2px;
+    color: var(--ink-3);
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+
+  &.ft-search > svg {
+    display: none;
+  }
+
+  &.ft-search::before {
+    content: ">" / "";
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--tr-amber);
+  }
+
+  &.ft-search:hover {
+    border-color: var(--ink-3);
+    color: var(--ink-2);
+  }
+
+  /* Status fields in the header: the backup reminder and the sync chip. */
+  &.ft-backup {
+    border-radius: 2px;
+    background: transparent;
+    color: var(--ink-2);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  &.ft-backup:hover {
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+
+  /* No backup yet: a status line (warn square and the words), not a second warm block beside + New. */
+  &.ft-backup--stale {
+    color: var(--ink-2);
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+
+  &.ft-backup--stale::before {
+    content: "";
+    flex: none;
+    width: 6px;
+    height: 6px;
+    background: var(--warn);
+  }
+
+  .ft-backup--stale > &:is(svg) {
+    display: none;
+  }
+
+  &.ft-backup--stale:hover {
+    color: var(--ink);
+    background: var(--surface-2);
+  }
+
+  /* Notices: terminal messages with a tone edge. */
+  &.ft-banner {
+    --tone: var(--ink-3);
+    border-radius: 2px;
+    background: var(--surface);
+    color: var(--ink-2);
+    border: 1px solid var(--tr-frame);
+    box-shadow: inset 2px 0 0 var(--tone);
+  }
+
+  &.ft-banner--sample {
+    --tone: var(--tr-amber);
+  }
+
+  &.ft-banner--preview {
+    --tone: var(--tr-cyan);
+  }
+
+  &.ft-banner--storage {
+    --tone: var(--warn);
+    background: var(--warn-soft);
+    color: var(--ink);
+  }
+
+  &.ft-banner__icon {
+    color: var(--tone);
+  }
+
+  &.ft-banner__action {
+    color: var(--tr-cyan);
+    border-radius: 2px;
+  }
+
+  &.ft-banner__action:hover {
+    background: var(--accent-soft);
+    color: var(--accent-hover);
+  }
+
+  /* ---------------------------------------------------------------- Display menu cards */
+
+  &.ft-lookcard {
+    border-radius: 2px;
+    border: 1px solid var(--tr-frame);
+    background: var(--surface);
+    box-shadow: none;
+  }
+
+  &.ft-lookcard:hover {
+    border-color: var(--ink-3);
+  }
+
+  &.ft-lookcard--on,
+  &.ft-lookcard--on:hover {
+    border-color: var(--tr-cyan);
+    box-shadow: inset 0 0 0 1px var(--tr-cyan);
+  }
+
+  &.ft-lookcard__name {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  &.ft-lookcard__check {
+    color: var(--tr-cyan);
+  }
+
+  /* ---------------------------------------------------------------- Server sync (Header.tsx) */
+
+  &.ft-syncchip {
+    --tone: var(--ink-2);
+    border-radius: 2px;
+    background: transparent;
+    color: var(--tone);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+    border-color: transparent;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  &.ft-syncchip:hover {
+    background: var(--surface-2);
+  }
+
+  &.ft-syncchip--synced {
+    --tone: var(--good);
+  }
+
+  &.ft-syncchip--syncing {
+    --tone: var(--tr-cyan);
+  }
+
+  &:is(.ft-syncchip--offline, .ft-syncchip--signed-out, .ft-syncchip--paused) {
+    --tone: var(--warn);
+    background: var(--warn-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--warn) 55%, transparent);
+  }
+
+  &.ft-syncchip--attention {
+    --tone: var(--bad);
+    background: var(--bad-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--bad) 60%, transparent);
+  }
+
+  &.ft-syncchip__count {
+    background: transparent;
+    color: inherit;
+    border-radius: 2px;
+    box-shadow: inset 0 0 0 1px currentColor;
+    font-family: var(--font-mono);
+  }
+
+  &:is(.ft-banner--sync-rejected, .ft-banner--sync-paused, .ft-banner--sync-replaced, .ft-banner--sync-signed-out, .ft-banner--sync-offline):not(.ft-banner--storage) {
+    --tone: var(--warn);
+  }
+
+  &.ft-banner--sync-refreshed {
+    --tone: var(--good);
+  }
+
+  /* ---------------------------------------------------------------- Decor (trading/decor.tsx) */
+
+  /*
+    Ticker tape: chrome pinned flush to the top edge of the main column and full bleed across it.
+    The negative margins mirror the main column's padding in Shell.tsx (px-4 / sm:px-6 / lg:px-10,
+    1rem under the phone's top bar, lg:pt-6). On a window wide enough that the 1240px column is
+    centered, the side margin also covers the gap beside it (the rail is 264px; the body is the
+    "app" size container, so 100cqw is its width).
+  */
+  &.ft-decor--banner {
+    margin: -1rem -1rem 0.875rem;
+
+    @container app (width >= 38.75rem) {
+      margin-inline: -1.5rem;
+    }
+
+    @container app (width >= 62.75rem) {
+      margin-top: -1.5rem;
+      margin-inline: calc(-1 * max(2.5rem, (100cqw - 264px - 1240px) / 2));
+    }
+  }
+
+  &.ft-tr-tape {
+    display: flex;
+    align-items: center;
+    min-height: 30px;
+    background: var(--tr-head);
+    border-bottom: 1px solid var(--tr-frame);
+    overflow: hidden;
+    user-select: none;
+  }
+
+  &.ft-tr-tape__viewport {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  &.ft-tr-tape__track {
+    display: flex;
+    width: max-content;
+    animation: ft-trading-tape var(--ft-tr-tape-duration, 60s) linear infinite;
+  }
+
+  .ft-tr-tape--still &.ft-tr-tape__track {
+    animation: none;
+  }
+
+  &.ft-tr-tape__group {
+    display: flex;
+    align-items: center;
+    flex: none;
+  }
+
+  &.ft-tr-tick {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-right: 1px solid var(--line-strong);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Standing still, the last figure ends the strip: no divider after it. */
+  .ft-tr-tape--still &.ft-tr-tick:last-child {
+    border-right: 0;
+  }
+
+  &.ft-tr-tick__sym {
+    color: var(--tr-amber);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  &.ft-tr-tick__value {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  &.ft-tr-tick__chg {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-weight: 600;
+  }
+
+  .ft-tr-tick--good > &.ft-tr-tick__chg {
+    color: var(--good);
+  }
+
+  .ft-tr-tick--bad > &.ft-tr-tick__chg,
+  .ft-tr-tick--bad > &.ft-tr-tick__value {
+    color: var(--bad);
+  }
+
+  .ft-tr-tick--warn > &.ft-tr-tick__value {
+    color: var(--warn);
+  }
+
+  /* A warn figure carries the tags' square marker, so its form (not only its hue) sets it apart from
+     the amber symbols beside it. */
+  .ft-tr-tick--warn > &.ft-tr-tick__value::before {
+    content: "";
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-right: 5px;
+    vertical-align: 0.1em;
+    background: var(--warn);
+  }
+
+  /* The as-of stamp, pinned right outside the moving strip, like a terminal status bar's time. */
+  &.ft-tr-tape__clock {
+    flex: none;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    border-left: 1px solid var(--line-strong);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-3);
+
+    @container app (width < 38.75rem) {
+      display: none;
+    }
+  }
+
+  &.ft-tr-arrow {
+    display: block;
+  }
+
+  /* Headcount quote (rail) */
+  &.ft-tr-quote {
+    display: contents;
+  }
+
+  &.ft-tr-quote__head {
+    order: -1;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    line-height: 1.2;
+  }
+
+  &.ft-tr-quote__sym {
+    padding: 2px 5px;
+    background: var(--tr-amber);
+    color: var(--tr-amber-ink);
+    border-radius: 1px;
+  }
+
+  &.ft-tr-quote__name {
+    color: var(--ink-2);
+  }
+
+  &.ft-tr-quote__range {
+    margin-left: auto;
+    color: var(--ink-3);
+    font-weight: 400;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  /* In a quote line the labels are quiet and the values carry the weight. */
+  &.ft-tr-quote__val {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  &.ft-tr-quote__chart {
+    order: 1;
+  }
+
+  &.ft-tr-quote__axis {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 2px;
+    padding-right: 34px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.04em;
+    color: var(--ink-3);
+  }
+
+  &.ft-tr-spark__line {
+    fill: none;
+    stroke: var(--tr-cyan);
+    stroke-width: 1.4px;
+    stroke-linejoin: miter;
+    vector-effect: non-scaling-stroke;
+  }
+
+  &.ft-tr-spark__area {
+    fill: var(--tr-cyan);
+    opacity: 0.1;
+  }
+
+  &.ft-tr-spark__base {
+    stroke: var(--line-strong);
+    stroke-width: 1px;
+    vector-effect: non-scaling-stroke;
+  }
+
+  &.ft-tr-spark__grid {
+    stroke: var(--line-strong);
+    stroke-width: 1px;
+    stroke-dasharray: 1 3;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .ft-tr-spark__level > &:is(line) {
+    stroke: var(--warn);
+    stroke-width: 1px;
+    stroke-dasharray: 3 3;
+    opacity: 0.75;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .ft-tr-spark__level > &:is(text) {
+    fill: var(--warn);
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    font-weight: 600;
+  }
+
+  &.ft-tr-spark__tag {
+    fill: var(--tr-cyan);
+  }
+
+  &.ft-tr-spark__tagtext {
+    fill: var(--accent-ink);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+  }
+
+  /* Function-key bar */
+  &.ft-tr-fkeys {
+    margin-top: 1.5rem;
+  }
+
+  &.ft-tr-fkeys__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0;
+    padding: 5px;
+    list-style: none;
+    background: var(--tr-head);
+    border: 1px solid var(--tr-frame);
+    border-radius: 2px;
+
+    /* On a phone the keys form an even keypad instead of a ragged wrap. */
+    @container app (width < 38.75rem) {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  .ft-tr-fkeys__list > li > &.ft-tr-fkey {
+    @container app (width < 38.75rem) {
+      width: 100%;
+    }
+  }
+
+  &.ft-tr-fkey {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 0 12px 0 5px;
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    color: var(--ink-2);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+  }
+
+  &.ft-tr-fkey:hover {
+    background: var(--surface-2);
+    border-color: var(--ink-3);
+    color: var(--ink);
+  }
+
+  /* Section links carry no keycap (no key opens them), so they get even padding. */
+  &.ft-tr-fkey:not(:has(> .ft-tr-fkey__key)) {
+    padding-left: 12px;
+  }
+
+  /* The current section is marked by an amber frame and a lit edge, so the bar still reads as a
+     position indicator and solid amber stays scarce. */
+  &.ft-tr-fkey[aria-current="page"] {
+    border-color: var(--tr-amber);
+    box-shadow: inset 3px 0 0 var(--tr-amber);
+    color: var(--ink);
+  }
+
+  /* An unlit cap: an amber legend on a dark key, only for a key that really works (Search: Ctrl K). */
+  &.ft-tr-fkey__key {
+    min-width: 26px;
+    padding: 2px 4px;
+    background: var(--surface-3);
+    color: var(--tr-amber);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tr-amber) 45%, transparent);
+    border-radius: 1px;
+    text-align: center;
+    letter-spacing: 0;
+  }
+}
+
+/* ================================================================== Motion */
+
+@keyframes ft-trading-tape {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* The tape stops under the pointer and while keyboard focus is anywhere in the page. */
+[data-look="trading"] .ft-tr-tape:hover .ft-tr-tape__track,
+[data-look="trading"] .ft-main__inner:has(:focus-visible) .ft-tr-tape__track {
+  animation-play-state: paused;
+}
+
+/*
+  Reduced motion (the OS setting or the Display menu): the tape stands still and wraps, one copy of each
+  figure. !important because the decor rules above are nested under a stronger selector.
+*/
+@media (prefers-reduced-motion: reduce) {
+  [data-look="trading"] .ft-tr-tape__track {
+    animation: none !important;
+    width: auto !important;
+  }
+
+  [data-look="trading"] .ft-tr-tape__group {
+    flex: 1 1 auto !important;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  [data-look="trading"] .ft-tr-tape__group + .ft-tr-tape__group {
+    display: none !important;
+  }
+}
+
+[data-look="trading"][data-reduced-motion] .ft-tr-tape__track {
+  animation: none !important;
+  width: auto !important;
+}
+
+[data-look="trading"][data-reduced-motion] .ft-tr-tape__group {
+  flex: 1 1 auto !important;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+[data-look="trading"][data-reduced-motion] .ft-tr-tape__group + .ft-tr-tape__group {
+  display: none !important;
+}

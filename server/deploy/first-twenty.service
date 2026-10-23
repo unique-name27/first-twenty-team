@@ -1,0 +1,101 @@
+# First Twenty API server (systemd unit).
+# Installed by setup-ec2.sh to /etc/systemd/system/first-twenty.service.
+# Caddy terminates HTTPS on 443 and proxies to this process on 127.0.0.1:8787; Postgres stays on localhost.
+#
+#   sudo systemctl status first-twenty        is it running?
+#   sudo journalctl -u first-twenty -n 100    recent logs
+#   sudo systemctl restart first-twenty       after editing /etc/first-twenty/env
+#
+# Settings come from /etc/first-twenty/env (mode 600, root:firsttwenty). systemd reads that file as root
+# before it starts the process, so the firsttwenty user never needs to read it.
+#
+# Local changes go in a drop-in, so re-running setup-ec2.sh does not undo them:
+#   sudo systemctl edit first-twenty
+# For example, a database on another host (RDS, another instance) must be added to the network allow
+# list below, by IP address or range (systemd does not resolve names here):
+#   [Service]
+#   IPAddressAllow=10.0.1.23
+# The same applies to Postgres in Docker when the Docker daemon runs with "userland-proxy": false
+# (the default proxy keeps traffic on 127.0.0.1): add the Docker network, for example 172.16.0.0/12.
+
+[Unit]
+Description=First Twenty API server
+Documentation=file:///opt/first-twenty/docs/SERVER.md
+Wants=network-online.target
+# Start after Postgres when Postgres runs on this instance (ignored if the unit name differs or is absent).
+After=network-online.target postgresql.service
+# No start limit: however often it fails, systemd starts it again RestartSec later. With a limit, a crash
+# someone can repeat at will would leave the service stopped until somebody logged in to start it.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=firsttwenty
+Group=firsttwenty
+WorkingDirectory=/opt/first-twenty
+EnvironmentFile=/etc/first-twenty/env
+Environment=NODE_ENV=production
+# The schema owner's connection is for npm run server:migrate and server:after-restore (through
+# with-env.sh) and for backups only.
+# The running server never gets it, so a compromised process cannot drop or alter tables.
+UnsetEnvironment=MIGRATION_DATABASE_URL
+ExecStart=/usr/bin/node dist-server/server.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+UMask=0077
+# Soft and hard limit equal, so Node does not need setrlimit (blocked below with @resources).
+LimitNOFILE=65536
+
+# Hardening. The code under /opt/first-twenty is read-only to this service (ProtectSystem=strict).
+# The only writable place is /var/lib/first-twenty (StateDirectory), so no ReadWritePaths= line is needed:
+# the server keeps its data in Postgres and writes logs to the journal.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+StateDirectory=first-twenty
+StateDirectoryMode=0750
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+# Other processes are invisible in /proc, and so is everything there except process entries.
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+# Allow the usual service system calls, then take away the privileged ones and those that change
+# resource limits or scheduling. The allow line must come first.
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+# TCP to Postgres and Caddy, plus a Unix socket if DATABASE_URL points at one.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Network: 127.0.0.1 and ::1, both ways, plus the assistant's way out. Caddy connects in from 127.0.0.1 and
+# Postgres is at 127.0.0.1, so a compromised process cannot open a connection to the internet at large;
+# the rest of 127.0.0.0/8 is closed. It can still reach whatever else listens on 127.0.0.1: Postgres
+# (pg_hba.conf limits these roles to their own database, docs/SERVER.md step 1) and Caddy's admin endpoint
+# on 127.0.0.1:2019. A remote database needs its address added (see the top of this file). Unix sockets
+# are not affected.
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1/32 ::1/128
+# The assistant (docs/SERVER.md, "Lark, the assistant") calls the Claude API at api.anthropic.com: the DNS
+# stub resolver on 127.0.0.53 (systemd-resolved, which looks names up outside this sandbox) and Anthropic's
+# published inbound API ranges, IPv4 160.79.104.0/23 and IPv6 2607:6bc0::/48, from
+# https://platform.claude.com/docs/en/api/ip-addresses (checked 2026-10-11; Anthropic says they do not change
+# without notice). Nothing else on the internet is reachable. Without ANTHROPIC_API_KEY nothing uses them.
+IPAddressAllow=127.0.0.53/32 160.79.104.0/23 2607:6bc0::/48
+# MemoryDenyWriteExecute is deliberately absent: Node's JIT compiler needs writable executable memory.
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,4831 @@
+/*
+  Look: Sleek (default). Light and dark. Direction: Swiss precision.
+
+  The International Typographic Style applied to a payroll register: white ground, true-black ink, one
+  grotesk (Archivo) at a handful of sizes, structure from rules and alignment instead of boxes, square
+  corners, flush-left everything, and big semi-condensed numerals for the figures that matter (the
+  headcount above all, then the employee numbers).
+
+  Rules carry the structure, in three weights only:
+  - a page opens under a thick-and-thin rule (3px ink, 2px paper, 1px ink), like an entry in a register;
+  - a 2px ink rule starts a section (every Panel, board column, sheet head), with its label in uppercase
+    micro type directly under it and the content sitting straight on the paper;
+  - a 1px light rule divides rows (lists, tables, ledgers) and sub-sections inside a section, and runs
+    down the gutter between a page's main and side columns.
+  There are no cards, no tinted wells, no soft shadows and no rounded corners: panels, tables, menus,
+  sheets, badges and board columns are square; buttons, inputs, chips and key caps take 2px.
+
+  Type: uppercase with tracking is kept for three things only (section labels, table column heads and
+  the page kicker). Everything else, ledger terms, field labels, figure labels, links, is sentence case.
+
+  Color:
+  - Ink does everything structural. Hierarchy comes from size, weight, case and spacing; ink-2 is a dark
+    secondary for metadata only, never a pale gray.
+  - One accent, ultramarine (#0035cc light, #2766d2 dark), for action and place: the primary button, the
+    4px bar that marks where you are (nav item, tab, selected board card), the current stage, and the
+    keyboard focus ring. Choosing a value (a segment, a chip, a date pick) is not an action, so it is drawn
+    as inverse ink and can never be mistaken for the primary button beside it. Links are ink with an
+    underline; data (charts, meters, the compliance dot plot) is ink.
+  - Status hues (green, amber, red) are the only other color and always come with a word: a square
+    marker and a colored word, never a tinted pill. A colorless state is a hollow marker and a word.
+  - A frame means "you can click this": buttons, chips, citations, fields. Nothing static is framed.
+
+  Buttons, in four steps: primary is the accent fill (one per view); secondary is a 1px ink frame;
+  ghost (tertiary) is a 1px gray frame, visible at rest; a link is underlined words with no frame. Quiet
+  verbs (Reject on a card, Duplicate) are underlined words; destructive ones (Remove, Reject, Offboard)
+  are red underlined words.
+
+  States, each with its own rule: hover tints with ink (4.5%) and gives framed controls an ink border;
+  pressed (:active) inverts frames, darkens fills and drops the control 1px; selected is inverse ink
+  (single choice) or a 1px ink frame with an accent check (multi); place is a 4px accent bar and bold words, never
+  a fill; focus is a square 2px accent ring with a 2px paper gap (ink on accent or red fills; square even
+  on 2px controls: the corner rounding drops while focused); disabled is a dashed border with ink-3 text
+  and no fill (never a faded slab).
+
+  Every selector is scoped to [data-look="sleek"] (docs/LOOKS.md). The light tokens also sit on
+  :where(:root) so the page has a complete token set before data-look is set; :where() keeps that
+  default at zero specificity, so any other look's [data-look] block always wins over it.
+
+  Contrast (WCAG 2.x, checked with a scratch script): ink, ink-2, ink-3 and the three status hues are
+  4.5:1 or better on paper, surface-2, surface-3 and accent-soft in both themes (the lowest pair is light
+  bad on surface-3, 4.9:1); text on the accent is 8.8:1 light and 5.4:1 dark; --line-strong, the control
+  border, the accent and the focus ring are 3:1 or better against the paper.
+*/
+
+:where(:root),
+[data-look="sleek"] {
+  /* Color */
+  --paper: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f2f2f2;
+  --surface-3: #e6e6e6;
+  --ink: #000000;
+  --ink-2: #262626;
+  --ink-3: #575757;
+  --line: #d2d2d2;
+  --line-strong: #8f8f8f;
+  /* Borders that are the only cue a control exists (inputs, switches): 4.5:1 on the paper. */
+  --control-border: #767676;
+  --accent: #0035cc;
+  --accent-hover: #002799;
+  --accent-ink: #ffffff;
+  --accent-soft: #edf0fb;
+  --accent-soft-ink: #002799;
+  --good: #0e6b35;
+  --good-soft: #e8f3eb;
+  --warn: #8a5300;
+  --warn-soft: #fbf0dd;
+  --bad: #c2170c;
+  --bad-soft: #fcebea;
+  --focus: #0035cc;
+  --scrim: rgb(0 0 0 / 0.38);
+  /* Categorical chart hues: the dataviz reference set, validated on #ffffff (light slots 3-5 sit under
+     3:1, so categorical charts always carry direct labels or a table). */
+  --cat-1: #2a78d6;
+  --cat-2: #eb6834;
+  --cat-3: #1baf7a;
+  --cat-4: #eda100;
+  --cat-5: #e87ba4;
+  --cat-6: #008300;
+  color-scheme: light;
+
+  /* Look-private values (used only by the rules in this file). */
+  --sleek-rule: #000000;
+  --sleek-hover: rgb(0 0 0 / 0.045);
+  --sleek-press: rgb(0 0 0 / 0.1);
+  --sleek-selection: rgb(0 53 204 / 0.2);
+  /* The scrim's alpha as a mix amount: the page gutter beside a dialog takes the scrimmed paper tone. */
+  --sleek-scrim-mix: 38%;
+  --sleek-raised: #ffffff;
+  /* Chosen values (segments, single chips, date picks): inverse ink, never the action color. */
+  --sleek-pick: #000000;
+  --sleek-pick-ink: #ffffff;
+  /* The accent where it is a line or a word rather than a fill (focus ring, checks): the fill itself in
+     light, a lighter tint of the same blue in dark. */
+  --sleek-accent-line: #0035cc;
+  /* Weights. Dark mode thins them a step (light words on near-black bloom); Archivo is variable. */
+  --sleek-w-regular: 400;
+  --sleek-w-medium: 500;
+  --sleek-w-semi: 600;
+  --sleek-w-bold: 700;
+  /* Big figures (headcount, totals, employee numbers) set semi-condensed: Archivo's width axis. */
+  --sleek-figure-stretch: 84%;
+  /* The gutter between a page's main and side columns; a 1px rule runs down its middle. */
+  --sleek-gutter: 40px;
+
+  /* Type: one family. Key caps alone use the system mono (no web font). */
+  --font-display: "Archivo Variable", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Archivo Variable", "Helvetica Neue", Arial, system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, "SF Mono", monospace;
+  --font-size-base: 14px;
+  --line-height-base: 1.45;
+  --heading-weight: 600;
+  --heading-transform: none;
+  --heading-tracking: -0.005em;
+  --eyebrow-transform: uppercase;
+  --eyebrow-tracking: 0.08em;
+
+  /* Shape and depth: square. 2px only on controls (buttons, inputs, chips, keys); no shadows at all. */
+  --r-sm: 2px;
+  --r-md: 2px;
+  --r-lg: 2px;
+  --r-xl: 0px;
+  --r-2xl: 0px;
+  --r-pill: 0px;
+  --border-w: 1px;
+  --border-w-strong: 2px;
+  /* "0 0 #0000" rather than none, so a ring utility on the same element survives. */
+  --shadow-sm: 0 0 #0000;
+  --shadow: 0 0 #0000;
+  --shadow-lg: 0 0 #0000;
+  --focus-width: 2px;
+  --focus-style: solid;
+  --focus-offset: 2px;
+}
+
+/* Dark: follows the OS unless the Display menu forced Light; Dark forces it. Designed, not inverted:
+   a warm charcoal ground (#141413) with rules that stay visible (#3a3a37 rows, near-white section
+   rules); a mid ultramarine fill with white words for the primary action, and a light tint of the same
+   blue (hue 218, never periwinkle) for the focus ring; weights a step thinner. */
+@media (prefers-color-scheme: dark) {
+  [data-look="sleek"]:not([data-theme="light"]) {
+    --paper: #141413;
+    --surface: #141413;
+    --surface-2: #1f1f1d;
+    --surface-3: #2b2b28;
+    --ink: #f3f2ee;
+    --ink-2: #dddcd6;
+    --ink-3: #aaa9a2;
+    --line: #3a3a37;
+    --line-strong: #7c7b75;
+    --control-border: #8e8d86;
+    --accent: #2766d2;
+    --accent-hover: #1d55b5;
+    --accent-ink: #ffffff;
+    --accent-soft: #172338;
+    --accent-soft-ink: #c4d6ff;
+    --good: #56c78f;
+    --good-soft: #10251a;
+    --warn: #e3a852;
+    --warn-soft: #2b200d;
+    --bad: #ff7468;
+    --bad-soft: #301513;
+    --focus: #86b3ff;
+    --scrim: rgb(0 0 0 / 0.66);
+    --cat-1: #3987e5;
+    --cat-2: #d95926;
+    --cat-3: #199e70;
+    --cat-4: #c98500;
+    --cat-5: #d55181;
+    --cat-6: #008300;
+    --sleek-rule: #f3f2ee;
+    --sleek-hover: rgb(255 255 255 / 0.06);
+    --sleek-press: rgb(255 255 255 / 0.13);
+    --sleek-selection: rgb(134 179 255 / 0.3);
+    --sleek-scrim-mix: 66%;
+    --sleek-raised: #191918;
+    --sleek-pick: #f3f2ee;
+    --sleek-pick-ink: #141413;
+    --sleek-accent-line: #86b3ff;
+    --sleek-w-regular: 370;
+    --sleek-w-medium: 460;
+    --sleek-w-semi: 560;
+    --sleek-w-bold: 660;
+    color-scheme: dark;
+  }
+}
+
+[data-look="sleek"][data-theme="dark"] {
+  --paper: #141413;
+  --surface: #141413;
+  --surface-2: #1f1f1d;
+  --surface-3: #2b2b28;
+  --ink: #f3f2ee;
+  --ink-2: #dddcd6;
+  --ink-3: #aaa9a2;
+  --line: #3a3a37;
+  --line-strong: #7c7b75;
+  --control-border: #8e8d86;
+  --accent: #2766d2;
+  --accent-hover: #1d55b5;
+  --accent-ink: #ffffff;
+  --accent-soft: #172338;
+  --accent-soft-ink: #c4d6ff;
+  --good: #56c78f;
+  --good-soft: #10251a;
+  --warn: #e3a852;
+  --warn-soft: #2b200d;
+  --bad: #ff7468;
+  --bad-soft: #301513;
+  --focus: #86b3ff;
+  --scrim: rgb(0 0 0 / 0.66);
+  --cat-1: #3987e5;
+  --cat-2: #d95926;
+  --cat-3: #199e70;
+  --cat-4: #c98500;
+  --cat-5: #d55181;
+  --cat-6: #008300;
+  --sleek-rule: #f3f2ee;
+  --sleek-hover: rgb(255 255 255 / 0.06);
+  --sleek-press: rgb(255 255 255 / 0.13);
+  --sleek-selection: rgb(134 179 255 / 0.3);
+  --sleek-scrim-mix: 66%;
+  --sleek-raised: #191918;
+  --sleek-pick: #f3f2ee;
+  --sleek-pick-ink: #141413;
+  --sleek-accent-line: #86b3ff;
+  --sleek-w-regular: 370;
+  --sleek-w-medium: 460;
+  --sleek-w-semi: 560;
+  --sleek-w-bold: 660;
+  color-scheme: dark;
+}
+
+/* ==========================================================================================
+   Hook rules. Look rules are unlayered, so a property set here also beats the utility's hover,
+   focus and disabled variants: every state of a property this file touches is restyled here too.
+   ========================================================================================== */
+
+/* Figures line up everywhere: tabular lining numerals are the default, not a per-cell opt-in. */
+[data-look="sleek"] body,
+.ft-lookpreview[data-look="sleek"] {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-optical-sizing: auto;
+  font-weight: var(--sleek-w-regular);
+}
+
+/* The page never shifts between routes: the scrollbar's gutter is reserved even on a page that does not
+   scroll, so the header and the columns keep one position everywhere. */
+html[data-look="sleek"] {
+  scrollbar-gutter: stable;
+}
+
+/* While a sheet, a dialog or the palette is open the page behind holds still: one scrollbar (the
+   overlay's) instead of two side by side. The gutter stays reserved, so nothing under the scrim moves
+   sideways when Ctrl K, Display or ? opens and closes. Beside a sheet the empty gutter reads as part of
+   the white sheet; beside a dialog or the palette it takes the scrim's tone (the paper under the scrim),
+   so the dimmed window has no bright strip on its edge. */
+html[data-look="sleek"]:has(.ft-sheet),
+html[data-look="sleek"]:has(.ft-modal),
+html[data-look="sleek"]:has(.ft-palette) {
+  overflow: hidden;
+}
+
+html[data-look="sleek"]:has(.ft-modal):not(:has(.ft-sheet)),
+html[data-look="sleek"]:has(.ft-palette):not(:has(.ft-sheet)) {
+  background: color-mix(in srgb, #000 var(--sleek-scrim-mix), var(--paper));
+}
+
+/* Only the gutter takes that tone. Body is one window tall (styles.css), so on a page scrolled past its
+   first screen the root's canvas shows under the content, and the scrim over the pre-dimmed canvas drew a
+   darker band with a hard edge across the page. A fixed paper layer under everything (the fixed box is the
+   viewport without the gutter) keeps the whole window one tone under the scrim. */
+html[data-look="sleek"]:has(.ft-modal):not(:has(.ft-sheet)) body::before,
+html[data-look="sleek"]:has(.ft-palette):not(:has(.ft-sheet)) body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: var(--paper);
+  pointer-events: none;
+}
+
+/* Scrollbars are part of the register: a square ink-gray thumb on the paper, no arrow buttons, no
+   rounded native slab. The page's own bar stays 12px wide (an easy target); inner scrollers 8px. Chrome
+   only applies these while scrollbar-width and scrollbar-color are auto, so the rule below resets them. */
+html[data-look="sleek"]::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+html[data-look="sleek"]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html[data-look="sleek"]::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border: 3px solid transparent;
+  border-left-width: 4px;
+  background-clip: padding-box;
+}
+
+html[data-look="sleek"]::-webkit-scrollbar-thumb:hover,
+html[data-look="sleek"]::-webkit-scrollbar-thumb:active {
+  background-color: var(--ink-3);
+}
+
+html[data-look="sleek"]::-webkit-scrollbar-button,
+html[data-look="sleek"]::-webkit-scrollbar-corner {
+  display: none;
+  background: transparent;
+}
+
+/* Every rule below sits in this one block, so it applies inside sleek but never inside a Display
+   menu preview card that shows another look: sleek is the default page, and its rules must not
+   leak into the other looks' previews. (CSS nesting; "&" is the guarded element.) */
+[data-look="sleek"] :where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+  /* ---------- Type ---------------------------------------------------------------------------- */
+
+  /* Two weights for words: regular and semibold (500 for buttons). Bold is kept for page titles and big
+     figures (set below). All of them read the weight tokens, so dark mode thins them a step. */
+  &.font-normal,
+  &.font-medium {
+    font-weight: var(--sleek-w-regular);
+  }
+
+  &.font-semibold,
+  &.font-bold,
+  &:is(b),
+  &:is(strong) {
+    font-weight: var(--sleek-w-semi);
+  }
+
+  /* Square focus: the ring is a 2px outline 2px off the box, and an outline follows the corner radius
+     plus its offset (a 2px control would get a 4px-rounded ring). While focused, the box drops its 2px
+     rounding, so the ring is a true square everywhere. !important because every control rule below sets
+     its own radius at the same or a higher specificity. */
+  &:focus-visible {
+    border-radius: 0 !important;
+  }
+
+  &.eyebrow,
+  &.ft-sectionlabel {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--ink);
+  }
+
+  &.ft-sectionlabel::after {
+    background: var(--line);
+  }
+
+  &::selection {
+    background: var(--sleek-selection);
+    color: inherit;
+  }
+
+  /* Inner scrollers (tables, boards, sheet bodies, menus): an 8px square thumb in the gray rule color, no
+     arrow buttons. scrollbar-width and -color go back to auto, or Chrome ignores the rules below. */
+  &:is(.scroll-thin, .overflow-auto, .overflow-x-auto, .overflow-y-auto) {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+
+  &:is(.scroll-thin, .overflow-auto, .overflow-x-auto, .overflow-y-auto)::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &:is(.scroll-thin, .overflow-auto, .overflow-x-auto, .overflow-y-auto)::-webkit-scrollbar-track,
+  &:is(.scroll-thin, .overflow-auto, .overflow-x-auto, .overflow-y-auto)::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  &:is(.scroll-thin, .overflow-auto, .overflow-x-auto, .overflow-y-auto)::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+  }
+
+  &:is(.scroll-thin, .overflow-auto, .overflow-x-auto, .overflow-y-auto)::-webkit-scrollbar-thumb:hover {
+    background: var(--ink-3);
+  }
+
+  &:is(.scroll-thin, .overflow-auto, .overflow-x-auto, .overflow-y-auto)::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  /* A table, matrix or board that runs past its right edge ends on a hard 1px ink edge (and gains one on
+     the left once scrolled), so a cut column reads as "continues", not as a rendering slip. Driven by the
+     scroller's own scroll position; a scroller that fits has no timeline and draws no edge. */
+  &:is(.ft-table-wrap, .ft-board, div.overflow-x-auto:has(> table)) {
+    animation: ft-sleek-scroll-edge linear both;
+    animation-timeline: scroll(self inline);
+  }
+
+  /* The faint-blue pair (bg-accent-soft + text-accent-soft-ink) marks progress and "current" states in
+     several screens (notes, chosen list items). Blue is for action and selection, so these read as a
+     plain ink note on a faint neutral. :where() keeps this at [data-look] specificity. */
+  &:where(.bg-accent-soft.text-accent-soft-ink) {
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+
+  /* Data marks stay round in a square system: band-meter markers, legend keys, timeline dots, the
+     dashed "starting soon" circles. Everything else that the screens round (counts, tags, avatars,
+     status dots, checklist marks) is square. */
+  &.rounded-full:is(.h-2.w-2, .h-2\.5.w-2\.5, .h-3.w-3, .h-4.w-4):not(.ft-dot),
+  &.rounded-full.border-2:is([class*="h-"]):not([class*="px-"], .ft-checkmark),
+  &.rounded-full.outline-dashed,
+  &.rounded-full.absolute.-translate-x-1\/2.-translate-y-1\/2 {
+    border-radius: 50%;
+  }
+
+  /* Count figures beside headings, on board columns and in Inbox groups: plain figures, not boxes. */
+  &.ft-count {
+    background: transparent;
+    box-shadow: none;
+    padding-inline: 0;
+    min-width: 0;
+    color: var(--ink-2);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+
+  /* Completed checks read as ink, like a filled checkbox; the "Done" word carries the green. */
+  &.rounded-full.bg-good.border-good,
+  &.rounded-full.bg-good.text-white {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--paper);
+  }
+
+  /* Pay band ranges (comp table, change sheet, offer meter): a flat gray range with a firm ink edge. */
+  &.bg-accent-soft.ring-1.ring-inset {
+    background: color-mix(in srgb, var(--ink) 12%, var(--paper));
+    --tw-ring-color: color-mix(in srgb, var(--ink) 55%, var(--paper));
+  }
+
+  /* ---------- Buttons ------------------------------------------------------------------------- */
+
+  &.ft-btn,
+  &.ft-iconbtn {
+    border-radius: var(--r-sm);
+    border-width: 1px;
+    box-shadow: none;
+    transition:
+      background-color 90ms linear,
+      border-color 90ms linear,
+      color 90ms linear;
+  }
+
+  /* Framed buttons speak at 500: a row of them reads as a set of choices, not a wall of bold boxes. The
+     one solid action (primary) and danger keep 600. */
+  &.ft-btn {
+    font-weight: var(--sleek-w-medium);
+    letter-spacing: 0.005em;
+    line-height: 1.15;
+  }
+
+  &:is(.ft-btn--primary, .ft-btn--danger) {
+    font-weight: var(--sleek-w-semi);
+  }
+
+  /* Pressed is physical as well as tonal: every control drops 1px while the pointer (or Space) holds it. */
+  &:is(.ft-btn, .ft-iconbtn, .ft-chip, .ft-segmented__item, .ft-stepper__step, .ft-search, .ft-backup, .ft-syncchip, .ft-toast__action):active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  /* Targets: 40px small and default, 44px large (the 40-48px rule). Minimum heights only, so a long
+     label at 150% text still wraps inside the button. */
+  &.ft-btn--sm {
+    min-height: 40px;
+    padding-inline: 12px;
+    font-size: 13px;
+  }
+
+  &.ft-btn--md {
+    min-height: 40px;
+    padding-inline: 14px;
+    font-size: 14px;
+  }
+
+  &.ft-btn--lg {
+    min-height: 44px;
+    padding-inline: 16px;
+    font-size: 14px;
+  }
+
+  &.ft-iconbtn--md {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* Words, not pictograms: a leading icon on a labeled button doubles the reading. The arrow after a
+     label that navigates stays (it says "goes somewhere"), and a button whose label hides at some width
+     keeps its icon so it is never empty. */
+  &.ft-btn:not(:has(> .hidden:not([aria-hidden]), > .sr-only)) > .ft-btn__icon:not(.ft-btn__icon--right, [data-icon^="chevron"]) {
+    display: none;
+  }
+
+  /* Primary: the accent, solid. */
+  &.ft-btn--primary,
+  &.ft-iconbtn--primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-color: var(--accent);
+  }
+
+  &.ft-btn--primary:hover:not(:disabled),
+  &.ft-iconbtn--primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
+  &.ft-btn--primary:active:not(:disabled),
+  &.ft-iconbtn--primary:active:not(:disabled) {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--paper);
+  }
+
+  /* An accent ring on an accent fill would only make the button look a little bigger: focus on a filled
+     control is an ink ring across the 2px paper gap (21:1 on the paper, 2.4:1 against the blue). */
+  &:is(.ft-btn--primary, .ft-iconbtn--primary, .ft-btn--danger, .ft-iconbtn--danger):focus-visible {
+    outline-color: var(--ink);
+  }
+
+  /* Secondary: a 1px ink outline on the paper. Hover tints, pressed inverts. */
+  &.ft-btn--secondary,
+  &.ft-iconbtn--secondary {
+    background: transparent;
+    color: var(--ink);
+    border-color: var(--ink);
+  }
+
+  &.ft-btn--secondary:hover:not(:disabled),
+  &.ft-iconbtn--secondary:hover:not(:disabled) {
+    background: var(--sleek-hover);
+    border-color: var(--ink);
+  }
+
+  &.ft-btn--secondary:active:not(:disabled),
+  &.ft-iconbtn--secondary:active:not(:disabled) {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--paper);
+  }
+
+  /* Ghost and quiet (tertiary verbs: Reject, Move to, Cancel, Log past interview): a 1px gray frame that
+     is there at rest (never a hover-only reveal) and quieter than the secondary's ink frame, so it never
+     reads as an underlined link either. Icon-only ghost buttons (the header's ?, eye and monitor, a row's
+     pencil) stay frameless: the glyph is the affordance, and hover and press are unmistakable. */
+  &.ft-btn--ghost,
+  &.ft-iconbtn--ghost,
+  &.ft-btn--quiet,
+  &.ft-iconbtn--quiet {
+    background: transparent;
+    color: var(--ink);
+    border-color: var(--line-strong);
+  }
+
+  &.ft-iconbtn--ghost {
+    border-color: transparent;
+  }
+
+  &.ft-btn--ghost:hover:not(:disabled),
+  &.ft-iconbtn--ghost:hover:not(:disabled),
+  &.ft-btn--quiet:hover:not(:disabled),
+  &.ft-iconbtn--quiet:hover:not(:disabled) {
+    background: var(--sleek-hover);
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+
+  &.ft-btn--ghost:active:not(:disabled),
+  &.ft-iconbtn--ghost:active:not(:disabled),
+  &.ft-btn--quiet:active:not(:disabled),
+  &.ft-iconbtn--quiet:active:not(:disabled) {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--paper);
+  }
+
+  /* Danger: the status red, solid; paper text (5.9:1 light, 6.8:1 dark). */
+  &.ft-btn--danger,
+  &.ft-iconbtn--danger {
+    background: var(--bad);
+    color: var(--paper);
+    border-color: var(--bad);
+  }
+
+  &.ft-btn--danger:hover:not(:disabled),
+  &.ft-iconbtn--danger:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--bad) 82%, var(--ink));
+    border-color: color-mix(in oklab, var(--bad) 82%, var(--ink));
+    opacity: 1;
+  }
+
+  &.ft-btn--danger:active:not(:disabled),
+  &.ft-iconbtn--danger:active:not(:disabled) {
+    background: var(--ink);
+    border-color: var(--ink);
+  }
+
+  /* SOC 2 fix actions: an outline in the bad tone. */
+  &.ft-btn--urgent,
+  &.ft-btn--urgent:hover:not(:disabled) {
+    border-color: var(--bad);
+    color: var(--bad);
+  }
+
+  /* Disabled is a state, not a style: a dashed outline, ink-3 words, no fill and no fade. */
+  &:is(.ft-btn, .ft-iconbtn):disabled {
+    opacity: 1;
+    background: transparent;
+    color: var(--ink-3);
+    border-color: var(--line-strong);
+    border-style: dashed;
+  }
+
+  /* A labeled button used as a choice (aria-pressed: "No change", "+5%", share refresh picks) is a chosen
+     value when pressed: inverse ink like a chip, never the primary's accent. */
+  &.ft-btn[aria-pressed="true"],
+  &.ft-btn[aria-pressed="true"]:hover:not(:disabled) {
+    background: var(--sleek-pick);
+    border-color: var(--sleek-pick);
+    color: var(--sleek-pick-ink);
+  }
+
+  /* Pressed toggles (privacy blur): inverse ink, unmistakably on. */
+  &.ft-iconbtn--on,
+  &.ft-iconbtn--on:hover:not(:disabled) {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+
+  /* One solid action per view. A primary inside a panel's head or inside a list or table row (Done
+     today, Approve, a panel's Request time off) is drawn as the ink outline, like the inbox's Mark done.
+     The accent stays for page-header actions, sheet and dialog footers, Sweep and the selected card. */
+  &.ft-btn--primary:is(.ft-panel__actions *, .ft-panel li *, .ft-panel tr *):not(.ft-sheet *, .ft-modal *, .ft-boardcard *) {
+    background: transparent;
+    color: var(--ink);
+    border-color: var(--ink);
+  }
+
+  &.ft-btn--primary:is(.ft-panel__actions *, .ft-panel li *, .ft-panel tr *):not(.ft-sheet *, .ft-modal *, .ft-boardcard *):hover:not(:disabled) {
+    background: var(--sleek-hover);
+    border-color: var(--ink);
+  }
+
+  &.ft-btn--primary:is(.ft-panel__actions *, .ft-panel li *, .ft-panel tr *):not(.ft-sheet *, .ft-modal *, .ft-boardcard *):active:not(:disabled) {
+    background: var(--ink);
+    color: var(--paper);
+  }
+
+  &.ft-btn--primary:is(.ft-panel__actions *, .ft-panel li *, .ft-panel tr *):not(.ft-sheet *, .ft-modal *, .ft-boardcard *):focus-visible {
+    outline-color: var(--focus);
+  }
+
+  /* ---------- Links ----------------------------------------------------------------------------- */
+
+  /* Links are ink with a persistent underline (never color alone, WCAG 1.4.1); pointing at one firms the
+     underline to 2px of full ink. The accent stays for action and selection. */
+  &.ft-link,
+  &:is(a).text-accent,
+  &:is(button).text-accent {
+    color: var(--ink);
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-decoration-color: color-mix(in srgb, var(--ink) 55%, transparent);
+    text-underline-offset: 3px;
+  }
+
+  &.ft-link:hover,
+  &:is(a, button).text-accent:hover {
+    background: transparent;
+    color: var(--ink);
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 2px;
+  }
+
+  &.ft-link {
+    font-weight: 600;
+  }
+
+  /* Glyphs and words the screens tint with the accent but that are not controls: ink. */
+  &.text-accent:not(a, button) {
+    color: var(--ink);
+  }
+
+  &.ft-table__rowlink:hover {
+    color: var(--ink);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+
+  /* Targets for links that stand alone (a name in a list, a table or a ledger, a job title, the job head's
+     plan link, a person's manager): a 40px box centered on the words, drawn by ::after, so the link is a
+     40px target without moving anything. A link taller than 40px keeps its own box (the ::after sits
+     inside it). Links inside a sentence keep the words' own box (the WCAG inline exception), so they never
+     reach over the line above or below. */
+  &:is(a[href]):not(p *, .sr-only, [class*="absolute"], .fixed, .sticky, [class*="ft-"]:not(.ft-link, .ft-table__rowlink)),
+  &:is(.ft-pagehead__subtitle a[href], p.flex > span > a.ft-link:last-child) {
+    position: relative;
+  }
+
+  &:is(a[href]):not(p *, .sr-only, [class*="absolute"], .fixed, .sticky, [class*="ft-"]:not(.ft-link, .ft-table__rowlink))::after,
+  &:is(.ft-pagehead__subtitle a[href], p.flex > span > a.ft-link:last-child)::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: max(100%, var(--sleek-target, 40px));
+    transform: translateY(-50%);
+  }
+
+  /* A row head's link that wraps (a long job title in a narrow column) is one box, so its 40px target is
+     the whole block of lines rather than a sliver of its middle line. */
+  &:is(th[scope="row"] > a[href]:first-child) {
+    display: inline-block;
+  }
+
+  /* A table's row link (the first column's name) reaches the full row: 44px. It wraps block content (the
+     name over its title), and an inline box around blocks draws no focus ring at all, so it is a block:
+     the ring then frames the whole first cell. */
+  &.ft-table__rowlink {
+    --sleek-target: 44px;
+    display: block;
+  }
+
+  /* A phone number on a line of its own (an emergency contact) stands alone, so it is a 40px target too. */
+  &:is(p > a[href^="tel:"]:only-child) {
+    position: relative;
+  }
+
+  &:is(p > a[href^="tel:"]:only-child)::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 40px;
+    transform: translateY(-50%);
+  }
+
+  /* Links the screens tint with the accent on hover stay ink here: pointing at one firms its underline
+     instead. The accent is for action and place, and the dark accent is a fill color (3.4:1 as words). */
+  &:is(a, button).hover\:text-accent:hover,
+  &.group-hover\:text-accent:is(.group:hover *) {
+    color: var(--ink);
+  }
+
+  &:is(a).hover\:text-accent:hover {
+    text-decoration-line: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+  }
+
+  /* The words under a list row's name (the candidate's current job) let clicks through to the name above
+     them, so the name keeps its full 40px target. */
+  &:is(.ft-boardcard--row div.min-w-0 > a + p) {
+    pointer-events: none;
+  }
+
+  /* Citation chips in a row of their own (not inside a sentence) drop the kit's -6px margins, so two rows
+     of chips never overlap each other's 40px targets. */
+  &.ft-cite-link:not(p *) {
+    margin-block: 0;
+  }
+
+  /* ---------- Badges, tags, dots, keys, avatars ------------------------------------------------- */
+
+  /* A status is a square marker and a colored word, never a tinted pill or a pictogram (the badge's
+     own glyph gives way to the marker). !important beats two screens' rounded-xl!. */
+  &.ft-badge {
+    border-radius: 0 !important;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    min-height: 20px;
+    padding: 0;
+    gap: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+
+  &.ft-badge::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    background: currentColor;
+    flex: none;
+  }
+
+  &.ft-badge > svg {
+    display: none;
+  }
+
+  /* A colorless state (Draft, Declined, Legal deadline, Alumni, Local only) keeps the same grammar: a
+     hollow square marker and the word in ink-2. A frame is only ever drawn around something you can click
+     (chips, citations, buttons), so a badge never looks like the button beside it. */
+  &.ft-badge--neutral,
+  &.ft-badge--outline {
+    color: var(--ink-2);
+    font-weight: var(--sleek-w-medium);
+  }
+
+  &.ft-badge--neutral::before,
+  &.ft-badge--outline::before {
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px currentColor;
+  }
+
+  /* Counts that are badges (calendar month counts) and words inside a button (the band matrix's "3
+     people") are plain figures and words. */
+  &:is(.ft-badge--neutral, .ft-badge--outline):is(.ft-count, button *)::before {
+    display: none;
+  }
+
+  &:is(.ft-badge--neutral, .ft-badge--outline):is(button *) {
+    font-weight: var(--sleek-w-regular);
+  }
+
+  &.ft-badge--accent {
+    color: var(--ink);
+  }
+
+  &.ft-badge--good {
+    color: var(--good);
+  }
+
+  &.ft-badge--warn {
+    color: var(--warn);
+  }
+
+  &.ft-badge--bad {
+    color: var(--bad);
+  }
+
+  /* Removable candidate tags hold a remove button, so they keep a 1px frame (a thing you can act on). */
+  &.ft-tag {
+    letter-spacing: 0;
+    text-transform: none;
+    border-radius: 0 !important;
+    background: transparent;
+    color: var(--ink-2);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+
+  &.ft-tag::before {
+    display: none;
+  }
+
+  /* Where a candidate came from is a category, not a control: plain words in uppercase micro type, like a
+     kicker (no frame, so a card's only frames are its buttons). */
+  &.ft-tag--source {
+    height: auto;
+    min-height: 0;
+    padding-inline: 0;
+    box-shadow: none;
+    font-size: 12px;
+    font-weight: var(--sleek-w-semi);
+    letter-spacing: 0.04em;
+    line-height: 1.3;
+    text-transform: uppercase;
+  }
+
+  &.ft-tag--source svg {
+    display: none;
+  }
+
+  &.ft-dot {
+    border-radius: 0;
+    width: 7px;
+    height: 7px;
+  }
+
+  &.ft-dot--accent {
+    background: var(--ink);
+  }
+
+  /* Key caps are keys, not buttons: 22px tall, a 1px gray frame with a 2px foot, ink-2 letters, and no
+     hover (a frame on a static thing would say "click me"). */
+  &.ft-kbd {
+    height: 22px;
+    min-height: 22px;
+    padding-inline: 5px;
+    border: 1px solid var(--line-strong);
+    border-bottom-width: 2px;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--ink-2);
+    font-family: var(--font-mono);
+    font-weight: 400;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  /* A key hint inside an accent button takes the button's inverse colors. */
+  &.ft-btn--primary .ft-kbd {
+    background: transparent;
+    border-color: color-mix(in srgb, var(--accent-ink) 55%, transparent);
+    color: var(--accent-ink);
+  }
+
+  /* ...unless that primary is drawn as an outline (panel heads and rows, above). */
+  &.ft-kbd:is(.ft-panel__actions .ft-btn--primary *, .ft-panel li .ft-btn--primary *, .ft-panel tr .ft-btn--primary *):not(.ft-sheet *, .ft-modal *, .ft-boardcard *) {
+    border-color: var(--line-strong);
+    color: var(--ink-2);
+  }
+
+  /* Initials in a square ink frame: a monogram tile, not a pastel disc. */
+  &.ft-avatar {
+    border-radius: 0;
+    background: transparent;
+    color: var(--ink);
+    font-weight: 600;
+    font-stretch: 90%;
+    letter-spacing: 0.02em;
+    box-shadow: inset 0 0 0 1px var(--ink);
+  }
+
+  &.ft-avatar--muted {
+    color: var(--ink-3);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+
+  /* Stacks: tiles sit edge to edge with a 1px overlap, cut by a paper gap. */
+  &.ft-avatarstack .ft-avatar {
+    box-shadow:
+      0 0 0 2px var(--paper),
+      inset 0 0 0 1px var(--ink);
+  }
+
+  &.ft-avatarstack > * {
+    border-radius: 0;
+    --tw-ring-color: var(--paper);
+  }
+
+  &.ft-avatarstack > * + * {
+    margin-left: -3px;
+  }
+
+  /* Where the name (and #number) sits right beside it, the tile only repeats it: dropped in tables,
+     board cards, page heads and the rail's person picker. */
+  &.ft-avatar:is(.ft-table *, .ft-boardcard *, .ft-pagehead *, .ft-personhead *, .ft-viewas *):not(.ft-avatarstack *) {
+    display: none;
+  }
+
+  /* ...and in a link that carries the name itself (Who's out, talent pool rows). */
+  &.ft-avatar:is(li a > *):not(.ft-avatarstack *) {
+    display: none;
+  }
+
+  /* ...and in lists that lead with the employee number (#15 Aisha), which already says who it is. */
+  &.ft-avatar:is(:has(~ * .ft-empno), :has(~ .ft-empno)) {
+    display: none;
+  }
+
+  &:is(span, div):has(> .ft-avatar:only-child):has(~ * .ft-empno) {
+    display: none;
+  }
+
+  /* An avatar stack followed by the same names in words (an interview's panel) only repeats them. */
+  &.ft-avatarstack:has(+ span:not(:empty)) {
+    display: none;
+  }
+
+  &.ft-avatar--more {
+    background: var(--ink);
+    color: var(--paper);
+    font-weight: 600;
+  }
+
+  /* Employee numbers are the product's motif: set in the figure style, a step quieter than the name. */
+  &.ft-empno {
+    color: var(--ink-2);
+    font-weight: 600;
+    font-stretch: var(--sleek-figure-stretch);
+    letter-spacing: 0;
+  }
+
+  /* ---------- Page header ----------------------------------------------------------------------- */
+
+  /* A page opens under a thick-and-thin rule, like an entry in a register: 3px ink (the border), 2px of
+     paper, 1px ink (two inset shadows, the paper one on top). The kicker and title sit under it. */
+  &:is(.ft-pagehead, .ft-personhead) {
+    border-top: 3px solid var(--sleek-rule);
+    box-shadow:
+      inset 0 2px 0 var(--paper),
+      inset 0 3px 0 var(--sleek-rule);
+    padding-top: 16px;
+    padding-bottom: 24px;
+  }
+
+  /* Actions sit on the head's last line (the subtitle's baseline side), never floating mid-height. */
+  &.ft-pagehead {
+    align-items: flex-end;
+  }
+
+  &.ft-pagehead__title {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.012em;
+    line-height: 1.1;
+  }
+
+  &.ft-pagehead__subtitle {
+    margin-top: 6px;
+    font-size: 15px;
+    line-height: 1.4;
+    color: var(--ink);
+  }
+
+  &.ft-pagehead__eyebrow {
+    margin-bottom: 6px;
+  }
+
+  /* The way back is a sentence-case link with its arrow, set off by an underline. */
+  &.ft-pagehead__back {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-decoration-color: color-mix(in srgb, var(--ink) 55%, transparent);
+    text-underline-offset: 3px;
+  }
+
+  &.ft-pagehead__back:hover {
+    color: var(--ink);
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 2px;
+  }
+
+  &.ft-pagehead__back svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* Person page: the employee number leads the name at title size; the monogram tile steps aside (the
+     number already identifies the person, and the name is beside it). */
+  &.ft-personhead {
+    align-items: flex-end;
+  }
+
+  &:is(.ft-personhead span):has(> .ft-avatar) {
+    display: none;
+  }
+
+  &.ft-empno:is(.ft-personhead *) {
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 1.1;
+    color: var(--ink-2);
+  }
+
+  /* ---------- Sections (Panel): a 2px ink rule, an uppercase label, content on the paper ---------- */
+
+  &.ft-panel {
+    background: transparent;
+    border: 0;
+    border-top: 2px solid var(--sleek-rule);
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  /* A section without a label (a toolbar and its table, a summary line) is a sub-section: a 1px ink rule,
+     so two such blocks in a row never stack heavy rules. */
+  &.ft-panel:not(:has(> .ft-panel__head)) {
+    border-top-width: 1px;
+  }
+
+  &.ft-panel__head {
+    padding: 9px 0 8px;
+    min-height: 40px;
+    border-bottom: 1px solid var(--line);
+    align-items: baseline;
+    row-gap: 2px;
+  }
+
+  &.ft-panel__title {
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  &.ft-panel__subtitle {
+    margin-top: 3px;
+    font-size: 13px;
+    line-height: 1.35;
+    color: var(--ink-2);
+  }
+
+  &.ft-panel__body--padded {
+    padding: 12px 0 4px;
+  }
+
+  /* Hand-built toolbars and lists inside an unpadded section run flush with its rule, like its table. */
+  &:is(.ft-panel__body:not(.ft-panel__body--padded) > :is(div, p, ul, ol, form, section, header, footer)):is(.px-3, .px-4, .px-5, .sm\:px-5):not(.ft-callout, .ft-banner) {
+    padding-inline: 0;
+  }
+
+  &:is(.ft-panel__body:not(.ft-panel__body--padded) > :is(ul, ol) > li):is(.px-3, .px-4, .px-5, .sm\:px-5),
+  &:is(.ft-panel__body:not(.ft-panel__body--padded) > :is(ul, ol) > li > :is(div, article, section)):is(.px-3, .px-4, .px-5, .sm\:px-5),
+  &:is(.ft-panel__body:not(.ft-panel__body--padded) > section > :is(h3, h4, p, div)):is(.px-3, .px-4, .px-5, .sm\:px-5),
+  &:is(.ft-panel__body:not(.ft-panel__body--padded) > section > :is(ul, ol) > li):is(.px-3, .px-4, .px-5, .sm\:px-5) {
+    padding-inline: 0;
+  }
+
+  /* A section that holds several labeled groups (Requests: Waiting for you, then Waiting on a manager):
+     each later group label stands under the same 1px rule as the rows, so a group never reads as more
+     rows of the one above it. */
+  &:is(.ft-panel__body:not(.ft-panel__body--padded) > section > :is(ul, ol, p) + :is(h3, h4)) {
+    border-top: 1px solid var(--line);
+  }
+
+  /* Rows that are whole links keep a little padding for their hover tint and hang it into the gutter, so
+     their words still line up with the rule. */
+  &:is(.ft-panel__body:not(.ft-panel__body--padded) > :is(ul, ol) > li > a):is(.px-3, .px-4, .px-5) {
+    padding-inline: 8px;
+    margin-inline: -8px;
+  }
+
+  /* Sections are labeled by type alone: no icon before every title. */
+  &.ft-panel__icon {
+    display: none;
+  }
+
+  &.ft-panel__head:not(:has(.ft-panel__subtitle)) {
+    align-items: center;
+  }
+
+  /* A label with no subtitle keeps its action on its own line even in a narrow side column (the kit asks
+     14rem for the title block; 8rem holds any section label). A head with a subtitle keeps the 14rem, so
+     the sentence is never squeezed into a narrow column beside a button. When the actions do wrap, the
+     head's space-between sets them flush left under the label, never floating right. */
+  &:is(.ft-panel__head > div:first-child):not(:has(.ft-panel__subtitle)) {
+    flex: 1 1 8rem;
+    min-width: min(100%, 8rem);
+  }
+
+  /* Head links ("Milestones", "Open hiring", "Cost and runway"): sentence-case ink words with an
+     underline at the right end of the head, no arrow. The label on the left keeps the caps. */
+
+  &.ft-panel__actions > :is(a, button).text-accent,
+  &.ft-panel__actions > a.ft-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+    padding-inline: 0;
+    gap: 4px;
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    text-decoration-line: underline;
+  }
+
+  &.ft-panel__actions > :is(a, button).text-accent:hover,
+  &.ft-panel__actions > a.ft-link:hover {
+    background: transparent;
+  }
+
+  &.ft-panel__actions > :is(a, button).text-accent > svg[data-icon="arrow-right"],
+  &.ft-panel__actions > a.ft-link > svg[data-icon="arrow-right"] {
+    display: none;
+  }
+
+  /* Sub-sections inside a section (candidate page: Next step, Interviews and scorecards, Offer,
+     Background check): no box inside the box, a 1px ink rule above and a title one clear step above the
+     14px body (20px, at the same full width as the page title: the condensed width is kept for numerals),
+     so the sub-sections separate by type alone. */
+  &.ft-subpanel {
+    border: 0;
+    border-top: 1px solid var(--ink);
+    border-radius: 0;
+    background: transparent;
+    padding: 12px 0 2px;
+  }
+
+  &.ft-subpanel__title {
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+  }
+
+  &.ft-subpanel__subtitle {
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+
+  &.ft-subpanel__icon {
+    display: none;
+  }
+
+  /* Description lists are ruled ledgers: label and value on one 40px row, a 1px rule between rows. */
+  &.ft-dl {
+    row-gap: 0;
+    column-gap: 32px;
+  }
+
+  /* A two- or three-up ledger runs side by side only where each column has room for a 132px term and a
+     value of about 200px (each column 22rem at least), so at 1280px the person overview and the
+     candidate's offer are one ruled column and an email never splits mid-word. */
+  &.ft-dl:is(.sm\:grid-cols-2, .lg\:grid-cols-3) {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  }
+
+  /* A row is the term (132px) and its value side by side; in a narrow column the value drops under the
+     term instead of being squeezed to a letter per line. */
+  &:is(.ft-dl > div) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 12px;
+    row-gap: 2px;
+    min-height: 40px;
+    padding: 9px 0 8px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  &:is(.ft-dl > div > .ft-dl__term) {
+    flex: 0 0 132px;
+    min-width: 0;
+  }
+
+  &:is(.ft-dl > div > .ft-dl__value) {
+    flex: 1 1 9rem;
+    min-width: 0;
+    overflow-wrap: break-word;
+  }
+
+  /* Terms are sentence case at 13px, a step under the 14px value, so they sit on one line beside it. */
+  &.ft-dl__term {
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.35;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink-2);
+  }
+
+  &.ft-dl__value {
+    margin-top: 0;
+    font-size: 14px;
+  }
+
+  /* Empty states sit flush left with the words, like the rest of the page: no centered icon column. */
+  &.ft-empty {
+    align-items: flex-start;
+    text-align: left;
+    padding-block: 12px;
+  }
+
+  &.ft-empty__icon {
+    display: none;
+  }
+
+  &.ft-empty__title {
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  &.ft-empty__body {
+    margin-inline: 0;
+    font-size: 14px;
+    color: var(--ink-2);
+  }
+
+  /* Stats (the kit's Stat is "a big number with a label", so its value is always a figure): a rule, a micro
+     label and a big semi-condensed figure. Labeled words use the small values below instead. */
+  &.ft-stat {
+    background: transparent;
+    border: 0;
+    border-top: 2px solid var(--sleek-rule);
+    border-radius: 0;
+    box-shadow: none;
+    padding: 8px 0 4px;
+  }
+
+  &:is(a).ft-stat:hover {
+    background: var(--sleek-hover);
+  }
+
+  &.ft-stat__label,
+  &.ft-ministat__label {
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink-2);
+  }
+
+  &.ft-stat__value {
+    font-size: 32px;
+    font-weight: 700;
+    font-stretch: var(--sleek-figure-stretch);
+    letter-spacing: -0.01em;
+  }
+
+  /* Small figures in a row: labels may wrap to two lines, values still share one baseline. */
+  &.ft-ministat {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* A small figure's value is set as words by default (16px, 600, full width): job titles, managers,
+     "Exempt (computer professional)", holiday names. Only money and counts take the big semi-condensed
+     figure style (below), so a row of labeled values never reads as a row of headline tiles. */
+  &.ft-ministat__value {
+    margin-top: auto;
+    padding-top: 2px;
+    font-size: 16px;
+    font-weight: var(--sleek-w-semi);
+    font-stretch: 100%;
+    line-height: 1.3;
+  }
+
+  /* Figures: a row of small values that opens on an amount (people cost, a person's equity), the option
+     pool counts and the Me balance tiles. A row that opens on words (a person's job: Title, Level, ...)
+     keeps every value as words, base pay included, so one register never mixes two type styles. */
+  &.ft-ministat__value:is(dd.num, .ft-ministat--tile *, div:has(> .ft-ministat:first-child > .ft-ministat__value > .ft-private) > .ft-ministat > *) {
+    font-size: 20px;
+    font-weight: 700;
+    font-stretch: var(--sleek-figure-stretch);
+    line-height: 1.15;
+  }
+
+  &.ft-stat__sub {
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+
+  &.ft-ministat--tile {
+    background: transparent;
+    border-radius: 0;
+    box-shadow: inset 0 2px 0 var(--sleek-rule);
+    padding-inline: 0;
+  }
+
+  /* A tile has a line of words under its figure, so its figure sits under the label rather than on the
+     bottom baseline (the words under it differ in length). */
+  &.ft-ministat__value:is(.ft-ministat--tile *) {
+    margin-top: 2px;
+  }
+
+  /* SOC 2 gap rows: no pink tint; the red bar hangs in the gutter like an overdue Inbox row. */
+  &.ft-row--gap {
+    position: relative;
+    background: transparent;
+  }
+
+  &.ft-row--gap::before {
+    content: "";
+    position: absolute;
+    top: 1px;
+    bottom: 1px;
+    left: -12px;
+    width: 4px;
+    background: var(--bad);
+  }
+
+  /* Meters: a square ink bar on a flat track, with a hairline tick every tenth cut through bar and track
+     (paper-colored, drawn over both), so a progress meter reads as an instrument, not a slab. */
+  &.ft-meter {
+    position: relative;
+    background: var(--surface-3);
+    border-radius: 0;
+    height: 6px;
+  }
+
+  &.ft-meter::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: repeating-linear-gradient(to right, transparent 0 calc(10% - 1px), var(--paper) calc(10% - 1px) 10%);
+    background-size: calc(100% + 1px) 100%;
+  }
+
+  &.ft-meter__bar {
+    border-radius: 0;
+  }
+
+  &.ft-meter--accent .ft-meter__bar {
+    background: var(--ink);
+  }
+
+  /* Progress is ink in every tone; the tone is a 4px end cap, and the words beside it say what it means,
+     so a long bar is never a slab of red. */
+  &:is(.ft-meter--good, .ft-meter--warn, .ft-meter--bad) .ft-meter__bar {
+    background: var(--ink);
+  }
+
+  &.ft-meter--good .ft-meter__bar {
+    box-shadow: inset -4px 0 0 var(--good);
+  }
+
+  &.ft-meter--warn .ft-meter__bar {
+    box-shadow: inset -4px 0 0 var(--warn);
+  }
+
+  &.ft-meter--bad .ft-meter__bar {
+    box-shadow: inset -4px 0 0 var(--bad);
+  }
+
+  /* Sweep counts candidates, so its track has one segment per candidate (read from aria-valuemax), not a
+     tick every tenth, in the stepper's grammar: done is solid ink, the current one is the accent (the
+     place mark), and the ones still to come are a 2px gray bar at the foot of the segment, with a 3px
+     paper gap between segments. Filled always means done or here, never "to come". */
+  &.ft-meter[aria-label="Sweep progress"] {
+    --sleek-n: attr(aria-valuemax type(<number>), 10);
+    --sleek-i: attr(aria-valuenow type(<number>), 0);
+    height: 10px;
+    overflow: visible;
+    background: linear-gradient(to top, var(--line-strong) 2px, transparent 2px);
+  }
+
+  &.ft-meter[aria-label="Sweep progress"]::after {
+    background-image: repeating-linear-gradient(
+      to right,
+      transparent 0 calc(100% / var(--sleek-n) - 3px),
+      var(--paper) calc(100% / var(--sleek-n) - 3px) calc(100% / var(--sleek-n))
+    );
+    background-size: calc(100% + 3px) 100%;
+  }
+
+  &.ft-meter[aria-label="Sweep progress"]::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc((100% + 3px) * var(--sleek-i) / var(--sleek-n));
+    width: calc((100% + 3px) / var(--sleek-n) - 3px);
+    background: var(--accent);
+    z-index: 1;
+  }
+
+  &.ft-meter__bar:is(.ft-meter[aria-label="Sweep progress"] *) {
+    background: var(--ink);
+    box-shadow: none;
+    transition: none;
+  }
+
+  /* ---------- Callouts and banners -------------------------------------------------------------- */
+
+  /* A note is a 3px rule on the left in its tone (ink for plain notes) and ink words: no tinted box. */
+  &.ft-callout {
+    background: transparent;
+    color: var(--ink);
+    border: 0;
+    border-left: 3px solid var(--ink);
+    border-radius: 0;
+    padding: 2px 0 2px 12px;
+  }
+
+  &.ft-callout--good {
+    border-left-color: var(--good);
+  }
+
+  &.ft-callout--warn {
+    border-left-color: var(--warn);
+  }
+
+  &.ft-callout--bad {
+    border-left-color: var(--bad);
+  }
+
+  &.ft-callout__icon {
+    color: var(--ink);
+  }
+
+  &.ft-callout--good .ft-callout__icon {
+    color: var(--good);
+  }
+
+  &.ft-callout--warn .ft-callout__icon {
+    color: var(--warn);
+  }
+
+  &.ft-callout--bad .ft-callout__icon {
+    color: var(--bad);
+  }
+
+  &.ft-callout__title {
+    color: var(--ink);
+    font-weight: 700;
+  }
+
+  &.ft-callout__body {
+    color: var(--ink);
+  }
+
+  /* Hand-built info notes (compliance, Me) read as the same plain note. */
+  &.bg-accent-soft.text-ink {
+    background: transparent;
+    box-shadow: inset 3px 0 0 var(--ink);
+    border-radius: 0;
+  }
+
+  /* Shell notices are ruled strips between two hairlines, never a tinted slab. */
+  &.ft-banner {
+    background: transparent;
+    border: 0;
+    border-block: 1px solid var(--line);
+    border-radius: 0;
+    color: var(--ink);
+    padding-inline: 0;
+  }
+
+  &.ft-banner--sample,
+  &.ft-banner--preview {
+    background: transparent;
+    color: var(--ink-2);
+  }
+
+  &.ft-banner--sample strong,
+  &.ft-banner--preview strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  &.ft-banner--storage {
+    background: transparent;
+    border-block-color: var(--warn);
+    box-shadow: inset 3px 0 0 var(--warn);
+    padding-inline: 14px 0;
+  }
+
+  &.ft-banner__action {
+    color: var(--ink);
+    font-weight: 600;
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-decoration-color: color-mix(in srgb, var(--ink) 45%, transparent);
+    text-underline-offset: 3px;
+  }
+
+  &.ft-banner__action:hover {
+    background: transparent;
+    color: var(--accent);
+    text-decoration-color: currentColor;
+  }
+
+  &.ft-banner__icon {
+    color: var(--ink);
+  }
+
+  /* ---------- Form fields ----------------------------------------------------------------------- */
+
+  &.ft-field__label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  &.ft-field__hint {
+    color: var(--ink-2);
+  }
+
+  &.ft-field__error {
+    font-weight: 600;
+  }
+
+  &.ft-input,
+  &.ft-select,
+  &.ft-textarea {
+    background: var(--paper);
+    border-color: var(--control-border);
+    border-radius: var(--r-sm);
+    box-shadow: none;
+    font-size: 14px;
+    transition: border-color 90ms linear;
+  }
+
+  &.ft-input:hover:not(:disabled),
+  &.ft-select:hover:not(:disabled),
+  &.ft-textarea:hover:not(:disabled) {
+    border-color: var(--ink);
+  }
+
+  /* Focus hugs the field: a square 2px accent ring over the border, no glow. */
+  &.ft-input:focus,
+  &.ft-select:focus,
+  &.ft-textarea:focus,
+  &.ft-input:focus-visible,
+  &.ft-select:focus-visible,
+  &.ft-textarea:focus-visible {
+    border-color: var(--focus);
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: -1px;
+    box-shadow: none;
+    border-radius: var(--r-sm);
+  }
+
+  /* A field with an error says so on the field too: a 2px status-red frame (the message under it says
+     what is wrong). */
+  &:is(.ft-input, .ft-select, .ft-textarea)[aria-invalid="true"],
+  &:is(.ft-input, .ft-select, .ft-textarea)[aria-invalid="true"]:hover:not(:disabled) {
+    border-color: var(--bad);
+    box-shadow: inset 0 0 0 1px var(--bad);
+  }
+
+  &.ft-input:disabled,
+  &.ft-select:disabled,
+  &.ft-textarea:disabled {
+    background: transparent;
+    color: var(--ink-3);
+    border-color: var(--line-strong);
+    border-style: dashed;
+  }
+
+  &.ft-input::placeholder,
+  &.ft-textarea::placeholder {
+    color: var(--ink-3);
+  }
+
+  &.ft-select__chevron,
+  &.ft-searchbox__icon {
+    color: var(--ink);
+  }
+
+  /* A tick is a chosen value: ink, like the other selections. */
+  &.ft-checkbox,
+  &:is(input[type="checkbox"], input[type="radio"]) {
+    accent-color: var(--ink);
+  }
+
+  /* Switch: a square track. Off is an empty outlined track with a gray knob on the left (nothing filled,
+     nothing heavy); on is the inverse-ink track with a paper knob on the right. */
+  &.ft-switch__track {
+    border-radius: 0;
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--control-border);
+    transition: background-color 120ms linear;
+  }
+
+  &.ft-switch__thumb {
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--control-border);
+  }
+
+  &.ft-switch:hover:not(:disabled) .ft-switch__track {
+    box-shadow: inset 0 0 0 1px var(--ink);
+  }
+
+  &.ft-switch--on:hover:not(:disabled) .ft-switch__track {
+    box-shadow: none;
+  }
+
+  /* Disabled: a dashed track, no fade. */
+  &.ft-switch:disabled {
+    opacity: 1;
+  }
+
+  &.ft-switch:disabled .ft-switch__track {
+    box-shadow: none;
+    border: 1px dashed var(--line-strong);
+  }
+
+  &.ft-switch:disabled .ft-switch__thumb {
+    background: var(--line-strong);
+  }
+
+  &.ft-switch--on .ft-switch__track {
+    background: var(--sleek-pick);
+    box-shadow: none;
+  }
+
+  &.ft-switch--on .ft-switch__thumb {
+    background: var(--sleek-pick-ink);
+  }
+
+  /* Segmented: square cells joined into one ruled strip; the chosen cell is inverse ink (a value, not an
+     action, so it never matches the primary button). The strip is as wide as its cells (in a column it
+     would otherwise stretch into an empty framed box), and each cell carries its own 1px ink frame,
+     overlapped by 1px on each side, so a strip that wraps at 375px or 150% text reads as a block of cells,
+     never as a frame with a hole in it. */
+  &.ft-segmented {
+    gap: 0;
+    padding: 1px 0 0 1px;
+    width: fit-content;
+    align-self: flex-start;
+    background: transparent;
+    border-radius: var(--r-sm);
+    box-shadow: none;
+  }
+
+  /* The rail's Viewing as strip spans the rail on purpose. */
+  &.ft-segmented.ft-viewas__roles {
+    width: auto;
+    align-self: auto;
+  }
+
+  /* 41px tall and wide: cells overlap their neighbors by 1px, so each keeps a full 40px target even when
+     the strip wraps into rows. */
+  &.ft-segmented__item {
+    flex: 1 0 auto;
+    min-width: 42px;
+    min-height: 41px;
+    margin: -1px 0 0 -1px;
+    border-radius: 0;
+    color: var(--ink);
+    font-weight: 600;
+    box-shadow: inset 0 0 0 1px var(--ink);
+  }
+
+  &.ft-segmented__item:first-child {
+    border-radius: var(--r-sm) 0 0 var(--r-sm);
+  }
+
+  &.ft-segmented__item:last-child {
+    border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  }
+
+  &.ft-segmented--md .ft-segmented__item {
+    padding-inline: 12px;
+    font-size: 13.5px;
+  }
+
+  &.ft-segmented__item:hover:not(:disabled) {
+    background: var(--sleek-hover);
+    color: var(--ink);
+  }
+
+  &.ft-segmented__item:active:not(:disabled) {
+    background: var(--sleek-press);
+  }
+
+  &.ft-segmented__item--on,
+  &.ft-segmented__item--on:hover:not(:disabled),
+  &.ft-segmented__item--on:active:not(:disabled) {
+    background: var(--sleek-pick);
+    color: var(--sleek-pick-ink);
+    box-shadow: inset 0 0 0 1px var(--sleek-pick);
+  }
+
+  &.ft-segmented__item .num {
+    color: inherit;
+    font-weight: 400;
+  }
+
+  &.ft-segmented__item:disabled {
+    opacity: 1;
+    color: var(--ink-3);
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+  }
+
+  /* Chips: 2px rectangles with a gray outline. Single choice: inverse ink, solid. Multi: a 1px ink frame
+     and an accent check (never a gray fill, which reads as disabled); off is the gray frame and no check,
+     so a row of filters that are all on by default stays quieter than the page's rules. */
+  &.ft-chip {
+    border-radius: var(--r-sm);
+    background: transparent;
+    border-color: var(--line-strong);
+    color: var(--ink);
+    font-weight: 600;
+    transition:
+      background-color 90ms linear,
+      border-color 90ms linear,
+      color 90ms linear;
+  }
+
+  &.ft-chip:hover:not(:disabled) {
+    border-color: var(--ink);
+    background: var(--sleek-hover);
+    color: var(--ink);
+  }
+
+  &.ft-chip:active:not(:disabled) {
+    background: var(--sleek-press);
+  }
+
+  &.ft-chip--on,
+  &.ft-chip--on:hover:not(:disabled) {
+    background: var(--sleek-pick);
+    border-color: var(--sleek-pick);
+    color: var(--sleek-pick-ink);
+  }
+
+  &.ft-chip--multi.ft-chip--on,
+  &.ft-chip--multi.ft-chip--on:hover:not(:disabled) {
+    background: transparent;
+    border-color: var(--ink);
+    box-shadow: none;
+    color: var(--ink);
+  }
+
+  &.ft-chip--multi.ft-chip--on:hover:not(:disabled) {
+    background: var(--sleek-hover);
+  }
+
+  &.ft-chip--multi.ft-chip--on svg {
+    color: var(--sleek-accent-line);
+  }
+
+  &.ft-chip:disabled {
+    opacity: 1;
+    color: var(--ink-3);
+    border-style: dashed;
+  }
+
+  /* A date picker's "Pick" is one more single choice in its row: chosen, it is inverse ink like the dates. */
+  &.ft-chip--pick.ft-chip--on,
+  &.ft-chip--multi.ft-chip--on:is(.ft-datechips *) {
+    background: var(--sleek-pick);
+    border-color: var(--sleek-pick);
+    box-shadow: none;
+    color: var(--sleek-pick-ink);
+  }
+
+  &.ft-chip--multi.ft-chip--on:is(.ft-datechips *) svg {
+    color: inherit;
+  }
+
+  /* Citations: a small square frame with the statute, like a footnote reference. */
+  &.ft-cite {
+    border-radius: 0;
+    border-color: var(--line-strong);
+    background: transparent;
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  &.ft-cite-link {
+    border-radius: 0;
+  }
+
+  &.ft-cite-link:hover .ft-cite {
+    border-color: var(--ink);
+    color: var(--accent);
+  }
+
+  /* Privacy blur: keep the blur (it hides the value) and make it a touch heavier. */
+  &.ft-input--blurred {
+    text-shadow: 0 0 10px var(--ink);
+  }
+
+  /* ---------- Tabs ------------------------------------------------------------------------------ */
+
+  /* The tab strip stands on a 1px ink rule across the whole content width. When the tab's first section
+     follows straight on (a Panel at the top of the tab), the two rules collapse into one: the strip loses
+     its own rule and margin and stands on the section's 2px rule, so a page never stacks a tab rule over
+     a section rule 20px below it. */
+  &.ft-tabs {
+    border-bottom-color: var(--ink);
+    gap: 0;
+    padding-inline: 0;
+  }
+
+  /* The strip's rule ends exactly at the content edges (the kit hangs it 4px out on both sides). Tab focus
+     rings are inset, so nothing clips. */
+  &.ft-tabs-wrap {
+    margin-inline: 0;
+  }
+
+  /* A tab strip that runs past a phone's edge scrolls without a bar (a scrollbar under the strip would hide
+     the active tab's accent bar). Instead of the kit's soft fade it ends on the same hard 1px ink edge as
+     the tables and the board, on the side that continues, so a cut tab reads as "more this way". The kit
+     keeps the active tab in view; scroll-padding keeps 16px of air beside it when the strip is scrolled to
+     it by focus or by script. */
+  &.ft-tabs-wrap {
+    scrollbar-width: none;
+    scroll-padding-inline: 16px;
+    mask-image: none !important;
+    -webkit-mask-image: none !important;
+    animation: ft-sleek-scroll-edge linear both;
+    animation-timeline: scroll(self inline);
+  }
+
+  &.ft-tabs-wrap::-webkit-scrollbar {
+    display: none;
+  }
+
+  &.ft-tabs-wrap:is(
+      :has(+ .ft-panel),
+      :has(+ * > .ft-panel:first-child),
+      :has(+ * > [role="radiogroup"]:first-child > .ft-scenario),
+      :has(+ * > :first-child > .ft-panel:first-child),
+      :has(+ * > :first-child > :first-child > .ft-panel:first-child)
+    ) {
+    margin-bottom: 0;
+  }
+
+  &.ft-tabs:is(
+      .ft-tabs-wrap:has(+ .ft-panel) *,
+      .ft-tabs-wrap:has(+ * > .ft-panel:first-child) *,
+      .ft-tabs-wrap:has(+ * > [role="radiogroup"]:first-child > .ft-scenario) *,
+      .ft-tabs-wrap:has(+ * > :first-child > .ft-panel:first-child) *,
+      .ft-tabs-wrap:has(+ * > :first-child > :first-child > .ft-panel:first-child) *
+    ) {
+    border-bottom-color: transparent;
+  }
+
+  /* Job page: the tab strip takes the full width (its rule with it) and the summary with the keys drops to
+     a meta line under it. */
+  &:is(div):has(> .ft-tabs-wrap + p) {
+    row-gap: 8px;
+  }
+
+  &.ft-tabs-wrap:has(+ p) {
+    flex: 1 1 100%;
+  }
+
+  &.ft-tab {
+    color: var(--ink);
+    font-size: 14px;
+    font-weight: 400;
+  }
+
+  &.ft-tab:hover {
+    color: var(--ink);
+    background: var(--sleek-hover);
+  }
+
+  &.ft-tab--active,
+  &.ft-tab--active:hover {
+    color: var(--ink);
+    font-weight: 600;
+    background: transparent;
+  }
+
+  /* The selected tab's bar is the accent, 4px, square, sitting on the ink rule. */
+  &.ft-tab__indicator {
+    background: var(--accent);
+    height: 4px;
+    inset-inline: 0;
+    border-radius: 0;
+  }
+
+  &.ft-tab__count {
+    background: transparent;
+    box-shadow: none;
+    color: var(--ink-2);
+    padding-inline: 0;
+    font-size: 12px;
+    font-weight: 400;
+  }
+
+  &.ft-tab--active .ft-tab__count {
+    background: transparent;
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  /* ---------- Tables ---------------------------------------------------------------------------- */
+
+  /* Heads: uppercase micro labels in ink on a 1px ink rule. */
+  &.ft-table__headrow {
+    border-bottom: 1px solid var(--ink);
+  }
+
+  &.ft-table__th {
+    background: transparent;
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    line-height: 1.2;
+    text-transform: uppercase;
+    vertical-align: bottom;
+  }
+
+  /* A register is set tight: 8px each side of a column (16px between columns), and a long column head
+     wraps to two lines instead of widening its column, so a seven-column table fits at 1280px. */
+  &:is(.ft-table__th, .ft-table__cell) {
+    padding-inline: 8px;
+  }
+
+  &.ft-table__th {
+    white-space: normal;
+    padding-block: 8px 6px;
+  }
+
+  &.ft-table__th:has(> .ft-table__sort) {
+    padding-block: 0;
+  }
+
+  /* A sort head is a 40px target even over a narrow figure column (a squeezed column at 150% text on a
+     phone); in a right-aligned column its words stay on the column's right edge. */
+  &.ft-table__sort {
+    min-height: 40px;
+    min-width: 40px;
+    height: auto;
+    align-items: flex-end;
+    padding-bottom: 6px;
+    text-align: inherit;
+  }
+
+  &:is(.ft-table__th.text-right > .ft-table__sort) {
+    justify-content: flex-end;
+  }
+
+  /* A status in a table cell keeps its words together: a short status ("On file", "Strong yes") is one
+     line, and a long one ("1099-NEC by Feb 1, 2027") takes at most 10rem and wraps to two, so a narrow
+     column can never break "On / file". A register that no longer fits scrolls with its hard ink edge
+     instead of squeezing. The marker sits on the first line's baseline. */
+  &.ft-badge:is(td *) {
+    width: max-content;
+    max-width: 10rem;
+    white-space: normal;
+    align-items: baseline;
+  }
+
+  &.ft-table__sort {
+    text-transform: inherit;
+    letter-spacing: inherit;
+  }
+
+  &.ft-table__sort:hover,
+  &.ft-table__sort--active {
+    color: var(--ink);
+  }
+
+  &.ft-table__sort:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  /* Sort carets show on the sorted column, and on the others only on hover or keyboard focus. */
+  &.ft-table__sort:not(.ft-table__sort--active) svg {
+    opacity: 0;
+  }
+
+  &.ft-table__sort:not(.ft-table__sort--active):is(:hover, :focus-visible) svg {
+    opacity: 1;
+  }
+
+  &.ft-table__row {
+    border-bottom-color: var(--line);
+  }
+
+  &.ft-table__row--link:hover {
+    background: var(--sleek-hover);
+  }
+
+  &.ft-table__rowlink {
+    font-weight: 600;
+  }
+
+  /* Inside a section the table runs flush with the rule: first and last columns lose their side padding
+     so names line up with the section label above. */
+  &:is(.ft-panel .ft-table) :is(.ft-table__th, .ft-table__cell):first-child {
+    padding-left: 0;
+  }
+
+  &:is(.ft-panel .ft-table) :is(.ft-table__th, .ft-table__cell):last-child {
+    padding-right: 0;
+  }
+
+  /* With the first column flush, a focus ring on its row link or sort head (2px, 2px off the box) would
+     fall outside the scroller and lose its left side. The scroller reaches 4px further left and is padded
+     back by as much, so the table does not move and the whole ring shows. */
+  &:is(.ft-panel .ft-table-wrap) {
+    margin-left: -5px;
+    padding-left: 4px;
+  }
+
+  /* Figure columns keep the text face (no code-like mono), tabular, at full ink. */
+  &.ft-table__cell.num,
+  &.ft-table__cell.text-right .num {
+    font-family: inherit;
+    letter-spacing: 0;
+  }
+
+  /* ---------- Overlays: sheet, modal, menu, palette, toast ---------------------------------------- */
+
+  &.ft-scrim {
+    background: var(--scrim);
+  }
+
+  &.ft-sheet,
+  &.ft-modal,
+  &.ft-menu,
+  &.ft-palette,
+  &.ft-toast {
+    background: var(--sleek-raised);
+    box-shadow: none;
+    border-radius: 0;
+  }
+
+  /* Floating layers are framed in ink instead of lifted by a shadow. A menu or the palette opens like a
+     section: a 2px ink rule on top of its 1px frame, so it sits on the page and never melts into the
+     text under it. */
+  &.ft-modal,
+  &.ft-menu,
+  &.ft-palette,
+  &.ft-toast {
+    border: 1px solid var(--ink);
+  }
+
+  &.ft-menu,
+  &.ft-palette {
+    border-top-width: 3px;
+  }
+
+  &.ft-sheet {
+    border-left: 1px solid var(--ink);
+  }
+
+  &.ft-sheet__head,
+  &.ft-modal__head,
+  &.ft-palette__head {
+    border-color: var(--line);
+  }
+
+  &.ft-sheet__head {
+    border-bottom: 2px solid var(--sleek-rule);
+  }
+
+  &.ft-sheet__foot,
+  &.ft-modal__foot {
+    background: var(--sleek-raised);
+    border-top: 1px solid var(--ink);
+    border-radius: 0;
+  }
+
+  &.ft-sheet__title,
+  &.ft-modal__title {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+  }
+
+  &.ft-sheet__subtitle {
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+
+  /* Sections inside a sheet (Offer: Base pay, Equity, Exempt check) open like a lighter echo of the
+     page's sections: a 1px ink rule and an uppercase micro label under it. */
+  &:is(.ft-sheet__body :is(section, fieldset) > :is(h3, h4, legend):first-child),
+  &:is(.ft-modal__body :is(section, fieldset) > :is(h3, h4):first-child) {
+    width: 100%;
+    padding-top: 9px;
+    border-top: 1px solid var(--ink);
+    font-size: 12px;
+    font-weight: var(--sleek-w-bold);
+    letter-spacing: 0.08em;
+    line-height: 1.25;
+    text-transform: uppercase;
+  }
+
+  /* ...also when the label shares its line with a control (Exempt check and its Exempt / Non-exempt
+     switch): the rule goes over the whole line. */
+  &:is(.ft-sheet__body section > div:first-child):has(> :is(h3, h4):first-child) {
+    padding-top: 9px;
+    border-top: 1px solid var(--ink);
+  }
+
+  &:is(.ft-sheet__body section > div:first-child > :is(h3, h4):first-child) {
+    font-size: 12px;
+    font-weight: var(--sleek-w-bold);
+    letter-spacing: 0.08em;
+    line-height: 1.25;
+    text-transform: uppercase;
+  }
+
+  /* Pastel status boxes (an offer's exception reason, a hire's confirmation, milestone warnings) are notes:
+     a 3px rule in the status color on the left, ink words on the paper, no tinted box. */
+  &:is(div, section, p):is(.rounded-lg, .rounded-xl, .rounded-2xl):is(.bg-warn-soft, .bg-bad-soft, .bg-good-soft):not([class*="ft-"]) {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: inset 3px 0 0 var(--warn);
+    padding-inline: 14px 0;
+  }
+
+  &:is(div, section, p):is(.rounded-lg, .rounded-xl, .rounded-2xl).bg-bad-soft:not([class*="ft-"]) {
+    box-shadow: inset 3px 0 0 var(--bad);
+  }
+
+  &:is(div, section, p):is(.rounded-lg, .rounded-xl, .rounded-2xl).bg-good-soft:not([class*="ft-"]) {
+    box-shadow: inset 3px 0 0 var(--good);
+  }
+
+  /* Compliance: a rule that is still years away (25, 36, 50 employees) is not faded: its "Not yet"
+     marker and word already say so, and a fade took its ink-3 line under 4.5:1. */
+  &:is(article[id^="rule-"]).opacity-80 {
+    opacity: 1;
+  }
+
+  /* The steps of a sheet flow (Start fresh: Company, Headquarters, You) are a progress track like the
+     candidate stepper: a 2px gray bar over each upcoming step, a 4px ink bar and a check over a done one,
+     the 4px accent bar and a bold word over the current one. */
+  &:is(ol[aria-label="Progress"]):has(> li > .ft-badge) {
+    flex-wrap: nowrap;
+    gap: 2px;
+  }
+
+  &:is(ol[aria-label="Progress"] > li):has(> .ft-badge) {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  &.ft-badge:is(ol[aria-label="Progress"] > li > *) {
+    display: flex;
+    width: 100%;
+    min-height: 32px;
+    align-items: flex-start;
+    padding: 8px 0 0;
+    gap: 6px;
+    color: var(--ink-2);
+    font-size: 13px;
+    font-weight: var(--sleek-w-regular);
+    box-shadow: inset 0 2px 0 var(--line-strong);
+  }
+
+  &.ft-badge:is(ol[aria-label="Progress"] > li > *)::before {
+    display: none;
+  }
+
+  &.ft-badge--good:is(ol[aria-label="Progress"] > li > *) {
+    color: var(--ink);
+    box-shadow: inset 0 4px 0 var(--ink);
+  }
+
+  &.ft-badge--good:is(ol[aria-label="Progress"] > li > *) > svg {
+    display: block;
+    margin-top: 2px;
+  }
+
+  &.ft-badge--accent:is(ol[aria-label="Progress"] > li > *) {
+    color: var(--ink);
+    font-weight: var(--sleek-w-bold);
+    box-shadow: inset 0 4px 0 var(--accent);
+  }
+
+  &.ft-sheet__close,
+  &.ft-modal__close {
+    border-radius: var(--r-sm);
+  }
+
+  &.ft-menu__divider {
+    background: var(--line);
+  }
+
+  &.ft-menuitem {
+    border-radius: 0;
+    color: var(--ink);
+    font-size: 14px;
+  }
+
+  &.ft-menuitem:hover:not(:disabled) {
+    background: var(--sleek-hover);
+  }
+
+  &.ft-menuitem:active:not(:disabled) {
+    background: var(--sleek-press);
+  }
+
+  &.ft-menuitem:focus-visible {
+    outline-offset: -2px;
+    background: var(--sleek-hover);
+  }
+
+  &.ft-menuitem--danger {
+    color: var(--bad);
+  }
+
+  &.ft-menuitem--danger:hover:not(:disabled) {
+    background: var(--sleek-hover);
+  }
+
+  &.ft-palette__input {
+    font-size: 16px;
+  }
+
+  /* The palette's field is the whole head: focus shows as a 2px accent rule under it. */
+  &.ft-palette__input:focus-visible {
+    outline: none;
+  }
+
+  &.ft-palette__head:focus-within {
+    box-shadow: inset 0 -2px 0 var(--focus);
+  }
+
+  &.ft-palette__item {
+    border-radius: 0;
+  }
+
+  &.ft-palette__item:hover {
+    background: var(--sleek-hover);
+  }
+
+  /* The palette's current row is marked like the current nav item: the 4px accent bar and a bold name, on
+     the plain hover tint (no blue wash). */
+  &.ft-palette__item--active,
+  &.ft-palette__item--active:hover {
+    background: color-mix(in srgb, var(--ink) 6%, transparent);
+    box-shadow: inset 4px 0 0 var(--accent);
+  }
+
+  &:is(.ft-palette__item--active > span > span:first-child) {
+    font-weight: var(--sleek-w-bold);
+  }
+
+  &:is(.ft-palette__item--active > svg:last-child) {
+    color: var(--ink);
+  }
+
+  &.ft-palette__icon {
+    color: var(--ink-2);
+  }
+
+  /* "No matches" sits flush left at the rows' inset, in ink-2, like every other empty state. */
+  &:is(.ft-palette__list > li.text-center) {
+    padding-block: 12px;
+    color: var(--ink-2);
+    text-align: left;
+  }
+
+  /* A toast is inverse ink: unmistakable over any page without a shadow. Undo is a paper-framed button,
+     the key caps are inverted, the close button is a 40px square. */
+  &.ft-toast {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--paper);
+  }
+
+  &.ft-toast__text {
+    font-weight: 400;
+    color: var(--paper);
+  }
+
+  &.ft-toast__icon,
+  &:is(.ft-toast *):is(.text-ink-3, .text-ink-2) {
+    color: var(--paper);
+  }
+
+  &.ft-toast--good .ft-toast__icon {
+    color: color-mix(in srgb, var(--good) 45%, var(--paper));
+  }
+
+  &.ft-toast--bad .ft-toast__icon {
+    color: color-mix(in srgb, var(--bad) 45%, var(--paper));
+  }
+
+  &.ft-toast .ft-toast__action {
+    min-height: 40px;
+    color: var(--paper);
+    font-weight: 600;
+    border-radius: var(--r-sm);
+    box-shadow: inset 0 0 0 1px var(--paper);
+  }
+
+  &.ft-toast .ft-toast__action:hover {
+    background: color-mix(in srgb, var(--paper) 16%, transparent);
+  }
+
+  &.ft-toast .ft-toast__action:active {
+    background: var(--paper);
+    color: var(--ink);
+  }
+
+  &.ft-kbd:is(.ft-toast *) {
+    background: transparent;
+    border-color: color-mix(in srgb, var(--paper) 60%, transparent);
+    color: var(--paper);
+  }
+
+  &.ft-toast__dismiss {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--r-sm);
+    color: var(--paper);
+  }
+
+  &.ft-toast__dismiss:hover {
+    background: color-mix(in srgb, var(--paper) 16%, transparent);
+    color: var(--paper);
+  }
+
+  /* The toast's link to where the change landed ('Review in Training'): paper words with a paper
+     underline, firmed to 2px when pointed at. Without this the page's ink link color drew it in the
+     toast's own ink, a blank line. */
+  &.ft-toast .ft-toast__link,
+  &.ft-toast .ft-toast__link:hover {
+    color: var(--paper);
+    text-decoration-line: underline;
+    text-decoration-color: color-mix(in srgb, var(--paper) 60%, transparent);
+  }
+
+  &.ft-toast .ft-toast__link:hover {
+    text-decoration-color: var(--paper);
+    text-decoration-thickness: 2px;
+  }
+
+  /* Focus inside the inverse toast: a paper ring (the accent would vanish on the ink). */
+  &:is(.ft-toast *):focus-visible {
+    outline-color: var(--paper);
+  }
+
+  /* ---------- Charts and the tally -------------------------------------------------------------- */
+
+  /* Charts are drawn in ink: the accent is for action, so a chart's lead series (which reads the accent)
+     is ink here, the plan line a dashed ink-2, and areas carry no fill. */
+  &.ft-chart {
+    --accent: var(--ink);
+    --cat-2: var(--ink-2);
+  }
+
+  /* The threshold dot plot (compliance ruler) and the band meters read the accent too: ink here. */
+  &:has(> figure[role="img"] > .relative.mx-4),
+  &.ft-private--block,
+  &.ft-private:has(> [role="img"]) {
+    --accent: var(--ink);
+  }
+
+  &:is(.ft-chart--step path[opacity="0.1"]) {
+    display: none;
+  }
+
+  &:is(.ft-chart--step path[stroke-dasharray]) {
+    stroke-width: 1.5px;
+    stroke-dasharray: 4 3;
+    stroke-linecap: butt;
+  }
+
+  /* Threshold numbers sit just past the plot's right end, centered on their line like the marks of a
+     ruler, so a plan line that ends above or on a threshold never runs into its number. */
+  &.ft-chart__reflabel {
+    fill: var(--ink);
+    font-weight: 700;
+    font-stretch: var(--sleek-figure-stretch);
+    text-anchor: start;
+    transform: translate(3px, 9px);
+  }
+
+  /* "Show the numbers" is a disclosure: an ink chevron (right when closed, down when open) and
+     underlined words, like the other expanders. */
+  &:is(.ft-chart__data > summary) {
+    gap: 8px;
+    color: var(--ink);
+    font-weight: 600;
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-decoration-color: color-mix(in srgb, var(--ink) 55%, transparent);
+    text-underline-offset: 3px;
+  }
+
+  &:is(.ft-chart__data > summary):hover {
+    color: var(--ink);
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 2px;
+  }
+
+  &:is(.ft-chart__data > summary)::before {
+    content: "";
+    flex: none;
+    width: 7px;
+    height: 7px;
+    margin-right: 2px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
+  }
+
+  &:is(.ft-chart__data[open] > summary)::before {
+    transform: translateY(-2px) rotate(45deg);
+  }
+
+  &.ft-chart__today {
+    fill: var(--ink);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  &.ft-chart__tip {
+    background: var(--sleek-raised);
+    border: 1px solid var(--ink);
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  &.ft-chart__track {
+    border-radius: 0;
+  }
+
+  &.ft-chart__bar {
+    border-radius: 0;
+  }
+
+  &.ft-chart--segments .ft-chart__bar,
+  &.ft-chart--segments .ft-chart__bar:first-child,
+  &.ft-chart--segments .ft-chart__bar:last-child {
+    border-radius: 0;
+  }
+
+  &.ft-chart__legend span[class*="rounded"] {
+    border-radius: 0;
+  }
+
+  /* The rail's tally (sleek/decor.tsx): straight 2px ink strokes, butt-ended. */
+  &.ft-sleektally__mark {
+    stroke-linecap: butt;
+  }
+
+  &.ft-sleektally__mark--on {
+    stroke: var(--ink);
+  }
+
+  &.ft-sleektally__mark--incoming {
+    stroke: var(--ink);
+    stroke-dasharray: 3 2;
+  }
+
+  &.ft-sleektally__mark--off {
+    stroke: color-mix(in srgb, var(--ink) 18%, transparent);
+  }
+
+  /* The scale under the strokes: a 1px ink baseline, a short gray tick per seat, a long ink tick at every
+     fifth; the ticks at 5, 15 and 20 (where the law changes) also reach up through the rule. */
+  &.ft-sleektally__rule {
+    stroke: var(--ink);
+  }
+
+  &.ft-sleektally__tick {
+    stroke: var(--line-strong);
+  }
+
+  &.ft-sleektally__tick--major {
+    stroke: var(--ink);
+  }
+
+  &.ft-sleektally__scale {
+    fill: var(--ink-2);
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  &.ft-sleektally__scale--rule {
+    fill: var(--ink);
+    font-weight: 800;
+  }
+
+  /* ---------- Shell: rail, header ------------------------------------------------------------- */
+
+  &.ft-rail {
+    background: var(--paper);
+    border-right: 1px solid var(--ink);
+  }
+
+  &.ft-rail--sheet {
+    background: var(--sleek-raised);
+  }
+
+  &.ft-brand {
+    border-radius: 0;
+  }
+
+  &.ft-brand:hover .ft-brand__name {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  &.ft-brand__mark {
+    border-radius: 0;
+    background: var(--ink);
+    color: var(--paper);
+  }
+
+  &.ft-brand__name {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+  }
+
+  &.ft-brand__meta {
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+
+  /* The headcount is the brand: a big semi-condensed figure on a 2px rule, then the tally. */
+  &.ft-headcount {
+    border-radius: 0;
+    border-top: 2px solid var(--sleek-rule);
+    border-bottom: 1px solid var(--line);
+    padding: 10px 4px 12px;
+  }
+
+  &:is(a).ft-headcount:hover {
+    background: var(--sleek-hover);
+  }
+
+  &.ft-headcount__value {
+    font-size: 48px;
+    font-weight: 700;
+    font-stretch: var(--sleek-figure-stretch);
+    letter-spacing: -0.02em;
+    line-height: 0.85;
+  }
+
+  &.ft-headcount__label {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink);
+  }
+
+  &.ft-headcount__incoming {
+    color: var(--ink-2);
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
+  &.ft-headcount__meter {
+    margin-top: 12px;
+  }
+
+  /* Nav: words only, 40px rows, flush left. The current page is marked like the current tab: a 4px accent
+     bar on its edge and the word in bold, on the paper (a solid slab would outshout every page). */
+  &.ft-nav ul {
+    gap: 0;
+  }
+
+  &.ft-navitem {
+    height: 40px;
+    border-radius: 0;
+    padding-inline: 14px 10px;
+    color: var(--ink);
+    font-size: 15px;
+    font-weight: 400;
+    transition:
+      background-color 90ms linear,
+      color 90ms linear;
+  }
+
+  /* Pointed at, a nav item previews the place mark: a 4px gray bar in the active bar's slot. */
+  &.ft-navitem:hover {
+    background: var(--sleek-hover);
+    color: var(--ink);
+    box-shadow: inset 4px 0 0 var(--line-strong);
+  }
+
+  &.ft-navitem:active {
+    background: var(--sleek-press);
+  }
+
+  &.ft-navitem--active,
+  &.ft-navitem--active:hover {
+    background: transparent;
+    color: var(--ink);
+    font-weight: 700;
+    box-shadow: inset 4px 0 0 var(--accent);
+  }
+
+  &.ft-navitem--active:hover {
+    background: var(--sleek-hover);
+  }
+
+  &.ft-navitem__icon {
+    display: none;
+  }
+
+  /* Viewing as: a ruled section at the foot of the rail, not a card. */
+  &.ft-viewas {
+    background: transparent;
+    border: 0;
+    border-top: 2px solid var(--sleek-rule);
+    border-radius: 0;
+    padding: 8px 4px 2px;
+  }
+
+  &.ft-viewas__title {
+    color: var(--ink);
+  }
+
+  &.ft-viewas__roles {
+    border-radius: var(--r-sm);
+  }
+
+  &.ft-rail__note {
+    color: var(--ink-2);
+    font-size: 13px;
+  }
+
+  &.ft-topbar {
+    background: var(--paper);
+    border-bottom: 1px solid var(--ink);
+  }
+
+  &.ft-topbar__count {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  /* The header's search is a button drawn as a ruled field: words on a 1px ink baseline, no box. Pointed
+     at, the rule thickens to 2px. */
+  &.ft-search {
+    background: transparent;
+    border-width: 0 0 1px;
+    border-color: var(--ink);
+    border-radius: 0;
+    padding-inline: 2px 0;
+    color: var(--ink-2);
+    font-size: 14px;
+    transition: box-shadow 90ms linear;
+  }
+
+  &.ft-search:hover {
+    border-color: var(--ink);
+    box-shadow: inset 0 -1px 0 var(--ink);
+    color: var(--ink);
+  }
+
+  &.ft-search .ft-kbd {
+    min-width: 0;
+    border-color: var(--line-strong);
+  }
+
+  &.ft-search > svg {
+    color: var(--ink);
+  }
+
+  &.ft-header {
+    margin-bottom: 20px;
+  }
+
+  /* Backup status: a square marker and the words, no chip. It goes to Settings, Data, so it is underlined
+     like any link; the hit area stays 44px tall (2.75rem, level with the icon buttons and New). */
+  &.ft-backup {
+    height: 2.75rem;
+    border-radius: 0;
+    background: transparent;
+    color: var(--ink);
+    box-shadow: none;
+    padding-inline: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-decoration-color: color-mix(in srgb, var(--ink) 55%, transparent);
+    text-underline-offset: 3px;
+  }
+
+  &.ft-backup:hover {
+    color: var(--ink);
+    background: var(--sleek-hover);
+    box-shadow: none;
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 2px;
+  }
+
+  /* Backup status is a square marker and a word (green when fresh, amber when stale). */
+  &.ft-backup svg {
+    display: none;
+  }
+
+  &.ft-backup::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    background: var(--good);
+    flex: none;
+  }
+
+  &.ft-backup--stale,
+  &.ft-backup--stale:hover {
+    color: var(--ink);
+  }
+
+  &.ft-backup--stale::before {
+    background: var(--warn);
+  }
+
+  &.ft-newmenu {
+    padding-inline: 14px;
+  }
+
+  /* ---------- Page columns (Home, candidate, person) ------------------------------------------ */
+
+  /* Main and side columns on one shared gutter (48px); in two-column layouts a 1px rule runs down the
+     middle of it (drawn by the side column, below), so the side column's edge lines up page to page. */
+  &.ft-split {
+    column-gap: var(--sleek-gutter);
+  }
+
+  &.ft-split__side {
+    position: relative;
+    align-self: stretch;
+  }
+
+  &.ft-split__side::before {
+    content: "";
+    display: none;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--sleek-gutter) / -2);
+    width: 1px;
+    background: var(--line);
+  }
+
+  /* ---------- Inbox (Home) ------------------------------------------------------------------- */
+
+  /* Group heads (Overdue, This week, Coming up): uppercase micro labels with their count. */
+  &:is(h3).uppercase.tracking-wide {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--ink);
+  }
+
+  /* Rows are tight (9px above, 8px below): a one-line title and its meta line make a row of about 60px. */
+  &.ft-inboxrow {
+    position: relative;
+    padding-block: 9px 8px;
+  }
+
+  /* Overdue legal rows carry a square red bar that hangs in the gutter to the left of the section, so
+     every row's title, meta line and verb share one left edge with the section label ("start with the
+     red rows" still reads at a glance). */
+  &.ft-inboxrow--bad {
+    padding-left: 0;
+  }
+
+  &.ft-inboxrow--bad::before {
+    top: 1px;
+    bottom: 1px;
+    left: -8px;
+    width: 4px;
+    border-radius: 0;
+    background: var(--bad);
+  }
+
+  &:is(.ft-inboxrow > :is(button[aria-expanded], p)) {
+    border-radius: 0;
+  }
+
+  /* Row titles: 15px, the one size up from body, so a row reads title first. */
+  &:is(.ft-inboxrow > :is(button[aria-expanded], p) > span):first-child,
+  &:is(.ft-inboxrow > p) {
+    font-size: 15px;
+    line-height: 1.3;
+  }
+
+  /* The title (it opens the row's details) is a 40px button that keeps the row's rhythm: 9px of padding
+     above and below its line, taken back by negative margins, so its box reaches the row's top rule and
+     overlaps the meta line under it (painted after it, so the meta words and the row's buttons stay on
+     top). It sits exactly on the column: no hanging margin, and its focus ring hugs the title words, so
+     the ring stays inside the column instead of running past its edge. Pointed at, the title underlines. */
+  &:is(.ft-inboxrow > button[aria-expanded]) {
+    width: 100%;
+    min-height: 40px;
+    margin: -9px 0 -9px;
+    padding: 9px 0;
+  }
+
+  &:is(.ft-inboxrow > button[aria-expanded]):hover {
+    background: transparent;
+  }
+
+  &:is(.ft-inboxrow > button[aria-expanded]):hover > span:first-child {
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+
+  &:is(.ft-inboxrow > button[aria-expanded]):focus-visible {
+    outline: none;
+  }
+
+  &:is(.ft-inboxrow > button[aria-expanded]):focus-visible > span:first-child {
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  &:is(.ft-inboxrow > button[aria-expanded]) > svg {
+    color: var(--ink);
+  }
+
+  /* The meta line is one line of colored words, set apart by space (no rules, no pipes): a square marker
+     leads each status word. */
+  &.ft-badge:is(.ft-inboxrow *) {
+    font-size: 13px;
+    min-height: 18px;
+  }
+
+  &:is(.ft-inboxrow > div:last-child > div:first-child) {
+    flex: 1 1 10rem;
+    min-width: 0;
+    column-gap: 14px;
+    row-gap: 2px;
+  }
+
+  /* The meta words hold nothing to click, so the title button's 40px box reaches through them (and
+     through the empty part of the row's lower line); the row's buttons take clicks as usual. */
+  &:is(.ft-inboxrow:has(> button[aria-expanded]) > div:last-child),
+  &:is(.ft-inboxrow:has(> button[aria-expanded]) > div:last-child > div:first-child) {
+    pointer-events: none;
+  }
+
+  &:is(.ft-inboxrow:has(> button[aria-expanded]) > div:last-child > div:last-child) {
+    pointer-events: auto;
+  }
+
+  /* Narrow lists: the actions keep their place at the end of the meta line (the meta words wrap first),
+     so a row does not grow a third line for its buttons. */
+  &:is(.ft-inboxrow > div:last-child > div:last-child) {
+    flex: none;
+  }
+
+  /* The row's primary verb is a 40px outlined button, not a 48px form button. */
+  &[data-inbox-primary] {
+    min-height: 40px;
+    padding-inline: 12px;
+    font-size: 14px;
+  }
+
+  &:is(a)[data-inbox-primary] {
+    height: 40px;
+  }
+
+  /* The row's quiet controls (snooze, more, open) are frameless 40px squares that tint and take an ink
+     frame when pointed at. */
+  &:is(.ft-inboxrow > div:last-child > div:last-child > :is(a, button)):not(.ft-btn),
+  &:is(.ft-inboxrow > div:last-child > div:last-child button):is(.ft-btn--ghost, [aria-haspopup]):not([data-inbox-primary]) {
+    height: 40px;
+    min-height: 40px;
+    min-width: 40px;
+    padding-inline: 0;
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    color: var(--ink);
+  }
+
+  &:is(.ft-inboxrow > div:last-child > div:last-child > :is(a, button)):not(.ft-btn):hover,
+  &:is(.ft-inboxrow > div:last-child > div:last-child button):is(.ft-btn--ghost, [aria-haspopup]):not([data-inbox-primary]):hover {
+    background: var(--sleek-hover);
+    border-color: var(--ink);
+  }
+
+  &:is(.ft-inboxrow > div:last-child > div:last-child button):is(.ft-btn--ghost, [aria-haspopup]):not([data-inbox-primary]):active {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--paper);
+  }
+
+  /* "Cannot snooze" (a due legal deadline): the row already says Legal deadline, and the open row says
+     why it cannot wait, so the lock leaves the action column to give the title its width. Screen readers
+     still hear it. */
+  &:is(.ft-inboxrow > div:last-child > div:last-child > span):not(.ft-btn) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    min-width: 0;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* ---------- Pipeline board ------------------------------------------------------------------ */
+
+  /* Columns are lanes on the paper under a 2px rule; cards are rows divided by 1px rules. The board shows
+     a whole number of lanes (as many 200px lanes as fit, sharing the width exactly; --sleek-lanes is set
+     per board width at the end of this file), and scrolling snaps lane by lane, so the edge of the board
+     is always the edge of a lane, never "OFFE". While lanes run on past the edge, "Earlier stages" and
+     "More stages" buttons sit over the lanes (scroll buttons, at the end of this file), and the board ends
+     on a hard ink edge. */
+  &.ft-board {
+    --sleek-lanes: 1;
+    container: sleek-board / inline-size scroll-state;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: 4px;
+  }
+
+  /* The lane row is as wide as its lanes (so the board's end padding follows the last lane and the last
+     lane stops on the column's edge), and never narrower than the board. */
+  &:is(.ft-board > div) {
+    --sleek-count: 99;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  /* How many lanes the job has (up to 10), so a job with fewer lanes than fit shares the width among them. */
+  &:is(.ft-board > div):has(> .ft-board__col:nth-child(1):last-child) {
+    --sleek-count: 1;
+  }
+
+  &:is(.ft-board > div):has(> .ft-board__col:nth-child(2):last-child) {
+    --sleek-count: 2;
+  }
+
+  &:is(.ft-board > div):has(> .ft-board__col:nth-child(3):last-child) {
+    --sleek-count: 3;
+  }
+
+  &:is(.ft-board > div):has(> .ft-board__col:nth-child(4):last-child) {
+    --sleek-count: 4;
+  }
+
+  &:is(.ft-board > div):has(> .ft-board__col:nth-child(5):last-child) {
+    --sleek-count: 5;
+  }
+
+  &:is(.ft-board > div):has(> .ft-board__col:nth-child(6):last-child) {
+    --sleek-count: 6;
+  }
+
+  &:is(.ft-board > div):has(> .ft-board__col:nth-child(7):last-child) {
+    --sleek-count: 7;
+  }
+
+  &:is(.ft-board > div):has(> .ft-board__col:nth-child(8):last-child) {
+    --sleek-count: 8;
+  }
+
+  &:is(.ft-board > div):has(> .ft-board__col:nth-child(9):last-child) {
+    --sleek-count: 9;
+  }
+
+  &:is(.ft-board > div):has(> .ft-board__col:nth-child(10):last-child) {
+    --sleek-count: 10;
+  }
+
+
+  &.ft-board__col {
+    width: auto;
+    min-width: 0;
+    /* Exactly one share each (never grown by their words), so the row is exactly as wide as its lanes. */
+    --sleek-share: min(var(--sleek-lanes), var(--sleek-count));
+    flex: 0 0 calc((100cqw - (var(--sleek-share) - 1) * 0.75rem) / var(--sleek-share));
+    scroll-snap-align: start;
+    background: transparent;
+    border-radius: 0;
+    border-top: 2px solid var(--sleek-rule);
+    padding: 0;
+  }
+
+  &:is(.ft-board__col > header) {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--ink);
+  }
+
+  &:is(.ft-board__col > header > h3) {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  &:is(.ft-board__col > div) {
+    gap: 0;
+  }
+
+  &.ft-boardcard {
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    box-shadow: none;
+    padding: 10px 6px 10px 8px;
+    --tw-ring-shadow: 0 0 #0000;
+  }
+
+  &.ft-boardcard:hover {
+    background: var(--sleek-hover);
+  }
+
+  /* Keyboard focus on a card is an ink ring around it: the selected card already carries the accent bar
+     and the accent Advance, and a blue ring would make a third blue. */
+  &.ft-boardcard:focus-visible {
+    outline-color: var(--ink);
+  }
+
+  /* The selected card (A, R and S act on it): framed in 2px of ink on the paper, with the 4px accent bar
+     on its left edge that marks place everywhere. No tint: inside, the accent Advance is the one blue. */
+  &.ft-boardcard--selected,
+  &.ft-boardcard--selected:hover {
+    background: transparent;
+    box-shadow:
+      inset 4px 0 0 var(--accent),
+      inset 0 0 0 2px var(--ink);
+    padding: 12px 10px 12px 14px;
+  }
+
+  &.ft-boardcard--row {
+    border: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* The name link is a 40px box (10px of padding taken back by negative margins, reaching into the card's
+     padding and over the line under it), so its target is full height without making the card taller. */
+  &:is(.ft-boardcard a.block) {
+    position: relative;
+    margin-block: -10px;
+    padding-block: 10px;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  &:is(.ft-boardcard p.truncate) {
+    color: var(--ink-2);
+  }
+
+  /* The next step is the sentence that matters: bold ink. Its status (overdue) is already said once by
+     the marker line above, so the sentence is never colored too. */
+  &.ft-boardcard__next,
+  &.ft-boardcard__next--overdue {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  &.ft-boardcard__next svg {
+    display: none;
+  }
+
+  &:is(.ft-boardcard:not(.ft-boardcard--row) > div:last-child.grid) {
+    gap: 4px;
+    margin-top: 8px;
+  }
+
+  &:is(.ft-boardcard .ft-btn) {
+    min-height: 40px;
+    padding-inline: 8px;
+    font-size: 13px;
+  }
+
+  /* Cards that are not selected: one row, a split button and a ghost. Advance and a 40px chevron joined
+     edge to edge (the chevron opens Move to, so it reads as "Advance, or move elsewhere"), then Reject.
+     The words "Move to" stay in the button for screen readers. */
+  &:is(.ft-boardcard:not(.ft-boardcard--row, .ft-boardcard--selected) > div:last-child.grid) {
+    grid-template-columns: minmax(0, 1fr) 40px auto;
+    column-gap: 6px;
+  }
+
+  &:is(.ft-boardcard:not(.ft-boardcard--row, .ft-boardcard--selected) > div:last-child.grid) > .col-span-2 {
+    grid-column: auto;
+    border-radius: var(--r-sm) 0 0 var(--r-sm);
+  }
+
+  &:is(.ft-boardcard:not(.ft-boardcard--row, .ft-boardcard--selected) > div:last-child.grid > div) {
+    margin-left: -7px;
+  }
+
+  &.ft-btn:is(.ft-boardcard:not(.ft-boardcard--row, .ft-boardcard--selected) > div:last-child.grid > div *) {
+    justify-content: center;
+    font-size: 0;
+    gap: 0;
+    border-color: var(--ink);
+    border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  }
+
+  /* Every card but the selected one draws Advance as the ink outline: a column is not a wall of fills. */
+  &.ft-btn--primary:is(.ft-boardcard:not(.ft-boardcard--selected) *) {
+    background: transparent;
+    color: var(--ink);
+    border-color: var(--ink);
+  }
+
+  &.ft-btn--primary:is(.ft-boardcard:not(.ft-boardcard--selected) *):hover:not(:disabled) {
+    background: var(--sleek-hover);
+  }
+
+  &.ft-btn--primary:is(.ft-boardcard:not(.ft-boardcard--selected) *):active:not(:disabled) {
+    background: var(--ink);
+    color: var(--paper);
+  }
+
+  /* Reject is a quiet verb: underlined words with a 40px target, no frame, so the only framed thing on a
+     card is the Advance split button. Pointed at, the underline firms and the target tints. */
+  &.ft-btn--ghost:is(.ft-boardcard > div:last-child.grid > :last-child) {
+    border-color: transparent;
+    padding-inline: 6px;
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-decoration-color: color-mix(in srgb, var(--ink) 55%, transparent);
+    text-underline-offset: 3px;
+    font-weight: var(--sleek-w-medium);
+  }
+
+  &.ft-btn--ghost:is(.ft-boardcard > div:last-child.grid > :last-child):hover:not(:disabled) {
+    border-color: transparent;
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 2px;
+  }
+
+  &.ft-btn--ghost:is(.ft-boardcard > div:last-child.grid > :last-child):active:not(:disabled) {
+    border-color: var(--ink);
+  }
+
+  /* The selected card opens up: the accent Advance across the card with its A key, then Move to (a gray
+     frame) and Reject (with R, underlined words) on one row, flush with the card's content edge. */
+  &.ft-btn--secondary:is(.ft-boardcard--selected *) {
+    border-color: var(--line-strong);
+  }
+
+  &.ft-btn--secondary:is(.ft-boardcard--selected *):hover:not(:disabled) {
+    border-color: var(--ink);
+  }
+
+  &.ft-btn:is(.ft-boardcard--selected > div:last-child.grid > :not(.col-span-2), .ft-boardcard--selected > div:last-child.grid > div *) {
+    justify-content: flex-start;
+  }
+
+  /* "Move to…" keeps one line in a 200px lane: its ellipsis already says it opens a list. */
+  &.ft-btn__icon--right:is(.ft-boardcard--selected > div:last-child.grid > div *) {
+    display: none;
+  }
+
+  /* A and R act only on the selected card, so their key caps show only there. */
+  &:is(.ft-boardcard:not(.ft-boardcard--selected) :is(.ft-kbd, span:has(> .ft-kbd))) {
+    display: none;
+  }
+
+  /* ---------- Candidate stage stepper ---------------------------------------------------------- */
+
+  /* A progress track, not a toolbar: one strip of segments with 2px gaps, no button frames. Every stage
+     stands under a bar: upcoming stages a 2px gray bar, done stages a 4px ink bar with a check, the
+     current stage the 4px accent bar over its name in bold (the same "you are here" mark as the nav and
+     the tabs, never a filled cell that could pass for the primary button), and Hired (taken from the
+     offer, not here) a dashed bar. Stages you can move to tint when pointed at. */
+  /* A pipeline with many custom stages may still wrap on a wide page: a 10px row gap then keeps each
+     bar with the name under it, never reading as an underline of the row above. (On a phone the track
+     turns vertical, at the end of this file.) */
+  &.ft-stepper {
+    gap: 10px 2px;
+  }
+
+  &:is(.ft-stepper > li) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  &.ft-stepper__step {
+    width: 100%;
+    height: auto;
+    min-height: 44px;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    padding: 6px 8px 0;
+    justify-content: flex-start;
+    background: transparent;
+    box-shadow: inset 0 2px 0 var(--line-strong);
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 400;
+    text-align: left;
+  }
+
+  /* A stage you can move to is underlined words, as every unframed control is here, so the track reads as
+     something to press and not only as progress (the current stage and Hired are not buttons: no line). */
+  &.ft-stepper__step:not(:disabled) {
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-decoration-color: color-mix(in srgb, var(--ink) 45%, transparent);
+    text-underline-offset: 3px;
+  }
+
+  &.ft-stepper__step:hover:not(:disabled) {
+    background: var(--sleek-hover);
+    color: var(--ink);
+    text-decoration: underline;
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+  }
+
+  &.ft-stepper__step--done,
+  &.ft-stepper__step--done:hover:not(:disabled) {
+    background: transparent;
+    box-shadow: inset 0 4px 0 var(--ink);
+    color: var(--ink);
+  }
+
+  &.ft-stepper__step--done:hover:not(:disabled) {
+    background: var(--sleek-hover);
+  }
+
+  &.ft-stepper__step--current,
+  &.ft-stepper__step--current:hover:not(:disabled) {
+    background: transparent;
+    box-shadow: inset 0 4px 0 var(--accent);
+    color: var(--ink);
+    font-weight: var(--sleek-w-bold);
+    text-decoration: none;
+  }
+
+  &.ft-stepper__step:disabled:not(.ft-stepper__step--current, .ft-stepper__step--done) {
+    opacity: 1;
+    color: var(--ink-2);
+    box-shadow: none;
+    background-image: linear-gradient(to right, var(--line-strong) 50%, transparent 50%);
+    background-size: 6px 2px;
+    background-repeat: repeat-x;
+    background-position: 0 0;
+  }
+
+  /* ---------- Lists, marks and tiles ---------------------------------------------------------- */
+
+  /* Checklist marks: a square box, ink when done. */
+  &.ft-checkmark {
+    border-radius: 0;
+  }
+
+  &.ft-checkmark--open {
+    background: transparent;
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--ink);
+  }
+
+  &.ft-checkmark--done {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+
+  /* A checklist task's mark (it has a 2px frame in the screen) is an 18px square like a checkbox: done is a
+     solid ink box with a paper check, open an empty 1px ink box, not applicable a gray box with a dash. */
+  &.ft-checkmark.border-2 {
+    width: 18px;
+    height: 18px;
+    margin-top: 3px;
+    border-width: 1px;
+    box-shadow: none;
+  }
+
+  &.ft-checkmark--open.border-2 {
+    border-color: var(--ink);
+  }
+
+  &.ft-checkmark--na.border-2 {
+    border-color: var(--line-strong);
+    background: transparent;
+    color: var(--ink-3);
+  }
+
+  &:is(.ft-checkmark.border-2 > svg) {
+    width: 12px;
+    height: 12px;
+  }
+
+  &.ft-navlist__item {
+    border-radius: 0;
+  }
+
+  /* The interview kits list marks where you are like the rail does: the 4px accent bar and bold words on
+     the paper (not an inverse slab competing with the detail pane); other kits are regular weight. */
+  &.ft-navlist__item,
+  &:is(.ft-navlist__item *):is(.font-semibold, .font-bold) {
+    font-weight: var(--sleek-w-regular);
+  }
+
+  &.ft-navlist__item:hover {
+    background: var(--sleek-hover);
+    box-shadow: inset 4px 0 0 var(--line-strong);
+  }
+
+  &.ft-navlist__item--on,
+  &.ft-navlist__item--on:hover {
+    background: transparent;
+    color: var(--ink);
+    box-shadow: inset 4px 0 0 var(--accent);
+  }
+
+  &.ft-navlist__item--on:hover {
+    background: var(--sleek-hover);
+  }
+
+  &.ft-navlist__item--on,
+  &:is(.ft-navlist__item--on *):is(.font-semibold, .font-bold, span:first-child) {
+    font-weight: var(--sleek-w-bold);
+  }
+
+  /* Compliance calendar dates: unframed two-line type, the weekday in micro caps over the date in bold
+     (no box, no colored frame: the row's Overdue marker carries the status color, once). */
+  &.ft-datetile {
+    align-items: flex-start;
+    padding-block: 1px 0;
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+    color: var(--ink);
+    text-align: left;
+  }
+
+  &.ft-datetile__weekday {
+    color: var(--ink-2);
+    font-size: 12px;
+    font-weight: var(--sleek-w-semi);
+    letter-spacing: 0.08em;
+    line-height: 1.25;
+  }
+
+  &.ft-datetile__day {
+    color: var(--ink);
+    font-size: 15px;
+    font-weight: var(--sleek-w-bold);
+    line-height: 1.3;
+  }
+
+  /* People, Time off calendar: days on the paper, no tinted cells. A weekend or a day outside the month
+     sets its date in ink-3; a holiday is its name in bold; who is out is ink words with a 3px bar in its
+     status color (green approved, ink for leave, dashed amber pending). Today is the date in inverse ink;
+     the chosen day keeps the accent outline. */
+  &:is(table[role="grid"] td[role="gridcell"]) {
+    background: transparent;
+    opacity: 1;
+  }
+
+  &:is(table[role="grid"] td[role="gridcell"]):hover {
+    background: var(--sleek-hover);
+  }
+
+  /* The chosen day's accent frame is drawn inside the cell (an inset shadow, not the kit's outline), so
+     keyboard focus can add the look's own ring 2px outside it: in light the two would otherwise be the
+     same blue line and focus arriving in the grid would not show. */
+  &:is(table[role="grid"] td[role="gridcell"][aria-selected="true"]) {
+    outline-color: transparent;
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+
+  /* Lifted so the next row's cells cannot paint over the ring's lower edge. */
+  &:is(table[role="grid"] td[role="gridcell"]):focus-visible {
+    position: relative;
+    z-index: 1;
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  &:is(table[role="grid"] td[role="gridcell"]:is(.bg-surface-3\/60, .opacity-55) span.num:first-child:not(.bg-accent)) {
+    color: var(--ink-3);
+    font-weight: var(--sleek-w-regular);
+  }
+
+  &:is(table[role="grid"] th) {
+    color: var(--ink);
+  }
+
+  &:is(table[role="grid"] td span.num.bg-accent) {
+    border-radius: 0;
+    background: var(--ink);
+    color: var(--paper);
+  }
+
+  &:is(table[role="grid"] td > div.text-accent-soft-ink) {
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: var(--sleek-w-bold);
+  }
+
+  &:is(table[role="grid"] td li):is(.bg-good-soft, .bg-surface-3) {
+    border-radius: 0;
+    background: transparent;
+    padding-left: 6px;
+    box-shadow: inset 3px 0 0 var(--good);
+    color: var(--ink);
+    font-size: 12px;
+  }
+
+  &:is(table[role="grid"] td li).bg-surface-3 {
+    box-shadow: inset 3px 0 0 var(--ink);
+  }
+
+  &:is(table[role="grid"] td li).border-dashed {
+    border: 0;
+    border-left: 3px dashed var(--warn);
+    border-radius: 0;
+    padding-left: 3px;
+    color: var(--ink);
+    font-size: 12px;
+  }
+
+  &:is(table[role="grid"] td span.num).bg-good-soft {
+    background: transparent;
+    box-shadow: inset 3px 0 0 var(--good);
+    border-radius: 0;
+  }
+
+  /* The legend says the same: gray date for a weekend, ink for a holiday, a dashed amber bar for pending. */
+  &:is(div:has(+ table[role="grid"]) span[aria-hidden].h-3.w-3) {
+    width: 8px;
+    height: 8px;
+    border-radius: 0;
+  }
+
+  &:is(div:has(+ table[role="grid"]) span[aria-hidden].h-3.w-3).bg-surface-3 {
+    background: var(--ink-3);
+  }
+
+  &:is(div:has(+ table[role="grid"]) span[aria-hidden].h-3.w-3).bg-accent-soft {
+    background: var(--ink);
+  }
+
+  &:is(div:has(+ table[role="grid"]) span[aria-hidden].h-3.w-3).border-dashed {
+    width: 3px;
+    height: 12px;
+    border-width: 0 0 0 3px;
+  }
+
+  /* Hand-built tables (cost breakdown, matrices, queues) read like the DataTable: open on the paper, no
+     gray head band, uppercase ink heads on an ink rule. */
+  &:is(div.border.border-line:has(> table)) {
+    border: 0;
+    border-radius: 0;
+  }
+
+  &:is(table:not(.ft-table) thead tr) {
+    background: transparent;
+    border-bottom: 1px solid var(--ink);
+  }
+
+  &:is(.ft-panel table:not(.ft-table, .ft-matrix) thead th) {
+    background: transparent;
+    color: var(--ink);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
+
+  /* ...and run flush with the section: first and last columns lose their side padding. */
+  &:is(.ft-panel table:not(.ft-table) tr > :first-child) {
+    padding-left: 0;
+  }
+
+  &:is(.ft-panel table:not(.ft-table) tr > :last-child) {
+    padding-right: 0;
+  }
+
+  &:is(table:not(.ft-table) tfoot tr, table:not(.ft-table) tbody tr[class*="bg-surface-2"]) {
+    background: transparent;
+  }
+
+  /* Debrief and training matrices: open tables on the paper (no frame), an ink rule under the head and
+     above the Overall row, names flush left. Their first column is sticky and carries its own edge, so the
+     scroller's hard ink edge is drawn on the right only. */
+  &:has(> table.ft-matrix) {
+    border: 0;
+    border-radius: 0;
+  }
+
+  &:is(div.overflow-x-auto):has(> table.ft-matrix) {
+    animation-name: ft-sleek-scroll-edge-end;
+  }
+
+  &:is(.ft-matrix thead tr) {
+    background: transparent;
+    border-bottom: 1px solid var(--ink);
+  }
+
+  /* Set like the DataTable: 8px each side of a column, names flush left. The attribute column is 132px,
+     like a ledger's term column. */
+  &:is(.ft-matrix tr > *) {
+    padding-inline: 8px;
+  }
+
+  &:is(.ft-matrix tr > :first-child) {
+    padding-left: 0;
+  }
+
+  &:is(.ft-matrix tr > :first-child).min-w-\[150px\] {
+    min-width: 132px;
+  }
+
+  &:is(.ft-matrix thead th:first-child) {
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
+
+  /* The interviewer columns are names, not labels: sentence case, the name at 600 on one line and the
+     interview under it in ink-2. Each column keeps at least 128px (the name's line never breaks), so a
+     matrix with many interviewers runs past the edge and scrolls with its hard ink edge instead of
+     squeezing every head into a tower of one-word lines. */
+  &:is(.ft-matrix thead th:not(:first-child)) {
+    min-width: 128px;
+    background: transparent;
+    color: var(--ink);
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: var(--sleek-w-semi);
+    line-height: 1.3;
+  }
+
+  &:is(.ft-matrix thead th:not(:first-child) > span:first-child) {
+    min-width: 112px;
+    white-space: nowrap;
+  }
+
+  &:is(.ft-matrix thead th:not(:first-child) > span + span) {
+    color: var(--ink-2);
+    font-weight: var(--sleek-w-regular);
+  }
+
+  /* A rating is one phrase ("Strong yes", "Missing"): it never breaks. */
+  &.ft-badge:is(.ft-matrix *) {
+    white-space: nowrap;
+    width: auto;
+    max-width: none;
+  }
+
+  &:is(.ft-matrix tbody tr:last-child):has(> th) {
+    background: transparent;
+    border-top: 1px solid var(--ink);
+  }
+
+  /* Short lists that lead each line with a pictogram (Coming up, Milestone history): ruled rows of
+     words; the line's own color (red for a deadline) still says what the glyph said. */
+  &:is(.ft-panel__body--padded > :is(ul, ol).flex-col):has(> li.flex.items-start > svg:first-child) {
+    gap: 0;
+  }
+
+  &:is(.ft-panel__body--padded > :is(ul, ol).flex-col > li.flex.items-start):has(> svg:first-child) {
+    padding-block: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  &:is(.ft-panel__body--padded > :is(ul, ol).flex-col > li.flex.items-start > svg:first-child) {
+    display: none;
+  }
+
+  /* This week and its Coming up: day rows of words, no pictogram per event (the Legal deadline tag says
+     what the red flag said). A holiday in Who's out loses its star the same way. */
+  &:is(.ft-panel li > :is(a, div).items-start > svg[data-icon]:first-child),
+  &:is(.ft-panel li.flex.items-center > svg[data-icon="star"]:first-child) {
+    display: none;
+  }
+
+  /* People cost on Home: three figures as a ruled three-column table. Columns size to their words, so
+     "With hires and offers" stays on one line; labels on top, figures right-aligned on one baseline. */
+  &:is(.ft-panel__body--padded > div):has(> .ft-ministat:nth-child(3):last-child > .ft-ministat__value > .ft-private) {
+    grid-template-columns: repeat(3, auto);
+    justify-content: space-between;
+    column-gap: 16px;
+    padding-bottom: 10px;
+    border-top-color: var(--ink);
+    border-bottom: 1px solid var(--line);
+  }
+
+  &.ft-ministat:is(:is(.ft-panel__body--padded > div):has(> .ft-ministat:nth-child(3):last-child > .ft-ministat__value > .ft-private) > *) {
+    align-items: flex-end;
+    text-align: right;
+  }
+
+  &.ft-ministat__label:is(:is(.ft-panel__body--padded > div):has(> .ft-ministat:nth-child(3):last-child > .ft-ministat__value > .ft-private) *) {
+    white-space: nowrap;
+  }
+
+  /* Debrief and training matrices: the sticky first column stays opaque with a 1px rule on its right (in
+     the boundary gray, so the columns that slide under it while scrolling have a clear edge). */
+  &.sticky:is(th, td):is(table *) {
+    background: var(--paper);
+    box-shadow: inset -1px 0 0 var(--line-strong);
+  }
+
+  &:is(tr):has(> th.sticky):is(.bg-surface-2\/60, .bg-surface-2\/40) {
+    background: transparent;
+  }
+
+  /* First twenty wall: a timetable of seats. Each seat is a 2px rule over its number, set as a big figure
+     (the monogram steps aside); dashed for someone starting soon, gray for alumni, dashed gray for a
+     planned or open seat. */
+  &.ft-seat {
+    background: transparent;
+    border: 0;
+    border-top: 2px solid var(--sleek-rule);
+    border-radius: 0;
+    box-shadow: none;
+    padding: 10px 4px 12px;
+  }
+
+  &:is(a).ft-seat:hover {
+    background: var(--sleek-hover);
+  }
+
+  &.ft-seat--incoming {
+    border-top-style: dashed;
+  }
+
+  &.ft-seat--alumni {
+    border-top-color: var(--line-strong);
+  }
+
+  &:is(.ft-seat--planned, .ft-seat--open) {
+    border-top: 2px dashed var(--line-strong);
+  }
+
+  &.ft-avatar:is(.ft-seat *) {
+    display: none;
+  }
+
+  &.ft-seat__num {
+    margin-top: 0;
+    font-family: inherit;
+    font-size: 30px;
+    font-weight: 700;
+    font-stretch: var(--sleek-figure-stretch);
+    line-height: 1;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+
+  &.ft-seat__num:is(.ft-seat--alumni *) {
+    color: var(--ink-3);
+  }
+
+  &.ft-seat__name {
+    margin-top: 6px;
+  }
+
+  &.ft-seat__pos {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-2);
+  }
+
+  &.ft-orgnode {
+    border-radius: 0;
+  }
+
+  /* Mini funnels (jobs list, hiring pulse) are data: ink bars, square. */
+  &:is([role="img"][aria-label^="Funnel"]) {
+    --accent: var(--ink);
+  }
+
+  &:is([role="img"][aria-label^="Funnel"] span[class*="rounded-t"]) {
+    border-radius: 0;
+  }
+
+  &.border-2:not(.rounded-full, .ft-board__col) {
+    border-width: 1px;
+  }
+
+  &.ft-scenario,
+  &.ft-cliff {
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  /* Org chart: an indented outline of plain rows. A row tints on hover, and the current row takes the
+     accent bar while the tree has focus. Planned seats keep a 1px dashed outline. */
+  &:is([role="tree"] [role="treeitem"] > div):is(.border-line, .bg-surface-2\/60) {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  &:is([role="tree"] [role="treeitem"] > div):is(.border-line, .bg-surface-2\/60):hover {
+    background: var(--sleek-hover);
+  }
+
+  &:is([role="tree"]:focus-within [role="treeitem"][aria-selected="true"] > div):not(.border-dashed) {
+    background: var(--accent-soft);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+
+  &:is([role="tree"] [role="treeitem"] > span).border-b-2.border-l-2 {
+    top: -0.375rem;
+    width: 1px;
+    height: calc(100% + 0.375rem);
+    border-width: 0 0 0 1px;
+    border-radius: 0;
+    border-color: var(--line-strong);
+    --sleek-guide-step: calc(-1 * min(22px, 4vw));
+  }
+
+  &:is([role="tree"] [role="treeitem"][aria-level="3"] > span).border-b-2.border-l-2 {
+    box-shadow: var(--sleek-guide-step) 0 0 var(--line-strong);
+  }
+
+  &:is([role="tree"] [role="treeitem"][aria-level="4"] > span).border-b-2.border-l-2 {
+    box-shadow:
+      var(--sleek-guide-step) 0 0 var(--line-strong),
+      calc(2 * var(--sleek-guide-step)) 0 0 var(--line-strong);
+  }
+
+  /* Option pool bar (comp equity): a part-to-whole ink ramp instead of three saturated chart hues. */
+  &.ft-poolbar__seg[data-seg="granted"] {
+    background: var(--ink) !important;
+  }
+
+  &.ft-poolbar__seg[data-seg="awaiting"] {
+    background: color-mix(in srgb, var(--ink) 55%, var(--paper)) !important;
+  }
+
+  &.ft-poolbar__seg[data-seg="reserved"] {
+    background: color-mix(in srgb, var(--ink) 25%, var(--paper)) !important;
+  }
+
+  &.ft-poolbar__seg[data-seg="available"] {
+    background: transparent !important;
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+
+  /* File picker (Settings, Data): the field has the control border, the button is the ink outline. */
+  &:is(input[type="file"]):is(.ft-field *) {
+    border-color: var(--control-border);
+    border-radius: var(--r-sm);
+  }
+
+  &:is(input[type="file"]):is(.ft-field *)::file-selector-button {
+    background: transparent;
+    border: 1px solid var(--ink);
+    border-radius: var(--r-sm);
+    color: var(--ink);
+    font-family: inherit;
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  &:is(input[type="file"]):is(.ft-field *):hover::file-selector-button {
+    background: var(--sleek-hover);
+  }
+
+  /* Dense, calm reading: lead paragraphs are UI text, not an article. The offer letter keeps its leading. */
+  &.leading-relaxed:not(.letter-preview) {
+    line-height: 1.5;
+  }
+
+  /* The offer letter preview is set in one face, the look's own (Archivo body, Archivo headings), not a
+     sans heading over a Times body. */
+  &.letter-preview {
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  &:is(.letter-preview :is(h1, h2)) {
+    font-family: var(--font-display);
+    letter-spacing: -0.005em;
+  }
+
+  /* Band meters (comp table, change sheet): the min and max labels sit centered under the band's own
+     edges (the band spans 11.5% to 88.5% of the track, the BandTrack's 15% overhang each side), not at
+     the track ends. */
+  &:is(.ft-private > span[role="img"] + span.justify-between) {
+    position: relative;
+    display: block;
+    height: 1.35em;
+    font-size: 12px;
+  }
+
+  &:is(.ft-private > span[role="img"] + span.justify-between > span) {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+
+  &:is(.ft-private > span[role="img"] + span.justify-between > span:first-child) {
+    left: calc(100% * 0.15 / 1.3);
+  }
+
+  &:is(.ft-private > span[role="img"] + span.justify-between > span:last-child) {
+    left: calc(100% * 1.15 / 1.3);
+  }
+
+  /* Destructive verbs that are not the dialog's own confirm (Remove a template, Reject a candidate,
+     Offboard): quiet red words with the underline of a text button and a 40px target; pointed at, a red
+     frame; pressed, solid red. Duplicate, beside them, is a quiet text button, so a row has one framed
+     choice (Edit). */
+  &.ft-btn:is(.ft-btn--secondary, .ft-btn--ghost, .ft-btn--quiet):has(> svg:is([data-icon="trash"], [data-icon="log-out"], [data-icon="x"])):not([aria-keyshortcuts], :disabled),
+  &.ft-btn--ghost[aria-label^="Duplicate "] {
+    border-color: transparent;
+    padding-inline: 8px;
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+
+  &.ft-btn:is(.ft-btn--secondary, .ft-btn--ghost, .ft-btn--quiet):has(> svg:is([data-icon="trash"], [data-icon="log-out"], [data-icon="x"])):not([aria-keyshortcuts], :disabled) {
+    color: var(--bad);
+    font-weight: var(--sleek-w-semi);
+    text-decoration-color: color-mix(in srgb, var(--bad) 60%, transparent);
+  }
+
+  &.ft-btn--ghost[aria-label^="Duplicate "] {
+    text-decoration-color: color-mix(in srgb, var(--ink) 55%, transparent);
+  }
+
+  &.ft-btn:is(.ft-btn--secondary, .ft-btn--ghost, .ft-btn--quiet):has(> svg:is([data-icon="trash"], [data-icon="log-out"], [data-icon="x"])):not([aria-keyshortcuts], :disabled):hover {
+    border-color: var(--bad);
+    background: transparent;
+    color: var(--bad);
+    text-decoration-color: currentColor;
+  }
+
+  &.ft-btn:is(.ft-btn--secondary, .ft-btn--ghost, .ft-btn--quiet):has(> svg:is([data-icon="trash"], [data-icon="log-out"], [data-icon="x"])):not([aria-keyshortcuts], :disabled):active {
+    border-color: var(--bad);
+    background: var(--bad);
+    color: var(--paper);
+  }
+
+  &.ft-btn--ghost[aria-label^="Duplicate "]:hover:not(:disabled) {
+    border-color: transparent;
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 2px;
+  }
+
+
+  /* Job page: the summary under the Board / List / Sweep tabs is a meta line. */
+  &:is(p):is(.ft-tabs-wrap + *) {
+    flex: 1 1 100%;
+    color: var(--ink-2);
+    font-size: 13px;
+  }
+
+  /* ---------- Hand-built boxes in the screens: cards, wells, previews ---------------------------- */
+
+  /* A bordered card inside a page (kit stages, leave cases, scorecard blocks, link cards, summaries) is a
+     sub-section here: no frame, no rounding, a 1px ink rule on top and the content flush with it. Scroll
+     boxes (document previews) keep a frame, below. Elements with a hook are styled by their own rules. */
+  &:is(div, li, section, a, form, details, fieldset, article):is(.rounded-lg, .rounded-xl, .rounded-2xl).border:is(.border-line, .border-line-strong):not([class*="ft-"], .overflow-auto, .overflow-x-auto, .overflow-y-auto, .border-dashed, .border-2, .inline-flex) {
+    border: 0;
+    border-top: 1px solid var(--ink);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    padding-inline: 0;
+  }
+
+  &:is(a, details):is(.rounded-lg, .rounded-xl, .rounded-2xl).border.border-line:not([class*="ft-"]):hover {
+    background: var(--sleek-hover);
+  }
+
+  /* A tinted well (a note, a summary tile, a quiet group of fields) is open on the paper under a 1px light
+     rule, content flush left: no gray boxes in this look. */
+  &:is(div, dl, section, p, form, details, ul):is(.rounded-lg, .rounded-xl, .rounded-2xl):is(.bg-surface-2, .bg-surface-2\/40, .bg-surface-2\/50, .bg-surface-2\/60):not([class*="ft-"], .overflow-auto, .overflow-x-auto, [class*=" h-"], [class^="h-"]) {
+    border: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    padding-inline: 0;
+  }
+
+  /* Document previews (the posting text, letters, exports) keep a frame: a square 1px rule on the paper,
+     since they are a page inside the page. */
+  &:is(div, pre, textarea, output):is(.overflow-auto, .overflow-y-auto):is(.bg-surface-2, .border-line):is(.rounded-lg, .rounded-xl):not([class*="ft-"]) {
+    background: transparent;
+    border: 1px solid var(--line-strong);
+    border-radius: 0;
+  }
+
+  /* Tables in a framed wrapper (job history) lose the frame like every other table. */
+  &:is(div):is(.rounded-lg, .rounded-xl).border.border-line:has(> .ft-table-wrap, > table, > div > table) {
+    border: 0;
+    border-radius: 0;
+  }
+
+  /* Lists drawn as a stack of gray wells (Settings, Hiring: the default pipeline; notice tasks) are ruled
+     lists: no fill, no gaps, a 1px rule under each row, the words flush left. A leading figure (the stage
+     number) gets a fixed 32px column in ink, so the names line up. */
+  &:is(ol, ul):has(> li:is(.rounded-lg, .rounded-xl):is(.bg-surface-2, .bg-surface-2\/60)) {
+    gap: 0;
+  }
+
+  &:is(li):is(.rounded-lg, .rounded-xl):is(.bg-surface-2, .bg-surface-2\/60):not([class*="ft-"]) {
+    background: transparent;
+    border-radius: 0;
+    border-bottom: 1px solid var(--line);
+    min-height: 40px;
+    padding: 9px 0 8px;
+    align-items: baseline;
+  }
+
+  &:is(li:is(.rounded-lg, .rounded-xl):is(.bg-surface-2, .bg-surface-2\/60) > .num:first-child) {
+    flex: none;
+    width: 32px;
+    margin-right: -12px;
+    color: var(--ink);
+    font-weight: var(--sleek-w-regular);
+  }
+
+  &:is(li:is(.rounded-lg, .rounded-xl):is(.bg-surface-2, .bg-surface-2\/60) > .num:first-child + span) {
+    font-weight: var(--sleek-w-bold);
+  }
+
+  &:is(li:is(.rounded-lg, .rounded-xl):is(.bg-surface-2, .bg-surface-2\/60) > .num:first-child + span + span) {
+    color: var(--ink-2);
+    font-size: 14px;
+  }
+
+  /* Comp, Levels and bands: the matrix is one ruled table, not a grid of framed cards. Cells are divided
+     by 1px rules; a band is a whole-cell button (no frame of its own) that tints when pointed at; an empty
+     cell is an underlined "Add band" that still fills the cell; "3 people" is a plain word. Level heads
+     shrink to their words so the matrix fits at 1280px. */
+  &:is(.ft-panel table:not(.ft-table, .ft-matrix) td):has(> button.rounded-lg:not([class*="decoration-accent"])) {
+    height: 1px;
+    padding: 0;
+    border-left: 1px solid var(--line);
+  }
+
+  &:is(.ft-panel table:not(.ft-table, .ft-matrix) td > button.rounded-lg:not([class*="decoration-accent"])) {
+    height: 100%;
+    min-height: 56px;
+    border: 0;
+    border-radius: 0;
+    padding: 10px 10px 12px;
+    background: transparent;
+  }
+
+  &:is(.ft-panel table:not(.ft-table, .ft-matrix) td > button.rounded-lg:not([class*="decoration-accent"])):hover {
+    background: var(--sleek-hover);
+  }
+
+  &:is(.ft-panel table:not(.ft-table, .ft-matrix) td > button.rounded-lg.border-dashed:not([class*="decoration-accent"])) {
+    align-items: flex-start;
+    justify-content: flex-start;
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: var(--sleek-w-medium);
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-decoration-color: color-mix(in srgb, var(--ink) 45%, transparent);
+    text-underline-offset: 3px;
+  }
+
+  &:is(.ft-panel table:not(.ft-table, .ft-matrix) td > button.rounded-lg.border-dashed:not([class*="decoration-accent"])):hover {
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 2px;
+  }
+
+  &:is(.ft-panel table:not(.ft-table, .ft-matrix) td > button.rounded-lg:not([class*="decoration-accent"])) :is(.text-ink-3, .text-ink-2) {
+    color: var(--ink-2);
+    font-size: 13px;
+  }
+
+  &:is(.ft-panel table:not(.ft-table, .ft-matrix) th):is(.min-w-\[150px\]) {
+    min-width: 0;
+  }
+
+  &:is(.ft-panel table:not(.ft-table, .ft-matrix) th.sticky):is(.min-w-\[150px\]) {
+    min-width: 128px;
+  }
+
+  /* Hand-built link chips and small buttons with a light frame (LinkedIn, GitHub, external links) are
+     ghosts: a 1px gray frame at 3:1, ink when pointed at. */
+  &:is(a, button).inline-flex.border.border-line:not([class*="ft-"]) {
+    border-color: var(--line-strong);
+    border-radius: var(--r-sm);
+    background: transparent;
+  }
+
+  &:is(a, button).inline-flex.border.border-line:not([class*="ft-"]):hover {
+    border-color: var(--ink);
+    background: var(--sleek-hover);
+  }
+
+  /* Upcoming cliffs: ruled rows in two columns, not cards. */
+  &.ft-cliff {
+    border: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 0;
+    background: transparent;
+    padding-inline: 0;
+  }
+
+  &.ft-cliff:hover {
+    background: var(--sleek-hover);
+  }
+
+  /* Where the name (or the employee number) sits right beside it, the monogram tile only repeats it:
+     every avatar followed by words is dropped (stacks of faces stay). */
+  &.ft-avatar:not(.ft-avatarstack *):has(+ :is(span, a, p, div, strong):not(:empty)) {
+    display: none;
+  }
+
+  /* Data drawn as plain bars (the hiring funnel, mini progress) is ink, never the action color. */
+  &.bg-accent.h-full:is([aria-hidden] > *, [aria-hidden="true"] > *) {
+    background: var(--ink);
+  }
+
+  &.bg-accent:is(.h-1, .h-1\.5, .h-2, .h-2\.5):not(.rounded-full) {
+    background: var(--ink);
+  }
+
+  /* Drill-down figures (hiring metrics): ink with an ink underline, not a blue one. The figure's words
+     sit flush with their label (the button's 8px of padding hangs into the gutter, the 40px target stays):
+     flush left under a summary label, flush right at the end of a funnel row or a figure column. */
+  &[class*="decoration-accent"] {
+    text-decoration-color: color-mix(in srgb, var(--ink) 55%, transparent);
+  }
+
+  &:is(button)[class*="decoration-accent"]:is(dd > :first-child) {
+    margin-left: -8px;
+  }
+
+  &:is(button)[class*="decoration-accent"]:is(li span.flex > :last-child, li.justify-between > :last-child, td.text-right > :last-child) {
+    margin-right: -8px;
+  }
+
+  /* The funnel's bars are square like every other data bar (the screen hard-codes a 4px end radius, which
+     also turned the smallest stages into round dots). */
+  &.rounded-r-\[4px\] {
+    border-radius: 0;
+  }
+
+  /* Org chart: a planned role is a dashed row with its words; the plus in a dashed circle goes. */
+  &:is(.ft-orgnode--planned > span[aria-hidden]):has(> svg[data-icon="plus"]) {
+    display: none;
+  }
+
+  /* Pipeline list view: each stage opens like a board lane, a 2px rule over an uppercase label. */
+  &:is(.ft-boardlist > * > h3) {
+    padding-top: 8px;
+    border-top: 2px solid var(--sleek-rule);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* ---------- Screens: smaller fixes ------------------------------------------------------------ */
+
+  /* Two-sided rows whose name is a 40px link (Cost and runway, Contractors): the amount sits on the name's
+     baseline, not at the top of the row. */
+  &:is(li.flex.items-start.justify-between):has(> span.min-w-0 > a.min-h-10:first-child) {
+    align-items: baseline;
+  }
+
+  /* This week (Home): Who's out and the agenda share one date column, 112px of bold ink-2 dates and the
+     entries 16px after it, so names and events start on one vertical; the agenda follows Who's out after
+     one 16px section step. (The 112px agenda column is set at the end of this file, where Tailwind's sm
+     breakpoint gives it two columns.) */
+  &:is(ul[aria-label^="Who is out"] > li) {
+    column-gap: 16px;
+  }
+
+  &:is(ul[aria-label^="Who is out"] > li > span.num:first-child),
+  &:is(section.sm\:grid-cols-\[120px_minmax\(0\,1fr\)\] > h3:first-child) {
+    width: 112px;
+    font-size: 13.5px;
+    font-weight: var(--sleek-w-bold);
+  }
+
+  &:is(ul[aria-label^="Who is out"] > li > span.num:first-child) {
+    color: var(--ink-2);
+  }
+
+  &:is(.ft-panel__body > div.mb-3):has(> ul[aria-label^="Who is out"]) {
+    margin-bottom: 0;
+  }
+
+  &:is(.ft-panel__body > div.mb-3:has(> ul[aria-label^="Who is out"]) + div.divide-y) {
+    border-top: 1px solid var(--line);
+  }
+
+  /* Candidate, Next step: "Emailed, Called, Left voicemail" are three ways to log one thing, so they are
+     drawn as ghosts (gray frames), not a wall of ink boxes. */
+  &.ft-btn--secondary:is(.ft-subpanel div:has(> .ft-btn--secondary:nth-child(3)) > *) {
+    border-color: var(--line-strong);
+  }
+
+  &.ft-btn--secondary:is(.ft-subpanel div:has(> .ft-btn--secondary:nth-child(3)) > *):hover:not(:disabled) {
+    border-color: var(--ink);
+  }
+
+  /* Person page head: the meta line (status, manager, place, tenure) is words set apart by space; the
+     pin and clock pictograms go. Employee numbers in ledgers use the text face, not mono. */
+  &:is(.ft-personhead span > svg:is([data-icon="pin"], [data-icon="clock"])),
+  &:is(.ft-pagehead__subtitle svg[data-icon="layers"]) {
+    display: none;
+  }
+
+  &.font-mono:is(.ft-dl__value *) {
+    font-family: inherit;
+    font-weight: 700;
+    font-stretch: var(--sleek-figure-stretch);
+  }
+
+  /* Comp table, band column: the caption sits beside the meter, not under it, so a two-line row is about
+     56px instead of 76px. */
+  &:is(.ft-table__cell > div):has(> .ft-private + span) {
+    display: grid;
+    grid-template-columns: 150px auto;
+    align-items: center;
+    column-gap: 12px;
+    width: auto;
+  }
+
+  &:is(.ft-table__cell > div > .ft-private + span) {
+    white-space: nowrap;
+    font-size: 13px;
+    color: var(--ink);
+  }
+
+  /* People, Directory: the two chip groups share one row on wide layouts, the two selects beside them or
+     straight below (in reading order, so Tab still goes search, chips, selects). */
+  &:is(div):has(> .ft-chips--multi + .ft-chips--multi) {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 24px;
+    row-gap: 10px;
+  }
+
+  &:is(div:has(> .ft-chips--multi + .ft-chips--multi) > :first-child) {
+    flex: 1 1 100%;
+  }
+
+  &:is(div:has(> .ft-chips--multi + .ft-chips--multi) > .ft-chips--multi) {
+    gap: 6px;
+  }
+
+  &:is(div:has(> .ft-chips--multi + .ft-chips--multi) > .ft-chips--multi + .ft-chips--multi + div) {
+    flex: 1 1 22rem;
+    max-width: 30rem;
+  }
+
+  &.ft-chip:is(div:has(> .ft-chips--multi + .ft-chips--multi) *) {
+    padding-inline: 10px;
+  }
+
+  /* Cost and runway: the four scenarios are ruled columns of a register (not tiles): one 2px ink rule
+     over all four, a 1px rule between columns, right-aligned figures. The chosen scenario is a chosen value:
+     its rule thickens to 6px of ink and its label turns bold; there is no tinted tile. */
+  &:is([role="radiogroup"]):has(> .ft-scenario) {
+    gap: 0;
+    border-top: 2px solid var(--sleek-rule);
+  }
+
+  &.ft-scenario {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 12px 14px 12px 0;
+  }
+
+  &.ft-scenario + .ft-scenario {
+    border-top: 1px solid var(--line);
+  }
+
+  &.ft-scenario:hover {
+    background: var(--sleek-hover);
+  }
+
+  &.ft-scenario--on,
+  &.ft-scenario--on:hover {
+    border-color: var(--line);
+    box-shadow: inset 0 4px 0 var(--sleek-pick);
+  }
+
+  &:is(.ft-scenario > span:first-child) {
+    color: var(--ink-2);
+    font-weight: 400;
+  }
+
+  &:is(.ft-scenario--on > span:first-child) {
+    color: var(--ink);
+    font-weight: 700;
+  }
+
+  &:is(.ft-scenario > span.font-display) {
+    font-stretch: var(--sleek-figure-stretch);
+    font-size: 30px;
+  }
+
+  &:is(.ft-scenario > span.font-display > span:last-child) {
+    font-stretch: 100%;
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--ink-2);
+  }
+
+  /* First twenty wall: a planned or open seat shows its seat number as a figure, like a filled seat, in
+     the quiet ink (no plus sign in a dashed circle). */
+  &:is(.ft-seat--planned > span[aria-hidden]:not(.ft-seat__pos)) {
+    display: none;
+  }
+
+  &.ft-seat__pos {
+    position: static;
+    order: -1;
+    font-family: inherit;
+    font-size: 30px;
+    font-weight: 700;
+    font-stretch: var(--sleek-figure-stretch);
+    line-height: 1;
+    letter-spacing: -0.01em;
+    color: var(--ink-3);
+  }
+
+  &.ft-seat__pos::before {
+    content: "#";
+  }
+
+  &.ft-seat--open {
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+
+  &:is(.ft-seat--open > span:not(.ft-seat__pos)) {
+    margin-top: 6px;
+    color: var(--ink-2);
+  }
+
+  /* ---------- Type floor ---------------------------------------------------------------------- */
+
+  /* Readable text is a product requirement: no figure or label under 12px, no sentence or secondary line
+     under 13px, and gray secondary text at regular weight (hierarchy comes from size and weight, never a
+     bold gray). Hook-styled elements set their own sizes above. */
+  &:is(.text-\[10px\], .text-\[10\.5px\], .text-\[11px\], .text-\[11\.5px\]):not([class*="ft-"]) {
+    font-size: 12px;
+  }
+
+  &:is(.text-\[11px\], .text-\[11\.5px\], .text-\[12px\], .text-\[12\.5px\]):is(.text-ink-3, .text-ink-2):is(p, span, div, li, dd, small):not([class*="ft-"]) {
+    font-size: 13px;
+  }
+
+  &.text-ink-3:is(.font-semibold, .font-bold):not([class*="ft-"], h1, h2, h3, h4, h5, th, button) {
+    font-weight: var(--sleek-w-regular);
+  }
+
+  /* Chart axes and band ends: 12px numerals. */
+  &:is(.ft-chart text):not(.ft-chart__reflabel, .ft-chart__today, .ft-chart__endlabel) {
+    font-size: 12px;
+  }
+
+  /* ---------- Display menu: look cards -------------------------------------------------------- */
+
+  &.ft-lookcard {
+    border-color: var(--line-strong);
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  &.ft-lookcard:hover {
+    border-color: var(--ink);
+  }
+
+  /* The chosen look is a chosen value: a 2px ink frame and an ink check. */
+  &.ft-lookcard--on,
+  &.ft-lookcard--on:hover {
+    border-color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--ink);
+  }
+
+  &.ft-lookcard__name {
+    font-weight: 700;
+  }
+
+  &.ft-lookcard__check {
+    color: var(--ink);
+  }
+
+  /* ---------- Server sync: header chip and banners (src/app/Header.tsx) ------------------------- */
+
+  &.ft-syncchip {
+    height: 2.75rem;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--line);
+    font-weight: 600;
+  }
+
+  &.ft-syncchip:hover {
+    background: var(--sleek-hover);
+    box-shadow: inset 0 0 0 1px var(--ink);
+  }
+
+  &.ft-syncchip--offline,
+  &.ft-syncchip--signed-out,
+  &.ft-syncchip--attention {
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+
+  /* Changes waiting: a small inverse-ink figure (it is also an ft-count, which would strip its box). */
+  &.ft-syncchip__count {
+    min-width: 18px;
+    height: 18px;
+    padding-inline: 4px;
+    border-radius: 0;
+    background: var(--ink);
+    color: var(--paper);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  &.ft-banner--sync:not(.ft-banner--storage) {
+    background: transparent;
+    color: var(--ink);
+  }
+
+  &.ft-banner--sync-rejected:not(.ft-banner--storage),
+  &.ft-banner--sync-paused:not(.ft-banner--storage),
+  &.ft-banner--sync-replaced:not(.ft-banner--storage) {
+    background: transparent;
+    border-block-color: var(--warn);
+    box-shadow: inset 3px 0 0 var(--warn);
+    padding-inline-start: 14px;
+  }
+
+  &.ft-banner__dismiss {
+    border-radius: var(--r-sm);
+    color: var(--ink);
+  }
+
+  &.ft-banner__dismiss:hover {
+    background: var(--sleek-hover);
+    color: var(--ink);
+  }
+}
+
+/* Wider than a phone: page titles step up to 30px and the inbox row puts its actions on the title row
+   (title and meta on the left, verb and overflow on the right), about 60px a row instead of 110px.
+   Outside the block above because the look contract checks a nested @container rule as a top-level one. */
+@container app (width >= 38.75rem) {
+  [data-look="sleek"] .ft-pagehead__title:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    font-size: 30px;
+  }
+
+  [data-look="sleek"] .ft-empno:where(.ft-personhead *):where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    font-size: 30px;
+  }
+}
+
+/* The column rule between a page's main and side columns shows only while they sit side by side: each
+   grid switches at its own width (Home 900px, candidate 840px, person 640px, measured on the page area). */
+@container (width >= 900px) {
+  [data-look="sleek"] .ft-split--home > .ft-split__side:where(:not(.ft-lookpreview:not([data-look="sleek"]) *))::before {
+    display: block;
+  }
+}
+
+@container (width >= 840px) {
+  [data-look="sleek"] .ft-split--candidate > .ft-split__side:where(:not(.ft-lookpreview:not([data-look="sleek"]) *))::before {
+    display: block;
+  }
+}
+
+@container (width >= 640px) {
+  [data-look="sleek"] .ft-split--person > .ft-split__side:where(:not(.ft-lookpreview:not([data-look="sleek"]) *))::before {
+    display: block;
+  }
+}
+
+/* The Inbox list is its own size container (@container on its wrapper). Wide enough, a row is a grid:
+   title, details and meta in the first column, the actions in the second, top-aligned. */
+@container (width >= 560px) {
+  [data-look="sleek"] .ft-inboxrow:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 16px;
+    align-items: start;
+  }
+
+  [data-look="sleek"] .ft-inboxrow > :is(button[aria-expanded], p):where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    grid-column: 1;
+    grid-row: 1;
+    width: 100%;
+    margin-inline: 0;
+  }
+
+  [data-look="sleek"] .ft-inboxrow > div[id]:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  [data-look="sleek"] .ft-inboxrow > div:last-child:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    display: contents;
+  }
+
+  [data-look="sleek"] .ft-inboxrow > div:last-child > div:first-child:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    grid-column: 1;
+    grid-row: 2;
+    margin-top: 2px;
+  }
+
+  [data-look="sleek"] .ft-inboxrow > div:last-child > div:last-child:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    flex-wrap: nowrap;
+    gap: 2px;
+    margin-left: 0;
+  }
+}
+
+/* The board shows a whole number of lanes: as many 200px lanes as its width holds (12px gaps), each
+   taking an equal share, so the scrolled-to edge is always a lane's edge. */
+@container sleek-board (width >= 412px) {
+  [data-look="sleek"] .ft-board__col:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    --sleek-lanes: 2;
+  }
+}
+
+@container sleek-board (width >= 624px) {
+  [data-look="sleek"] .ft-board__col:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    --sleek-lanes: 3;
+  }
+}
+
+@container sleek-board (width >= 836px) {
+  [data-look="sleek"] .ft-board__col:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    --sleek-lanes: 4;
+  }
+}
+
+@container sleek-board (width >= 1048px) {
+  [data-look="sleek"] .ft-board__col:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    --sleek-lanes: 5;
+  }
+}
+
+@container sleek-board (width >= 1260px) {
+  [data-look="sleek"] .ft-board__col:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    --sleek-lanes: 6;
+  }
+}
+
+@container sleek-board (width >= 1472px) {
+  [data-look="sleek"] .ft-board__col:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    --sleek-lanes: 7;
+  }
+}
+
+/* While lanes run on past the board's edge, two real controls sit over the lanes: "Earlier stages" flush
+   left and "More stages" flush right, 40px ghost buttons in uppercase micro type (CSS scroll buttons, so
+   they are focusable, work with Enter, Space and a click, and turn disabled at either end). Each press
+   scrolls about a board's width and the snap lands on a lane edge, so Offer and Hired are one click away
+   for a mouse user, not only by Shift and the wheel or the scrollbar under the longest lane. The row is
+   reserved whenever the board scrolls at all (an empty 48px line at the top of the lanes), so the lanes
+   never jump. The board is their anchor; the buttons are drawn as siblings of the scroller. */
+[data-look="sleek"] .ft-board:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+  anchor-name: --sleek-board;
+}
+
+@container sleek-board scroll-state(scrollable: x) {
+  [data-look="sleek"] .ft-board:where(:not(.ft-lookpreview:not([data-look="sleek"]) *))::before {
+    content: "";
+    position: sticky;
+    left: 0;
+    display: block;
+    width: 100%;
+    height: 48px;
+  }
+
+  [data-look="sleek"] .ft-board:where(:not(.ft-lookpreview:not([data-look="sleek"]) *))::scroll-button(left) {
+    content: "\2190  Earlier stages" / "Earlier stages";
+  }
+
+  [data-look="sleek"] .ft-board:where(:not(.ft-lookpreview:not([data-look="sleek"]) *))::scroll-button(right) {
+    content: "More stages \2192" / "More stages";
+  }
+}
+
+/* A board narrower than two lanes' worth of words (a phone at 150% text) shortens the labels. */
+@container sleek-board scroll-state(scrollable: x) and (width < 320px) {
+  [data-look="sleek"] .ft-board:where(:not(.ft-lookpreview:not([data-look="sleek"]) *))::scroll-button(left) {
+    content: "\2190  Earlier" / "Earlier stages";
+  }
+
+  [data-look="sleek"] .ft-board:where(:not(.ft-lookpreview:not([data-look="sleek"]) *))::scroll-button(right) {
+    content: "More \2192" / "More stages";
+  }
+}
+
+[data-look="sleek"] .ft-board:where(:not(.ft-lookpreview:not([data-look="sleek"]) *))::scroll-button(*) {
+  position: absolute;
+  position-anchor: --sleek-board;
+  top: anchor(top);
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: pre;
+  transition:
+    background-color 90ms linear,
+    border-color 90ms linear,
+    color 90ms linear;
+}
+
+[data-look="sleek"] .ft-board:where(:not(.ft-lookpreview:not([data-look="sleek"]) *))::scroll-button(left) {
+  left: calc(anchor(left) + 4px);
+}
+
+[data-look="sleek"] .ft-board:where(:not(.ft-lookpreview:not([data-look="sleek"]) *))::scroll-button(right) {
+  right: calc(anchor(right) + 4px);
+}
+
+[data-look="sleek"] .ft-board:where(:not(.ft-lookpreview:not([data-look="sleek"]) *))::scroll-button(*):hover:not(:disabled) {
+  background: linear-gradient(var(--sleek-hover), var(--sleek-hover)) var(--paper);
+  border-color: var(--ink);
+}
+
+[data-look="sleek"] .ft-board:where(:not(.ft-lookpreview:not([data-look="sleek"]) *))::scroll-button(*):active:not(:disabled) {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+[data-look="sleek"] .ft-board:where(:not(.ft-lookpreview:not([data-look="sleek"]) *))::scroll-button(*):focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 0;
+}
+
+[data-look="sleek"] .ft-board:where(:not(.ft-lookpreview:not([data-look="sleek"]) *))::scroll-button(*):disabled {
+  border-style: dashed;
+  color: var(--ink-3);
+  cursor: default;
+}
+
+/* The hard edge on a scroller that runs on (see the scroller rules): ink on the side that continues. */
+@keyframes ft-sleek-scroll-edge {
+  0% {
+    box-shadow:
+      inset -1px 0 0 var(--ink),
+      inset 0 0 0 transparent;
+  }
+
+  1%,
+  99% {
+    box-shadow:
+      inset -1px 0 0 var(--ink),
+      inset 1px 0 0 var(--ink);
+  }
+
+  100% {
+    box-shadow:
+      inset 0 0 0 transparent,
+      inset 1px 0 0 var(--ink);
+  }
+}
+
+/* ...and on the right only, for a scroller whose first column is sticky (the matrices). */
+@keyframes ft-sleek-scroll-edge-end {
+  0%,
+  99% {
+    box-shadow: inset -1px 0 0 var(--ink);
+  }
+
+  100% {
+    box-shadow: inset 0 0 0 transparent;
+  }
+}
+
+/* Cost and runway: once the four scenarios sit in a row, a 1px rule divides the columns instead of the
+   rows. */
+@container (width >= 440px) {
+  [data-look="sleek"] .ft-scenario:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    align-items: flex-end;
+    text-align: right;
+    padding-left: 14px;
+  }
+}
+
+@container (width >= 640px) {
+  [data-look="sleek"] .ft-scenario + .ft-scenario:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    border-top: 0;
+    border-left: 1px solid var(--line);
+  }
+}
+
+@container (440px <= width < 640px) {
+  [data-look="sleek"] .ft-scenario:nth-child(even):where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    border-left: 1px solid var(--line);
+  }
+
+  [data-look="sleek"] .ft-scenario:nth-child(2):where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    border-top: 0;
+  }
+}
+
+/* This week (Home), where Tailwind's sm gives the agenda its two columns: the date column is 112px, the
+   same as Who's out above it. */
+@container app (width >= 38.75rem) {
+  [data-look="sleek"] section.sm\:grid-cols-\[120px_minmax\(0\,1fr\)\]:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    grid-template-columns: 112px minmax(0, 1fr);
+  }
+}
+
+/* A phone (the app column under 24rem): a matrix's frozen first column takes at most 112px, so the
+   columns that scroll under it keep the rest of the width. */
+@container app (width < 24rem) {
+  [data-look="sleek"] .ft-matrix tr > :first-child:first-child:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    min-width: 0;
+    width: 112px;
+    max-width: 112px;
+  }
+}
+
+/* ...and narrower, where the agenda sets each date over its entries, Who's out does the same. */
+@container app (width < 38.75rem) {
+  [data-look="sleek"] ul[aria-label^="Who is out"] > li:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    flex-direction: column;
+    row-gap: 0;
+  }
+
+  [data-look="sleek"] ul[aria-label^="Who is out"] > li > span.num:first-child:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    width: auto;
+    padding-top: 8px;
+  }
+}
+
+/* Phone width (the app column under 30rem): the stage stepper is a vertical track, one stage a row, with
+   its bar on the left like the rail's place mark (a 2px gray bar upcoming, 4px ink and a check done, the
+   4px accent bar and bold current, Hired dashed), so a bar can only ever belong to the words beside it.
+   Rows are 40px targets with a 2px gap between bars. */
+@container app (width < 30rem) {
+  [data-look="sleek"] .ft-stepper:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 2px;
+  }
+
+  [data-look="sleek"] .ft-stepper__step:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    min-height: 40px;
+    padding: 0 10px 0 14px;
+    align-items: center;
+    box-shadow: inset 2px 0 0 var(--line-strong);
+  }
+
+  [data-look="sleek"] .ft-stepper__step--done:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)),
+  [data-look="sleek"] .ft-stepper__step--done:hover:not(:disabled):where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    box-shadow: inset 4px 0 0 var(--ink);
+  }
+
+  [data-look="sleek"] .ft-stepper__step--current:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)),
+  [data-look="sleek"] .ft-stepper__step--current:hover:not(:disabled):where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    box-shadow: inset 4px 0 0 var(--accent);
+  }
+
+  [data-look="sleek"] .ft-stepper__step:disabled:not(.ft-stepper__step--current, .ft-stepper__step--done):where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    background-image: linear-gradient(to bottom, var(--line-strong) 50%, transparent 50%);
+    background-size: 2px 6px;
+    background-repeat: repeat-y;
+  }
+}
+
+/* Under the desktop layout (the fixed top bar shows): the header row under the top bar (privacy blur,
+   Display, New) sits 8px under the bar instead of 16px and 12px above the page, so the page starts 16px
+   sooner on every phone screen. */
+@container app (width < 62.75rem) {
+  [data-look="sleek"] .ft-main:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    padding-top: calc(3.5rem + env(safe-area-inset-top, 0px) + 8px);
+  }
+
+  [data-look="sleek"] .ft-header:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    margin-bottom: 12px;
+  }
+}
+
+/* Phone width: the small segmented filters (Inbox: All, Waiting on you, Waiting on them) tighten their
+   padding so three options fit one row. Targets stay 40px tall; a longer label still wraps the row. */
+@container app (width < 30rem) {
+  [data-look="sleek"] .ft-segmented--sm .ft-segmented__item:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    gap: 4px;
+    padding-inline: 8px;
+    font-size: 12.5px;
+  }
+}
+
+/* Phone at large text (the app column under 30rem): the Tonight line keeps its warning icon beside "2
+   legal deadlines" as a hanging icon, and the rest of the sentence runs under the words, instead of the
+   icon standing alone on a line. */
+@container app (width < 30rem) {
+  [data-look="sleek"] .ft-pagehead__subtitle > span.inline-flex.flex-wrap:has(> svg:first-child):where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 6px;
+    align-items: start;
+  }
+
+  [data-look="sleek"] .ft-pagehead__subtitle > span.inline-flex.flex-wrap:has(> svg:first-child) > svg:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    margin-top: 3px;
+  }
+
+  [data-look="sleek"] .ft-pagehead__subtitle > span.inline-flex.flex-wrap:has(> svg:first-child) > span + span:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    grid-column: 2;
+  }
+}
+
+/* Under 20rem of app column (a phone at 150% text) the top bar gives the company name the room: the
+   tally mark and the "Seed, San Jose" line step aside before the name would truncate. */
+@container app (width < 20rem) {
+  [data-look="sleek"] .ft-topbar :is(.ft-brand__mark, .ft-brand__meta):where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    display: none;
+  }
+}
+
+/* A phone at 150% text (under 20rem of app column): an Inbox row's verb takes the whole line (a wide,
+   easy target) and its quiet controls (snooze, more, open) sit together on the line under it, so the open
+   chevron never wraps away from its siblings onto a line of its own. */
+@container app (width < 20rem) {
+  [data-look="sleek"] .ft-inboxrow > div:last-child > div:last-child:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    flex: 1 1 100%;
+    column-gap: 6px;
+  }
+
+  [data-look="sleek"] .ft-inboxrow > div:last-child > div:last-child > [data-inbox-primary]:where(:not(.ft-lookpreview:not([data-look="sleek"]) *)) {
+    flex: 1 0 100%;
+  }
+}

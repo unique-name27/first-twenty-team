@@ -1,0 +1,14 @@
+# First Twenty: run the database backup every night at 03:15 server time (EC2 instances default to UTC).
+# Check it: systemctl list-timers first-twenty-backup.timer
+
+[Unit]
+Description=Nightly First Twenty database backup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=10min
+# If the instance was off at 03:15, run the missed backup at the next boot.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

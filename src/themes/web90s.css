@@ -1,0 +1,2420 @@
+/*
+  Look: 1990s web. Fixed palette (never follows the OS dark setting or data-theme).
+  A 1997 company intranet built in Netscape Composer and FrontPage: #C0C0C0 chrome with white content
+  areas, Windows 95 bevels, Times New Roman, #0000EE underlined links, HTML tables with border="1" and
+  cellspacing, navy title bars, a visitor counter and "best viewed at 800x600" (decor in web90s/decor.tsx).
+  Period-true but never a parody that costs usability: every target stays 40px or taller, focus is a
+  2px dotted black ring, and status keeps its word.
+
+  Every selector is scoped to [data-look="web90s"] (docs/LOOKS.md): the page's <html> carries it, and so
+  does this look's preview card in the Display menu. Selectors never put a comma inside :is()/:not()
+  (the contract test splits selector lists on commas).
+
+  Preview guard: the Display menu shows every look's card inside this page, and CSS has no "nearest
+  data-look wins". So every rule for a hook that a preview card renders (panel, badge, button, table)
+  ends in :not(.ft-lookpreview:not([data-look="web90s"]) *). It keeps these rules out of the other
+  looks' cards, and its extra specificity keeps this card right when another look is the page's look.
+  Add it to any new rule for those hooks.
+
+  Contrast (computed, 4.5:1 or better): --ink #000, --ink-2 #222, --ink-3 #404040 on --paper #c0c0c0,
+  the darkest texture pixel #bcbcbc, --surface #fff, --surface-2 #e0e0e0 and --accent-soft #ccffff.
+  Links #0000ee 5.2:1 on the gray page, hover red #990000 4.7:1, visited #551a8b 6:1.
+*/
+
+[data-look="web90s"] {
+  /* Color */
+  --paper: #c0c0c0;
+  --surface: #ffffff;
+  --surface-2: #e0e0e0;
+  --surface-3: #c0c0c0;
+  --ink: #000000;
+  --ink-2: #222222;
+  --ink-3: #404040;
+  --line: #a0a0a0;
+  --line-strong: #808080;
+  /* Hand-built control borders: 3:1 on the gray page and 5.7:1 on white. */
+  --control-border: #666666;
+  /* Navy is the Windows 95 title bar and selection color; links use #0000ee (below). */
+  --accent: #000080;
+  --accent-hover: #0000a8;
+  --accent-ink: #ffffff;
+  /* Web-safe light cyan, the classic <td bgcolor="#CCFFFF">: navy on it 14.7:1. */
+  --accent-soft: #ccffff;
+  --accent-soft-ink: #000080;
+  --good: #005c00;
+  --good-soft: #ccffcc;
+  --warn: #7a3e00;
+  --warn-soft: #ffffcc;
+  --bad: #990000;
+  --bad-soft: #ffcccc;
+  --focus: #000000;
+  --scrim: rgb(0 0 0 / 0.18);
+  /* The 16-color VGA palette, reordered so every neighbor passes the dataviz validator on white
+     (CVD, normal vision, lightness, chroma and 3:1 contrast: all PASS). */
+  --cat-1: #0000ff;
+  --cat-2: #ff0000;
+  --cat-3: #ff00ff;
+  --cat-4: #008000;
+  --cat-5: #0080ff;
+  --cat-6: #808000;
+  color-scheme: light;
+
+  /* Type: Netscape's defaults. Times for pages and headings, Arial for small UI, Courier New for ids. */
+  --font-display: "Times New Roman", Times, serif;
+  --font-body: "Times New Roman", Times, serif;
+  --font-mono: "Courier New", Courier, monospace;
+  --font-size-base: 16px;
+  --line-height-base: 1.4;
+  --heading-weight: 700;
+  --heading-transform: none;
+  --heading-tracking: 0;
+  --eyebrow-transform: uppercase;
+  --eyebrow-tracking: 0.05em;
+
+  /* Shape and depth: square corners everywhere (avatars, badges and dots too), no blur shadows. */
+  --r-sm: 0px;
+  --r-md: 0px;
+  --r-lg: 0px;
+  --r-xl: 0px;
+  --r-2xl: 0px;
+  --r-pill: 0px;
+  --border-w: 1px;
+  --border-w-strong: 2px;
+  /* shadow-sm: a 1px hard edge; shadow-card: a raised Windows 95 bevel; shadow-pop: a window frame. */
+  --shadow-sm: 1px 1px 0 #0a0a0a;
+  --shadow: inset -1px -1px #808080, inset 1px 1px #ffffff;
+  --shadow-lg: inset -1px -1px #0a0a0a, inset 1px 1px #dfdfdf, inset -2px -2px #808080, inset 2px 2px #ffffff;
+  --focus-width: 2px;
+  --focus-style: dotted;
+  --focus-offset: 2px;
+
+  /* Look-private helpers (Windows 95 chrome). */
+  --w90-face: #c0c0c0;
+  --w90-light: #dfdfdf;
+  --w90-shade: #808080;
+  --w90-dark: #0a0a0a;
+  --w90-navy: #000080;
+  --w90-link: #0000ee;
+  --w90-visited: #551a8b;
+  --w90-hover: #990000;
+  --w90-tip: #ffffe1;
+  --w90-ui: Arial, Helvetica, sans-serif;
+  /* What sits behind a tab strip, so the active tab can join it (gray page; white inside panels). */
+  --w90-tabbg: #c0c0c0;
+  /* One dither cell. The app zooms the root for larger text (115-150%) and Windows display scaling
+     gives fractional device pixel ratios (1.25, 1.5, 1.75); either would smear a 2px tile into
+     diagonal hatching. The rules below set --w90-zoom and --w90-dpr so a cell always lands on whole
+     device pixels. Use --w90-tile for the size of every dither. */
+  --w90-px: calc(1px / (var(--w90-zoom, 1) * var(--w90-dpr, 1)));
+  --w90-tile: calc(var(--w90-px) * 2);
+  /* A 50% white dither: the face of a pressed Windows 95 toggle button. */
+  --w90-dither-img: conic-gradient(#ffffff 0 25%, #c0c0c0 0 50%, #ffffff 0 75%, #c0c0c0 0);
+  --w90-dither: var(--w90-dither-img) 0 0 / var(--w90-tile) var(--w90-tile);
+  /* One password-field asterisk, 1-bit, in a 9x14 cell: the privacy mask (see "Privacy mask"). */
+  --w90-star: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='14' viewBox='0 0 9 14' shape-rendering='crispEdges'%3E%3Cpath d='M4 3h1v7H4zM1 3h1v1H1zM7 3h1v1H7zM2 4h1v1H2zM6 4h1v1H6zM3 5h1v1H3zM5 5h1v1H5zM3 7h1v1H3zM5 7h1v1H5zM2 8h1v1H2zM6 8h1v1H6zM1 9h1v1H1zM7 9h1v1H7z' fill='black'/%3E%3C/svg%3E");
+}
+
+[data-look="web90s"][style*="zoom: 1.15"] {
+  --w90-zoom: 1.15;
+}
+
+[data-look="web90s"][style*="zoom: 1.3"] {
+  --w90-zoom: 1.3;
+}
+
+[data-look="web90s"][style*="zoom: 1.5"] {
+  --w90-zoom: 1.5;
+}
+
+/* Fractional device pixel ratios. Whole ratios (1, 2, 3) already land on device pixels. */
+@media (min-resolution: 1.2dppx) and (max-resolution: 1.3dppx) {
+  [data-look="web90s"] {
+    --w90-dpr: 1.25;
+  }
+}
+
+@media (min-resolution: 1.45dppx) and (max-resolution: 1.55dppx) {
+  [data-look="web90s"] {
+    --w90-dpr: 1.5;
+  }
+}
+
+@media (min-resolution: 1.7dppx) and (max-resolution: 1.8dppx) {
+  [data-look="web90s"] {
+    --w90-dpr: 1.75;
+  }
+}
+
+@media (min-resolution: 2.45dppx) and (max-resolution: 2.55dppx) {
+  [data-look="web90s"] {
+    --w90-dpr: 1.25;
+  }
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Page: gray chrome with a faint 1px dither, like a 1997 tiled background. Darkest pixel #bcbcbc.
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] body,
+.ft-lookpreview[data-look="web90s"] {
+  background-color: #c0c0c0;
+  background-image: conic-gradient(#bcbcbc 0 25%, #c4c4c4 0 50%, #bcbcbc 0 75%, #c4c4c4 0);
+  background-size: var(--w90-tile) var(--w90-tile);
+  -webkit-font-smoothing: auto;
+}
+
+[data-look="web90s"] ::selection {
+  background: #000080;
+  color: #ffffff;
+}
+
+[data-look="web90s"] .eyebrow {
+  font-family: var(--w90-ui);
+}
+
+[data-look="web90s"] hr {
+  height: 0;
+  border: 0;
+  border-top: 1px solid #808080;
+  border-bottom: 1px solid #ffffff;
+}
+
+/* Classic 16px scroll bars (dithered track, raised thumb, arrow boxes) on the page and on every inner
+   scroller: sheets, dialogs, the palette list, wide tables. Chrome ignores ::-webkit-scrollbar while
+   scrollbar-width or scrollbar-color is set, so the kit's thin setting is cleared first. Tab strips
+   keep a thin bar so they do not grow 16px on a phone. */
+[data-look="web90s"] .scroll-thin:not(.ft-tabs-wrap),
+[data-look="web90s"] .ft-sheet__body,
+[data-look="web90s"] .ft-modal__body,
+[data-look="web90s"] .ft-palette__list,
+[data-look="web90s"] .ft-table-wrap {
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+
+[data-look="web90s"] .ft-tabs-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: #808080 transparent;
+}
+
+[data-look="web90s"]::-webkit-scrollbar,
+[data-look="web90s"] .scroll-thin:not(.ft-tabs-wrap)::-webkit-scrollbar,
+[data-look="web90s"] .ft-sheet__body::-webkit-scrollbar,
+[data-look="web90s"] .ft-modal__body::-webkit-scrollbar,
+[data-look="web90s"] .ft-palette__list::-webkit-scrollbar,
+[data-look="web90s"] .ft-table-wrap::-webkit-scrollbar {
+  width: 16px;
+  height: 16px;
+}
+
+[data-look="web90s"]::-webkit-scrollbar-track,
+[data-look="web90s"] .scroll-thin:not(.ft-tabs-wrap)::-webkit-scrollbar-track,
+[data-look="web90s"] .ft-sheet__body::-webkit-scrollbar-track,
+[data-look="web90s"] .ft-modal__body::-webkit-scrollbar-track,
+[data-look="web90s"] .ft-palette__list::-webkit-scrollbar-track,
+[data-look="web90s"] .ft-table-wrap::-webkit-scrollbar-track {
+  background: var(--w90-dither);
+}
+
+[data-look="web90s"]::-webkit-scrollbar-thumb,
+[data-look="web90s"] .scroll-thin:not(.ft-tabs-wrap)::-webkit-scrollbar-thumb,
+[data-look="web90s"] .ft-sheet__body::-webkit-scrollbar-thumb,
+[data-look="web90s"] .ft-modal__body::-webkit-scrollbar-thumb,
+[data-look="web90s"] .ft-palette__list::-webkit-scrollbar-thumb,
+[data-look="web90s"] .ft-table-wrap::-webkit-scrollbar-thumb,
+[data-look="web90s"]::-webkit-scrollbar-button:single-button,
+[data-look="web90s"] .scroll-thin:not(.ft-tabs-wrap)::-webkit-scrollbar-button:single-button,
+[data-look="web90s"] .ft-sheet__body::-webkit-scrollbar-button:single-button,
+[data-look="web90s"] .ft-modal__body::-webkit-scrollbar-button:single-button,
+[data-look="web90s"] .ft-palette__list::-webkit-scrollbar-button:single-button,
+[data-look="web90s"] .ft-table-wrap::-webkit-scrollbar-button:single-button {
+  background-color: #c0c0c0;
+  border: 1px solid;
+  border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
+  box-shadow: inset 1px 1px #ffffff, inset -1px -1px #808080;
+}
+
+[data-look="web90s"]::-webkit-scrollbar-button:single-button,
+[data-look="web90s"] .scroll-thin:not(.ft-tabs-wrap)::-webkit-scrollbar-button:single-button,
+[data-look="web90s"] .ft-sheet__body::-webkit-scrollbar-button:single-button,
+[data-look="web90s"] .ft-modal__body::-webkit-scrollbar-button:single-button,
+[data-look="web90s"] .ft-palette__list::-webkit-scrollbar-button:single-button,
+[data-look="web90s"] .ft-table-wrap::-webkit-scrollbar-button:single-button {
+  display: block;
+  width: 16px;
+  height: 16px;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+[data-look="web90s"]::-webkit-scrollbar-button:single-button:vertical:decrement,
+[data-look="web90s"] .scroll-thin:not(.ft-tabs-wrap)::-webkit-scrollbar-button:single-button:vertical:decrement,
+[data-look="web90s"] .ft-sheet__body::-webkit-scrollbar-button:single-button:vertical:decrement,
+[data-look="web90s"] .ft-modal__body::-webkit-scrollbar-button:single-button:vertical:decrement,
+[data-look="web90s"] .ft-palette__list::-webkit-scrollbar-button:single-button:vertical:decrement,
+[data-look="web90s"] .ft-table-wrap::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4' viewBox='0 0 7 4' shape-rendering='crispEdges'%3E%3Cpath d='M3 0h1v1h1v1h1v1h1v1H0V3h1V2h1V1h1z' fill='black'/%3E%3C/svg%3E");
+}
+
+[data-look="web90s"]::-webkit-scrollbar-button:single-button:vertical:increment,
+[data-look="web90s"] .scroll-thin:not(.ft-tabs-wrap)::-webkit-scrollbar-button:single-button:vertical:increment,
+[data-look="web90s"] .ft-sheet__body::-webkit-scrollbar-button:single-button:vertical:increment,
+[data-look="web90s"] .ft-modal__body::-webkit-scrollbar-button:single-button:vertical:increment,
+[data-look="web90s"] .ft-palette__list::-webkit-scrollbar-button:single-button:vertical:increment,
+[data-look="web90s"] .ft-table-wrap::-webkit-scrollbar-button:single-button:vertical:increment {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4' viewBox='0 0 7 4' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h7v1H6v1H5v1H4v1H3V3H2V2H1V1H0z' fill='black'/%3E%3C/svg%3E");
+}
+
+[data-look="web90s"]::-webkit-scrollbar-button:single-button:horizontal:decrement,
+[data-look="web90s"] .scroll-thin:not(.ft-tabs-wrap)::-webkit-scrollbar-button:single-button:horizontal:decrement,
+[data-look="web90s"] .ft-sheet__body::-webkit-scrollbar-button:single-button:horizontal:decrement,
+[data-look="web90s"] .ft-modal__body::-webkit-scrollbar-button:single-button:horizontal:decrement,
+[data-look="web90s"] .ft-palette__list::-webkit-scrollbar-button:single-button:horizontal:decrement,
+[data-look="web90s"] .ft-table-wrap::-webkit-scrollbar-button:single-button:horizontal:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='7' viewBox='0 0 4 7' shape-rendering='crispEdges'%3E%3Cpath d='M0 3h1V2h1V1h1V0h1v7H3V6H2V5H1V4H0z' fill='black'/%3E%3C/svg%3E");
+}
+
+[data-look="web90s"]::-webkit-scrollbar-button:single-button:horizontal:increment,
+[data-look="web90s"] .scroll-thin:not(.ft-tabs-wrap)::-webkit-scrollbar-button:single-button:horizontal:increment,
+[data-look="web90s"] .ft-sheet__body::-webkit-scrollbar-button:single-button:horizontal:increment,
+[data-look="web90s"] .ft-modal__body::-webkit-scrollbar-button:single-button:horizontal:increment,
+[data-look="web90s"] .ft-palette__list::-webkit-scrollbar-button:single-button:horizontal:increment,
+[data-look="web90s"] .ft-table-wrap::-webkit-scrollbar-button:single-button:horizontal:increment {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='7' viewBox='0 0 4 7' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h1v1h1v1h1v1h1v1H3v1H2v1H1v1H0z' fill='black'/%3E%3C/svg%3E");
+}
+
+[data-look="web90s"]::-webkit-scrollbar-button:single-button:active,
+[data-look="web90s"] .scroll-thin:not(.ft-tabs-wrap)::-webkit-scrollbar-button:single-button:active,
+[data-look="web90s"] .ft-sheet__body::-webkit-scrollbar-button:single-button:active,
+[data-look="web90s"] .ft-modal__body::-webkit-scrollbar-button:single-button:active,
+[data-look="web90s"] .ft-palette__list::-webkit-scrollbar-button:single-button:active,
+[data-look="web90s"] .ft-table-wrap::-webkit-scrollbar-button:single-button:active {
+  border-color: #808080;
+  box-shadow: none;
+  background-position: calc(50% + 1px) calc(50% + 1px);
+}
+
+[data-look="web90s"]::-webkit-scrollbar-corner,
+[data-look="web90s"] .scroll-thin:not(.ft-tabs-wrap)::-webkit-scrollbar-corner,
+[data-look="web90s"] .ft-sheet__body::-webkit-scrollbar-corner,
+[data-look="web90s"] .ft-modal__body::-webkit-scrollbar-corner,
+[data-look="web90s"] .ft-palette__list::-webkit-scrollbar-corner,
+[data-look="web90s"] .ft-table-wrap::-webkit-scrollbar-corner {
+  background: #c0c0c0;
+}
+
+/* Square corners everywhere, also where a screen rounds through a variant utility (before:rounded-full,
+   first:rounded-[4px], rounded-t-[3px]) that the token remap cannot reach. Other looks' preview cards
+   and the one native radio group keep their own shapes. */
+[data-look="web90s"] body *:not(.ft-lookpreview):not(.ft-lookpreview *):not(input[type="radio"]),
+[data-look="web90s"] body *:not(.ft-lookpreview *)::before,
+[data-look="web90s"] body *:not(.ft-lookpreview *)::after {
+  border-radius: 0;
+}
+
+/* 1-bit icons: square caps, mitred joins, no anti-aliasing, a 2 screen pixel line at every size. */
+[data-look="web90s"] svg[viewBox="0 0 24 24"][stroke="currentColor"]:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  shape-rendering: crispEdges;
+  stroke-width: 2px;
+}
+
+[data-look="web90s"] svg[viewBox="0 0 24 24"][stroke="currentColor"] > path:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  vector-effect: non-scaling-stroke;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Links: blue and underlined, red on hover. External sources turn purple once visited.
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-link,
+[data-look="web90s"] a.text-accent,
+[data-look="web90s"] .ft-table__rowlink:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-pagehead__back,
+[data-look="web90s"] .ft-banner__action {
+  color: var(--w90-link);
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+[data-look="web90s"] .ft-link:hover,
+[data-look="web90s"] a.text-accent:hover,
+[data-look="web90s"] .ft-table__rowlink:hover:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-pagehead__back:hover,
+[data-look="web90s"] .ft-banner__action:hover {
+  color: var(--w90-hover);
+  background-color: transparent;
+}
+
+/* A row link wraps an avatar and a subtitle too: blue, underlined only while pointed at. */
+[data-look="web90s"] .ft-table__rowlink:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  text-decoration: none;
+}
+
+[data-look="web90s"] .ft-table__rowlink:hover:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  text-decoration: underline;
+}
+
+/* The name inside a row link takes the link blue (its subtitle keeps its gray). */
+[data-look="web90s"] .ft-table__rowlink .text-ink:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  color: inherit;
+}
+
+[data-look="web90s"] a[target="_blank"]:visited {
+  color: var(--w90-visited);
+}
+
+/* Accent text buttons in the page ("Show 6 more in Overdue") are links too. Title bars keep their
+   yellow treatment (below), and real controls keep their own looks. */
+[data-look="web90s"] .ft-main button.text-accent:not(.ft-panel__head *):not(.ft-btn):not(.ft-segmented__item):not(.ft-chip):not(.ft-tab):not(.ft-menuitem) {
+  color: var(--w90-link);
+  font-family: var(--font-body);
+  font-weight: 400;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+[data-look="web90s"] .ft-main button.text-accent:hover:not(.ft-panel__head *):not(.ft-btn):not(.ft-segmented__item):not(.ft-chip):not(.ft-tab):not(.ft-menuitem) {
+  color: var(--w90-hover);
+  background-color: transparent;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Buttons: Windows 95 bevels. Raised face, pressed when held; the primary is the default button
+   (black frame, bold); danger has a dark red frame and label. Ghost buttons read as text links.
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-btn:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-iconbtn,
+[data-look="web90s"] .ft-toast__action,
+[data-look="web90s"] .ft-toast__dismiss {
+  background: var(--w90-face);
+  color: #000000;
+  border: 1px solid;
+  border-color: #ffffff #0a0a0a #0a0a0a #ffffff;
+  box-shadow: inset 1px 1px #dfdfdf, inset -1px -1px #808080;
+  border-radius: 0;
+  font-family: var(--w90-ui);
+  font-weight: 400;
+  text-decoration: none;
+  transition: none;
+}
+
+[data-look="web90s"] .ft-btn:hover:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-iconbtn:hover,
+[data-look="web90s"] .ft-toast__action:hover,
+[data-look="web90s"] .ft-toast__dismiss:hover {
+  background: var(--w90-face);
+  color: #000000;
+}
+
+[data-look="web90s"] .ft-btn:active:not(:disabled):not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-iconbtn:active:not(:disabled),
+[data-look="web90s"] .ft-toast__action:active,
+[data-look="web90s"] .ft-toast__dismiss:active {
+  border-color: #0a0a0a #ffffff #ffffff #0a0a0a;
+  box-shadow: inset 1px 1px #808080, inset -1px -1px #dfdfdf;
+  padding-top: 1px;
+  padding-left: 1px;
+}
+
+[data-look="web90s"] .ft-btn.ft-btn--primary:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-iconbtn.ft-iconbtn--primary {
+  border-color: #0a0a0a;
+  box-shadow: inset 1px 1px #ffffff, inset -1px -1px #0a0a0a, inset 2px 2px #dfdfdf, inset -2px -2px #808080;
+  font-weight: 700;
+}
+
+[data-look="web90s"] .ft-btn.ft-btn--primary:active:not(:disabled):not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-iconbtn.ft-iconbtn--primary:active:not(:disabled) {
+  border-color: #0a0a0a;
+  box-shadow: inset 1px 1px #808080, inset -1px -1px #808080;
+}
+
+[data-look="web90s"] .ft-btn.ft-btn--danger:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-iconbtn.ft-iconbtn--danger {
+  color: var(--w90-hover);
+  border-color: var(--w90-hover);
+  box-shadow: inset 1px 1px #ffffff, inset -1px -1px #0a0a0a, inset 2px 2px #dfdfdf, inset -2px -2px #808080;
+  font-weight: 700;
+}
+
+[data-look="web90s"] .ft-btn.ft-btn--danger:hover:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-iconbtn.ft-iconbtn--danger:hover {
+  color: var(--w90-hover);
+  opacity: 1;
+}
+
+/* Ghost: a text link with its icon (secondary actions in rows and panels). */
+[data-look="web90s"] .ft-btn.ft-btn--ghost:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--w90-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-family: var(--font-body);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+[data-look="web90s"] .ft-btn.ft-btn--ghost:hover:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  background: transparent;
+  color: var(--w90-hover);
+}
+
+[data-look="web90s"] .ft-btn.ft-btn--ghost:active:not(:disabled):not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--w90-hover);
+}
+
+/* The icon beside a link label is a black GIF, never link colored (the Inbox snooze shows only the
+   icon below 860px). The label keeps the blue. */
+[data-look="web90s"] .ft-btn.ft-btn--ghost > svg:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  color: #000000;
+}
+
+/* Hand-built primary links (an <a> filled with the accent) read as the default button too. */
+[data-look="web90s"] a.bg-accent.text-accent-ink {
+  background: var(--w90-face);
+  color: #000000;
+  border: 1px solid #0a0a0a;
+  border-radius: 0;
+  box-shadow: inset 1px 1px #ffffff, inset -1px -1px #0a0a0a, inset 2px 2px #dfdfdf, inset -2px -2px #808080;
+  font-family: var(--w90-ui);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+[data-look="web90s"] a.bg-accent.text-accent-ink:hover {
+  background: var(--w90-face);
+  color: #000000;
+}
+
+/* In toolbars and on title bars a ghost button is a real button again. */
+[data-look="web90s"] .ft-header .ft-btn.ft-btn--ghost:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-panel__head .ft-btn.ft-btn--ghost:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-sheet__head .ft-btn.ft-btn--ghost:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-modal__head .ft-btn.ft-btn--ghost:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  background: var(--w90-face);
+  color: #000000;
+  border-color: #ffffff #0a0a0a #0a0a0a #ffffff;
+  box-shadow: inset 1px 1px #dfdfdf, inset -1px -1px #808080;
+  text-decoration: none;
+  font-family: var(--w90-ui);
+  font-size: 14px;
+}
+
+[data-look="web90s"] .ft-header .ft-btn.ft-btn--ghost:active:not(:disabled):not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-panel__head .ft-btn.ft-btn--ghost:active:not(:disabled):not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-sheet__head .ft-btn.ft-btn--ghost:active:not(:disabled):not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-modal__head .ft-btn.ft-btn--ghost:active:not(:disabled):not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  border-color: #0a0a0a #ffffff #ffffff #0a0a0a;
+  box-shadow: inset 1px 1px #808080, inset -1px -1px #dfdfdf;
+  color: #000000;
+}
+
+/* A pressed toggle (privacy blur on): sunken, with the 50% dither face. */
+[data-look="web90s"] .ft-iconbtn.ft-iconbtn--on {
+  background: var(--w90-dither);
+  border-color: #0a0a0a #ffffff #ffffff #0a0a0a;
+  box-shadow: inset 1px 1px #808080, inset -1px -1px #dfdfdf;
+  color: #000000;
+}
+
+/* Disabled: gray etched label, full opacity (Windows 95 never faded a whole button). */
+[data-look="web90s"] .ft-btn:disabled:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-iconbtn:disabled,
+[data-look="web90s"] .ft-segmented__item:disabled,
+[data-look="web90s"] .ft-chip:disabled {
+  opacity: 1;
+  color: #808080;
+  text-shadow: 1px 1px 0 #ffffff;
+}
+
+[data-look="web90s"] .ft-btn.ft-btn--ghost:disabled:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  text-decoration: none;
+}
+
+/* Keyboard keys: little raised key caps. */
+[data-look="web90s"] .ft-kbd {
+  background: var(--w90-face);
+  color: #000000;
+  border: 1px solid;
+  border-color: #ffffff #0a0a0a #0a0a0a #ffffff;
+  box-shadow: inset -1px -1px #808080;
+  border-radius: 0;
+  font-family: var(--w90-ui);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Badges: bold Arial text in its tone inside a 1px rule of the same color, like a cell of
+   <table border=1 bordercolor=...>. Routine tones stay white; only bad and warn get a fill, so a
+   colored box always means "look at this".
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-badge:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  background: #ffffff;
+  border: 1px solid currentColor;
+  border-radius: 0;
+  box-shadow: none;
+  font-family: var(--w90-ui);
+  font-weight: 700;
+}
+
+[data-look="web90s"] .ft-badge--neutral:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  background: #ffffff;
+  color: #222222;
+  border-color: #808080;
+}
+
+[data-look="web90s"] .ft-badge--accent:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  background: #ffffff;
+  color: #000080;
+}
+
+[data-look="web90s"] .ft-badge--good:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  background: #ffffff;
+  color: var(--good);
+}
+
+[data-look="web90s"] .ft-badge--warn:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+[data-look="web90s"] .ft-badge--bad:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+[data-look="web90s"] .ft-badge--outline:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  background: transparent;
+  color: #222222;
+  border-color: #808080;
+}
+
+[data-look="web90s"] .ft-dot {
+  border-radius: 0;
+}
+
+/* Avatars: a sunken photo well. The kit tints each person's tile by mixing their chart color into
+   --surface and their initials into --ink; on the avatar those become the gray face and black, so
+   the tints come out as dusty Windows 95 scheme colors with dark initials (5.7:1 to 7:1). */
+[data-look="web90s"] .ft-avatar {
+  border-radius: 0;
+  font-family: var(--w90-ui);
+}
+
+[data-look="web90s"] .ft-avatar:not(.ft-avatar--more) {
+  --surface: #c0c0c0;
+  --ink: #000000;
+  box-shadow: inset -1px -1px #ffffff, inset 1px 1px #808080, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
+}
+
+[data-look="web90s"] .ft-avatar--more {
+  background: var(--w90-face);
+  color: #000000;
+  box-shadow: inset 1px 1px #ffffff, inset -1px -1px #808080, inset -2px -2px #0a0a0a;
+}
+
+/* Stacks (interview panels): square tiles side by side with a 2px gap instead of overlapping. */
+[data-look="web90s"] .ft-avatarstack > * + * {
+  margin-left: 2px;
+}
+
+[data-look="web90s"] .ft-avatarstack > :not(.ft-avatar) {
+  box-shadow: none;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Page header: navy Times headline over a grooved <hr>.
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-pagehead {
+  border-bottom: 1px solid #808080;
+  box-shadow: 0 1px 0 #ffffff;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.875rem;
+}
+
+[data-look="web90s"] .ft-pagehead__title,
+[data-look="web90s"] .ft-main h1 {
+  color: #000080;
+}
+
+[data-look="web90s"] .ft-pagehead__eyebrow {
+  color: #222222;
+}
+
+[data-look="web90s"] .ft-pagehead__subtitle {
+  color: #222222;
+}
+
+[data-look="web90s"] .ft-pagehead__back {
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 400;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Panels: a Windows 95 window. Gray frame with a 2px bevel, navy title bar, white client area.
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-panel:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  /* White behind, the gray frame drawn as an inset ring: a panel stretched taller than its content
+     (equal-height grid rows) continues its white client area instead of showing a gray slab. */
+  background: #ffffff;
+  padding: 3px;
+  border: 1px solid;
+  border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
+  border-radius: 0;
+  box-shadow: inset 1px 1px #ffffff, inset -1px -1px #808080, inset 0 0 0 3px #c0c0c0;
+}
+
+[data-look="web90s"] .ft-panel__body:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  background: #ffffff;
+  --w90-tabbg: #ffffff;
+}
+
+/* Title bars (panels, sheets, dialogs): navy with white type. Text and plain links inside switch to
+   light tokens; the controls inside get their normal tokens back (below), and focus turns white. */
+[data-look="web90s"] .ft-panel__head:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-sheet__head,
+[data-look="web90s"] .ft-modal__head {
+  background: #000080;
+  color: #ffffff;
+  border-color: #c0c0c0;
+  --ink: #ffffff;
+  --ink-2: #ececec;
+  --ink-3: #dcdcdc;
+  --accent: #ffff66;
+  --accent-hover: #ffff99;
+  --accent-ink: #000080;
+  --accent-soft: #2626a6;
+  --accent-soft-ink: #ffffff;
+  --line: #5050b0;
+  --focus: #ffffff;
+}
+
+/* A slim caption, not a card header: 4px padding, a 30px minimum, the title centered on any button
+   at the right. Win95 captions were bold sans strips, so the bar is Arial (chrome) while the page
+   below stays Times (content). Buttons inside keep their 40px height. */
+[data-look="web90s"] .ft-panel__head:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  border-bottom: 2px solid #c0c0c0;
+  padding: 4px 4px 4px 8px;
+  align-items: center;
+  min-height: 30px;
+  column-gap: 8px;
+}
+
+/* Captions that carry a subtitle or a 40-44px control are one height (a 44px button plus the bar's
+   padding), so captions side by side line up. A title-only caption stays slim. */
+[data-look="web90s"] .ft-panel__head:has(.ft-panel__subtitle):not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-panel__head:has(.ft-panel__actions):not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  min-height: 54px;
+}
+
+/* Caption links are chrome: Arial like the caption, yellow and underlined. */
+[data-look="web90s"] .ft-panel__head a.text-accent:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-panel__head button.text-accent:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-sheet__head a.text-accent,
+[data-look="web90s"] .ft-modal__head a.text-accent {
+  color: #ffff66;
+  font-family: var(--w90-ui);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+[data-look="web90s"] .ft-panel__head a.text-accent:hover:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-panel__head button.text-accent:hover:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-sheet__head a.text-accent:hover,
+[data-look="web90s"] .ft-modal__head a.text-accent:hover {
+  color: #ffffff;
+  background-color: transparent;
+}
+
+[data-look="web90s"] .ft-panel__head .ft-btn:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-panel__head .ft-iconbtn:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-panel__head .ft-badge:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-panel__head .ft-segmented:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-panel__head .ft-chips:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-panel__head .ft-select-wrap:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-panel__head .ft-input:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-panel__head .ft-searchbox:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-panel__head .ft-avatar:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-panel__head .ft-cite-link:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-panel__head .ft-menu:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-sheet__head .ft-btn:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-sheet__head .ft-iconbtn,
+[data-look="web90s"] .ft-sheet__head .ft-badge:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-sheet__head .ft-segmented,
+[data-look="web90s"] .ft-sheet__head .ft-select-wrap,
+[data-look="web90s"] .ft-sheet__head .ft-avatar,
+[data-look="web90s"] .ft-modal__head .ft-btn:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-modal__head .ft-iconbtn,
+[data-look="web90s"] .ft-modal__head .ft-badge:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  --ink: #000000;
+  --ink-2: #222222;
+  --ink-3: #404040;
+  --accent: #000080;
+  --accent-hover: #0000a8;
+  --accent-ink: #ffffff;
+  --accent-soft: #ccffff;
+  --accent-soft-ink: #000080;
+  --line: #a0a0a0;
+}
+
+[data-look="web90s"] .ft-panel__title:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-sheet__title,
+[data-look="web90s"] .ft-modal__title {
+  color: #ffffff;
+  font-family: var(--w90-ui);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+[data-look="web90s"] .ft-panel__title:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+[data-look="web90s"] .ft-sheet__title,
+[data-look="web90s"] .ft-modal__title {
+  font-size: 15px;
+  line-height: 20px;
+}
+
+[data-look="web90s"] .ft-panel__subtitle:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-sheet__subtitle {
+  color: #dcdcdc;
+  font-family: var(--w90-ui);
+  font-size: 12.5px;
+  line-height: 1.35;
+  margin-top: 0;
+}
+
+/* The caption icon: 16px, centered on the title's 20px line. */
+[data-look="web90s"] .ft-panel__icon:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  color: #ffffff;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+/* Description lists: Arial field names, Times values. */
+[data-look="web90s"] .ft-dl__term {
+  font-family: var(--w90-ui);
+  font-weight: 700;
+  color: #222222;
+}
+
+/* Thin labeled dividers become etched rules. */
+[data-look="web90s"] .ft-sectionlabel {
+  color: #222222;
+}
+
+[data-look="web90s"] .ft-sectionlabel::after {
+  background: #808080;
+  box-shadow: 0 1px 0 #ffffff;
+}
+
+/* Empty states: a plain line icon and a Times heading. */
+[data-look="web90s"] .ft-empty__icon {
+  color: #404040;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Stats and meters: sunken readouts and a blocky progress bar.
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-stat {
+  background: #ffffff;
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+  border-radius: 0;
+  box-shadow: inset 1px 1px #0a0a0a, inset -1px -1px #dfdfdf;
+}
+
+[data-look="web90s"] a.ft-stat:hover {
+  border-color: #808080 #ffffff #ffffff #808080;
+  background: #ffffe1;
+}
+
+[data-look="web90s"] .ft-stat__label {
+  font-family: var(--w90-ui);
+  font-weight: 700;
+  color: #222222;
+}
+
+[data-look="web90s"] .ft-meter {
+  height: 14px;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+  border-radius: 0;
+}
+
+[data-look="web90s"] .ft-meter__bar {
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: repeating-linear-gradient(90deg, #000080 0 8px, transparent 8px 10px) padding-box;
+  transition: none;
+}
+
+[data-look="web90s"] .ft-meter--good .ft-meter__bar {
+  background: repeating-linear-gradient(90deg, var(--good) 0 8px, transparent 8px 10px) padding-box;
+}
+
+[data-look="web90s"] .ft-meter--warn .ft-meter__bar {
+  background: repeating-linear-gradient(90deg, var(--warn) 0 8px, transparent 8px 10px) padding-box;
+}
+
+[data-look="web90s"] .ft-meter--bad .ft-meter__bar {
+  background: repeating-linear-gradient(90deg, var(--bad) 0 8px, transparent 8px 10px) padding-box;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Callouts and banners: notice boxes with a 1px rule, like a bgcolor table.
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-callout {
+  border: 1px solid;
+  border-radius: 0;
+}
+
+[data-look="web90s"] .ft-callout--accent {
+  background: #ccffff;
+  border-color: #000080;
+}
+
+[data-look="web90s"] .ft-callout--good {
+  background: var(--good-soft);
+  border-color: var(--good);
+}
+
+[data-look="web90s"] .ft-callout--warn {
+  background: var(--warn-soft);
+  border-color: var(--warn);
+}
+
+[data-look="web90s"] .ft-callout--bad {
+  background: var(--bad-soft);
+  border-color: var(--bad);
+}
+
+/* Neutral notes are white with a gray rule, like the neutral badge: no flat gray slab. */
+[data-look="web90s"] .ft-callout--neutral {
+  background: #ffffff;
+  border-color: #808080;
+}
+
+[data-look="web90s"] .ft-callout__title {
+  font-family: var(--font-body);
+}
+
+[data-look="web90s"] .ft-banner {
+  border: 1px solid #0a0a0a;
+  border-radius: 0;
+  color: #000000;
+}
+
+[data-look="web90s"] .ft-banner--sample {
+  background: #ffffcc;
+}
+
+[data-look="web90s"] .ft-banner--preview {
+  background: #ffffff;
+  border-color: #808080;
+}
+
+[data-look="web90s"] .ft-banner--storage {
+  background: #ffcccc;
+  border-color: #990000;
+}
+
+[data-look="web90s"] .ft-banner__action {
+  border-radius: 0;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Form controls: sunken white fields, a combo box button on selects, real 3D check boxes.
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-field__label {
+  color: #000000;
+}
+
+[data-look="web90s"] .ft-input,
+[data-look="web90s"] .ft-select,
+[data-look="web90s"] .ft-textarea,
+[data-look="web90s"] .ft-search {
+  background-color: #ffffff;
+  color: #000000;
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+  box-shadow: inset 1px 1px #0a0a0a, inset -1px -1px #dfdfdf;
+  border-radius: 0;
+  font-family: var(--w90-ui);
+  transition: none;
+}
+
+[data-look="web90s"] .ft-input:hover,
+[data-look="web90s"] .ft-input:focus,
+[data-look="web90s"] .ft-select:hover,
+[data-look="web90s"] .ft-select:focus,
+[data-look="web90s"] .ft-textarea:hover,
+[data-look="web90s"] .ft-textarea:focus,
+[data-look="web90s"] .ft-search:hover {
+  border-color: #808080 #ffffff #ffffff #808080;
+  box-shadow: inset 1px 1px #0a0a0a, inset -1px -1px #dfdfdf;
+}
+
+[data-look="web90s"] .ft-input::placeholder,
+[data-look="web90s"] .ft-textarea::placeholder {
+  color: #6e6e6e;
+}
+
+[data-look="web90s"] .ft-input:disabled,
+[data-look="web90s"] .ft-select:disabled,
+[data-look="web90s"] .ft-textarea:disabled {
+  background-color: #c0c0c0;
+  color: #404040;
+}
+
+[data-look="web90s"] .ft-search {
+  color: #404040;
+}
+
+[data-look="web90s"] .ft-search:hover {
+  color: #000000;
+}
+
+/* The select gets a raised drop-down button at its right edge, drawn with background layers. */
+[data-look="web90s"] .ft-select {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='4' viewBox='0 0 8 4'%3E%3Cpath d='M0 0h8L4 4z' fill='black'/%3E%3C/svg%3E"),
+    linear-gradient(#ffffff, #ffffff), linear-gradient(#ffffff, #ffffff),
+    linear-gradient(#dfdfdf, #dfdfdf), linear-gradient(#dfdfdf, #dfdfdf),
+    linear-gradient(#0a0a0a, #0a0a0a), linear-gradient(#0a0a0a, #0a0a0a),
+    linear-gradient(#808080, #808080), linear-gradient(#808080, #808080),
+    linear-gradient(#c0c0c0, #c0c0c0);
+  background-repeat: no-repeat;
+  background-position:
+    right 12px center,
+    right 2px top 2px, right 25px top 2px,
+    right 3px top 3px, right 24px top 3px,
+    right 2px bottom 2px, right 2px top 2px,
+    right 3px bottom 3px, right 3px top 3px,
+    right 2px top 2px;
+  background-size:
+    8px 4px,
+    24px 1px, 1px calc(100% - 4px),
+    22px 1px, 1px calc(100% - 6px),
+    24px 1px, 1px calc(100% - 4px),
+    22px 1px, 1px calc(100% - 6px),
+    24px calc(100% - 4px);
+}
+
+[data-look="web90s"] .ft-select__chevron {
+  visibility: hidden;
+}
+
+[data-look="web90s"] .ft-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: #ffffff;
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+  box-shadow: inset 1px 1px #0a0a0a, inset -1px -1px #dfdfdf;
+  border-radius: 0;
+}
+
+[data-look="web90s"] .ft-checkbox:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 7 7' shape-rendering='crispEdges'%3E%3Cpath d='M6 0h1v3H6zM5 1h1v3H5zM4 2h1v3H4zM3 3h1v3H3zM2 4h1v3H2zM1 3h1v3H1zM0 2h1v3H0z' fill='black'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 10px 10px;
+}
+
+[data-look="web90s"] .ft-checkbox:disabled {
+  background-color: #c0c0c0;
+}
+
+[data-look="web90s"] .ft-checkbox-row {
+  border-radius: 0;
+}
+
+/* Switch: in 1997 an on/off setting was a check box, so the switch draws one (20px, sunken, the same
+   pixel check as .ft-checkbox) centered in its unchanged 48x40 button. The slider thumb is hidden. */
+[data-look="web90s"] .ft-switch {
+  border-radius: 0;
+}
+
+/* A check box sits left of its label ("[x] Show planned roles"). The row only reverses its visual
+   order (the label is not focusable, so keyboard order is unchanged), and the 48px button hangs 14px
+   into the gutter so the box lines up with the text above it. */
+[data-look="web90s"] .ft-switch-row {
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  column-gap: 0;
+}
+
+[data-look="web90s"] .ft-switch-row > .ft-switch {
+  margin-left: -14px;
+}
+
+/* Focus: Windows 95 drew the dotted focus rectangle around a check box's label, not the box. */
+[data-look="web90s"] .ft-switch-row > .ft-switch:focus-visible {
+  outline: none;
+}
+
+[data-look="web90s"] .ft-switch-row label {
+  width: fit-content;
+}
+
+[data-look="web90s"] .ft-switch-row:has(> .ft-switch:focus-visible) label {
+  outline: 2px dotted #000000;
+  outline-offset: 2px;
+}
+
+[data-look="web90s"] .ft-switch:disabled {
+  opacity: 1;
+}
+
+[data-look="web90s"] .ft-switch__track {
+  width: 20px;
+  height: 20px;
+  background-color: #ffffff;
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+  border-radius: 0;
+  box-shadow: inset 1px 1px #0a0a0a, inset -1px -1px #dfdfdf;
+  transition: none;
+}
+
+[data-look="web90s"] .ft-switch--on .ft-switch__track {
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 7 7' shape-rendering='crispEdges'%3E%3Cpath d='M6 0h1v3H6zM5 1h1v3H5zM4 2h1v3H4zM3 3h1v3H3zM2 4h1v3H2zM1 3h1v3H1zM0 2h1v3H0z' fill='black'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 10px 10px;
+}
+
+[data-look="web90s"] .ft-switch:disabled .ft-switch__track {
+  background-color: #c0c0c0;
+}
+
+[data-look="web90s"] .ft-switch__thumb {
+  visibility: hidden;
+}
+
+/* Segmented controls and chips: rows of toggle buttons. The chosen one is pressed in, dithered, bold. */
+[data-look="web90s"] .ft-segmented {
+  background: transparent;
+  border-radius: 0;
+}
+
+[data-look="web90s"] .ft-segmented__item,
+[data-look="web90s"] .ft-chip {
+  background: var(--w90-face);
+  color: #000000;
+  border: 1px solid;
+  border-color: #ffffff #0a0a0a #0a0a0a #ffffff;
+  box-shadow: inset 1px 1px #dfdfdf, inset -1px -1px #808080;
+  border-radius: 0;
+  font-family: var(--w90-ui);
+  font-weight: 400;
+  transition: none;
+}
+
+[data-look="web90s"] .ft-segmented__item:hover,
+[data-look="web90s"] .ft-chip:hover {
+  color: #000000;
+  border-color: #ffffff #0a0a0a #0a0a0a #ffffff;
+}
+
+[data-look="web90s"] .ft-segmented__item.ft-segmented__item--on,
+[data-look="web90s"] .ft-chip.ft-chip--on {
+  background: var(--w90-dither);
+  color: #000000;
+  border-color: #0a0a0a #ffffff #ffffff #0a0a0a;
+  box-shadow: inset 1px 1px #808080, inset -1px -1px #dfdfdf;
+  font-weight: 700;
+}
+
+[data-look="web90s"] .ft-segmented__item .num {
+  color: #222222;
+}
+
+/* Hand-built toggles and the candidate stage stepper mark their chosen or completed state with
+   bg-accent-soft: in this look that state is a pressed-in button with the dither face. */
+[data-look="web90s"] .ft-main button.bg-accent-soft:not(.ft-segmented__item):not(.ft-chip):not(.ft-btn),
+[data-look="web90s"] .ft-sheet button.bg-accent-soft:not(.ft-segmented__item):not(.ft-chip):not(.ft-btn) {
+  background: var(--w90-dither);
+  color: #000000;
+  border-color: #0a0a0a #ffffff #ffffff #0a0a0a;
+  box-shadow: inset 1px 1px #808080, inset -1px -1px #dfdfdf;
+  font-family: var(--w90-ui);
+  font-weight: 700;
+}
+
+/* Windows 95 put the dither only behind a short toggle label. A chosen card with several lines (the
+   Cost and runway scenarios) gets a solid white pressed face instead, so thin serif strokes stay sharp. */
+[data-look="web90s"] .ft-main button.bg-accent-soft.flex-col:not(.ft-segmented__item):not(.ft-chip):not(.ft-btn),
+[data-look="web90s"] .ft-sheet button.bg-accent-soft.flex-col:not(.ft-segmented__item):not(.ft-chip):not(.ft-btn) {
+  background: #ffffff;
+  border-color: #808080 #ffffff #ffffff #808080;
+  box-shadow: inset 1px 1px #0a0a0a, inset -1px -1px #dfdfdf;
+  font-family: var(--font-body);
+  font-weight: 400;
+}
+
+/* Citation chips: an underlined source link in a thin box; purple once visited. */
+[data-look="web90s"] .ft-cite-link {
+  color: var(--w90-link);
+  border-radius: 0;
+}
+
+[data-look="web90s"] .ft-cite-link:visited {
+  color: var(--w90-visited);
+}
+
+[data-look="web90s"] .ft-cite-link:hover {
+  color: var(--w90-hover);
+}
+
+[data-look="web90s"] .ft-cite {
+  border-radius: 0;
+  border-color: #808080;
+  background: #ffffff;
+  color: #222222;
+  font-family: var(--w90-ui);
+}
+
+[data-look="web90s"] .ft-cite-link .ft-cite {
+  color: inherit;
+  border-color: currentColor;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Tabs: a Windows 95 property sheet. Tabs abut with notched top corners; inactive ones sit 2px lower.
+   The active tab is 2px taller and 2px wider on each side, overlaps its neighbors, and covers the
+   strip's rule so it joins whatever is behind the strip.
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-tabs {
+  gap: 0;
+  border-bottom-color: #808080;
+}
+
+[data-look="web90s"] .ft-tab {
+  background-color: var(--w90-face);
+  background-clip: padding-box;
+  border-top: 2px solid transparent;
+  box-shadow: inset 1px 1px #ffffff, inset -1px 0 #0a0a0a, inset -2px 0 #808080, inset 2px 2px #dfdfdf;
+  clip-path: polygon(2px 2px, calc(100% - 2px) 2px, 100% 4px, 100% 100%, 0 100%, 0 4px);
+  color: #000000;
+  font-family: var(--w90-ui);
+  font-weight: 400;
+  transition: none;
+}
+
+[data-look="web90s"] .ft-tab:hover {
+  color: #000000;
+}
+
+/* The clip reaches 1px below the box so the shadow that covers the strip's rule still paints. */
+[data-look="web90s"] .ft-tab.ft-tab--active {
+  z-index: 1;
+  margin-inline: -2px;
+  padding-inline: calc(0.75rem + 2px);
+  background-color: var(--w90-tabbg);
+  border-top-width: 0;
+  box-shadow: inset 1px 1px #ffffff, inset -1px 0 #0a0a0a, inset -2px 0 #808080, inset 2px 2px #dfdfdf,
+    0 1px 0 var(--w90-tabbg);
+  clip-path: polygon(2px 0, calc(100% - 2px) 0, 100% 2px, 100% calc(100% + 1px), 0 calc(100% + 1px), 0 2px);
+  font-weight: 700;
+}
+
+[data-look="web90s"] .ft-tab__indicator {
+  display: none;
+}
+
+[data-look="web90s"] .ft-tab__count {
+  background: #ffffff;
+  color: #000000;
+  border-radius: 0;
+  box-shadow: inset 1px 1px #808080, inset -1px -1px #dfdfdf;
+  font-weight: 400;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Tables: <table border="1" cellspacing="2">. Gray grid between white cells, each cell sunken;
+   column headers are raised buttons.
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-table:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  border-collapse: separate;
+  border-spacing: 2px;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #ffffff #808080 #808080 #ffffff;
+}
+
+/* The grid costs about 4px a column (2px spacing plus two 1px cell borders). The kit pads full-size
+   cells 16px a side and dense ones 12px; 12px and 10px here would pay for the grid, so this look
+   never makes a table wider than the others do (the checklists table fits at 1280 again). Dense
+   cells get 8px: dense tables often sit in a half-width panel, whose beveled frame leaves about
+   10px less room than the default look's panel, and at 10px the 409A table (Comp and plan, Equity)
+   came out 5px wider than its panel at 1280. */
+[data-look="web90s"] .ft-table:not(.ft-table--dense) .ft-table__th:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-table:not(.ft-table--dense) .ft-table__cell:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  padding-inline: 12px;
+}
+
+[data-look="web90s"] .ft-table.ft-table--dense .ft-table__th:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-table.ft-table--dense .ft-table__cell:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  padding-inline: 8px;
+}
+
+/* A dense table's long column head wraps to two lines instead of setting its column's width, as the comic look's
+   heads do: the padding alone left no slack, and with every head on one line ('Safe harbor until', 'Price a share')
+   the 409A table (Comp and plan, Equity) was 29px wider than its half-width panel at 1200. Its narrowest is then set
+   by the cells (a date, the Superseded badge), not the heads. Heads sit on the bottom bevel. */
+[data-look="web90s"] .ft-table.ft-table--dense .ft-table__th:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  white-space: normal;
+  line-height: 1.2;
+  vertical-align: bottom;
+}
+
+/* A sort head stays a 40px target and grows for a second line. */
+[data-look="web90s"] .ft-table.ft-table--dense .ft-table__sort:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  min-height: 40px;
+  height: auto;
+  padding-block: 4px;
+  text-align: inherit;
+}
+
+[data-look="web90s"] .ft-table.ft-table--dense .ft-table__th.text-right > .ft-table__sort:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  justify-content: flex-end;
+}
+
+[data-look="web90s"] .ft-table__th:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  background: #c0c0c0;
+  color: #000000;
+  border: 1px solid;
+  border-color: #ffffff #0a0a0a #0a0a0a #ffffff;
+  box-shadow: inset -1px -1px #808080;
+  font-family: var(--w90-ui);
+}
+
+[data-look="web90s"] .ft-table__sort:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  color: #000000;
+}
+
+[data-look="web90s"] .ft-table__sort--active:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+[data-look="web90s"] .ft-table__cell:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  background: #ffffff;
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+}
+
+[data-look="web90s"] .ft-table__row--link:hover .ft-table__cell:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  background: #ffffe1;
+}
+
+/* Keyboard focus on a row link. The link is an inline <a> around an avatar and a block of text, so
+   Chrome computes its outline but paints none; the ring goes on the cell instead, inside its edge. */
+[data-look="web90s"] .ft-table__rowlink:focus-visible:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  outline: none;
+}
+
+[data-look="web90s"] .ft-table__cell:has(> .ft-table__rowlink:focus-visible):not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  outline: 2px dotted #000000;
+  outline-offset: -5px;
+}
+
+/* Hand-built tables (cost breakdown, bands, training, debrief scorecards, hiring metrics) get the same
+   border="1" cellspacing="2" grid, so a screen never mixes two table languages. The calendar grid
+   (role="grid") and the small "show data" tables under charts keep their own layout. */
+[data-look="web90s"] .ft-main table:not(.ft-table):not([role="grid"]):not(.ft-chart__data table),
+[data-look="web90s"] .ft-sheet table:not(.ft-table),
+[data-look="web90s"] .ft-modal table:not(.ft-table) {
+  border-collapse: separate;
+  border-spacing: 2px;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #ffffff #808080 #808080 #ffffff;
+}
+
+[data-look="web90s"] .ft-main table:not(.ft-table):not([role="grid"]):not(.ft-chart__data table) thead th,
+[data-look="web90s"] .ft-sheet table:not(.ft-table) thead th,
+[data-look="web90s"] .ft-modal table:not(.ft-table) thead th {
+  background: #c0c0c0;
+  color: #000000;
+  border: 1px solid;
+  border-color: #ffffff #0a0a0a #0a0a0a #ffffff;
+  box-shadow: inset -1px -1px #808080;
+  font-family: var(--w90-ui);
+}
+
+/* One cellpadding for every hand-built table (some had none and their text touched the grid). */
+[data-look="web90s"] .ft-main table:not(.ft-table):not([role="grid"]):not(.ft-chart__data table) tr > *,
+[data-look="web90s"] .ft-sheet table:not(.ft-table) tr > *,
+[data-look="web90s"] .ft-modal table:not(.ft-table) tr > * {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+[data-look="web90s"] .ft-main table:not(.ft-table):not([role="grid"]):not(.ft-chart__data table) tbody > tr > *,
+[data-look="web90s"] .ft-main table:not(.ft-table):not([role="grid"]):not(.ft-chart__data table) tfoot > tr > *,
+[data-look="web90s"] .ft-sheet table:not(.ft-table) tbody > tr > *,
+[data-look="web90s"] .ft-modal table:not(.ft-table) tbody > tr > * {
+  background: #ffffff;
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Overlays: sheets and dialogs are Windows 95 dialog boxes (gray client, navy title bar, buttons in
+   the bottom right). The scrim is the 1-in-4 dither of the Windows 95 shut down screen.
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-scrim {
+  background-image: conic-gradient(rgb(0 0 0 / 0.55) 0 25%, transparent 0 100%);
+  background-size: var(--w90-tile) var(--w90-tile);
+}
+
+[data-look="web90s"] .ft-sheet,
+[data-look="web90s"] .ft-modal,
+[data-look="web90s"] .ft-palette,
+[data-look="web90s"] .ft-rail--sheet {
+  background: var(--w90-face);
+  border: 1px solid;
+  border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
+  border-radius: 0;
+  box-shadow: inset 1px 1px #ffffff, inset -1px -1px #808080;
+  padding: 3px;
+}
+
+/* Dialog captions are slim like the panel ones; the close box stays a 44px target. */
+[data-look="web90s"] .ft-sheet__head {
+  border-bottom: 0;
+  align-items: center;
+  padding: max(4px, env(safe-area-inset-top)) 4px 4px 8px;
+}
+
+[data-look="web90s"] .ft-sheet__body,
+[data-look="web90s"] .ft-modal__body {
+  background: var(--w90-face);
+}
+
+[data-look="web90s"] .ft-sheet__foot,
+[data-look="web90s"] .ft-modal__foot {
+  background: var(--w90-face);
+  border-top: 1px solid #808080;
+  box-shadow: inset 0 1px #ffffff;
+}
+
+[data-look="web90s"] .ft-modal__head {
+  align-items: center;
+  padding: 4px 4px 4px 8px;
+}
+
+[data-look="web90s"] .ft-modal__close {
+  margin: 0;
+}
+
+[data-look="web90s"] .ft-modal__body {
+  padding-top: 1rem;
+}
+
+/* Close boxes on the title bars: the raised [x] of a Windows 95 caption. */
+[data-look="web90s"] .ft-sheet__close,
+[data-look="web90s"] .ft-modal__close {
+  color: #000000;
+}
+
+/* Menus: gray, raised, navy highlight. */
+[data-look="web90s"] .ft-menu {
+  background: var(--w90-face);
+  border: 1px solid;
+  border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
+  border-radius: 0;
+  box-shadow: inset 1px 1px #ffffff, inset -1px -1px #808080;
+  padding: 3px;
+}
+
+[data-look="web90s"] .ft-menuitem {
+  border-radius: 0;
+  color: #000000;
+  font-family: var(--w90-ui);
+  font-weight: 400;
+}
+
+[data-look="web90s"] .ft-menuitem:hover,
+[data-look="web90s"] .ft-menuitem:focus {
+  background: #000080;
+  color: #ffffff;
+  --ink: #ffffff;
+  --ink-3: #ffffff;
+}
+
+[data-look="web90s"] .ft-menuitem.ft-menuitem--danger {
+  color: var(--w90-hover);
+}
+
+[data-look="web90s"] .ft-menuitem.ft-menuitem--danger:hover,
+[data-look="web90s"] .ft-menuitem.ft-menuitem--danger:focus {
+  background: #000080;
+  color: #ffffff;
+}
+
+[data-look="web90s"] .ft-menu__divider {
+  background: #808080;
+  box-shadow: 0 1px 0 #ffffff;
+}
+
+/* Toasts: the yellow tooltip of Windows 95, with a hairline black border. */
+[data-look="web90s"] .ft-toast {
+  background: var(--w90-tip);
+  border: 1px solid #0a0a0a;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+[data-look="web90s"] .ft-toast__text {
+  font-family: var(--w90-ui);
+  color: #000000;
+}
+
+[data-look="web90s"] .ft-toast__action {
+  font-weight: 700;
+}
+
+/* Command palette: a sunken search field over a white list box with a navy selection. */
+[data-look="web90s"] .ft-palette__head {
+  background: #ffffff;
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+  box-shadow: inset 1px 1px #0a0a0a, inset -1px -1px #dfdfdf;
+}
+
+[data-look="web90s"] .ft-palette__input {
+  font-family: var(--w90-ui);
+}
+
+[data-look="web90s"] .ft-palette__input:focus-visible {
+  outline: none;
+}
+
+[data-look="web90s"] .ft-palette__head:focus-within {
+  outline: 2px dotted #000000;
+  outline-offset: 1px;
+}
+
+[data-look="web90s"] .ft-palette__list {
+  background: #ffffff;
+  margin-top: 3px;
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+  box-shadow: inset 1px 1px #0a0a0a, inset -1px -1px #dfdfdf;
+}
+
+[data-look="web90s"] .ft-palette__group {
+  color: #222222;
+}
+
+[data-look="web90s"] .ft-palette__item {
+  border-radius: 0;
+}
+
+[data-look="web90s"] .ft-palette__item:hover {
+  background: #e0e0e0;
+}
+
+[data-look="web90s"] .ft-palette__item.ft-palette__item--active {
+  background: #000080;
+  --ink: #ffffff;
+  --ink-3: #e4e4e4;
+  --accent: #ffffff;
+}
+
+[data-look="web90s"] .ft-palette__item--active .ft-avatar {
+  --ink: #000000;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Shell: gray chrome. The rail is the left frame of a frameset; the header is a browser toolbar.
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-rail {
+  border-right-color: #808080;
+  box-shadow: 1px 0 0 #ffffff;
+}
+
+[data-look="web90s"] .ft-brand {
+  border-radius: 0;
+}
+
+[data-look="web90s"] .ft-brand__mark {
+  background: #000080;
+  border: 1px solid;
+  border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
+  box-shadow: inset 1px 1px #5050c0, inset -1px -1px #000040;
+  border-radius: 0;
+}
+
+[data-look="web90s"] .ft-brand__name {
+  color: #000080;
+}
+
+[data-look="web90s"] .ft-brand__meta {
+  color: #222222;
+  font-family: var(--w90-ui);
+}
+
+[data-look="web90s"] .ft-headcount {
+  border-radius: 0;
+}
+
+[data-look="web90s"] a.ft-headcount:hover {
+  background: #d0d0d0;
+}
+
+[data-look="web90s"] .ft-headcount__label {
+  color: #000000;
+}
+
+/* Navigation: underlined links; the current page is a navy selection bar. */
+[data-look="web90s"] .ft-navitem {
+  color: var(--w90-link);
+  border-radius: 0;
+  font-weight: 400;
+  font-size: 16px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: none;
+}
+
+[data-look="web90s"] .ft-navitem:hover {
+  background: transparent;
+  color: var(--w90-hover);
+}
+
+[data-look="web90s"] .ft-navitem.ft-navitem--active,
+[data-look="web90s"] .ft-navitem.ft-navitem--active:hover {
+  background: #000080;
+  color: #ffffff;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* Start menu icons are black, never link colored; white on the selection bar. */
+[data-look="web90s"] .ft-navitem__icon {
+  color: #000000;
+}
+
+[data-look="web90s"] .ft-navitem--active .ft-navitem__icon {
+  color: #ffffff;
+}
+
+/* Viewing as: an etched group box. */
+[data-look="web90s"] .ft-viewas {
+  background: transparent;
+  border: 1px solid #808080;
+  border-radius: 0;
+  box-shadow: inset 1px 1px #ffffff, 1px 1px 0 #ffffff;
+}
+
+[data-look="web90s"] .ft-viewas__title {
+  color: #000000;
+}
+
+[data-look="web90s"] .ft-rail__note {
+  color: #222222;
+  font-family: var(--w90-ui);
+}
+
+/* Phone top bar: a raised toolbar. */
+[data-look="web90s"] .ft-topbar {
+  background: var(--w90-face);
+  border-bottom: 1px solid #0a0a0a;
+  box-shadow: inset 0 -1px #808080, inset 0 1px #ffffff;
+}
+
+[data-look="web90s"] .ft-topbar__count {
+  color: #000000;
+  font-family: var(--w90-ui);
+}
+
+/* Desktop header: a browser toolbar, raised 1px, with a sunken location field. */
+[data-look="web90s"] .ft-header {
+  background: var(--w90-face);
+  border: 1px solid;
+  border-color: #ffffff #808080 #808080 #ffffff;
+  padding: 3px;
+}
+
+[data-look="web90s"] .ft-backup {
+  background: var(--w90-face);
+  color: #000000;
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+  border-radius: 0;
+  font-family: var(--w90-ui);
+}
+
+[data-look="web90s"] .ft-backup:hover {
+  color: var(--w90-hover);
+}
+
+[data-look="web90s"] .ft-backup.ft-backup--stale {
+  background: #ffffcc;
+  color: var(--warn);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Hand-built markup. Screens draw some boxes, tags and buttons with utilities instead of the kit;
+   these rules give them the same Windows 95 language as the hooks, so the skin never stops at the
+   kit's edge. Matching on " bg-surface-2" (with its leading space) skips hover:bg-surface-2.
+   --------------------------------------------------------------------------------------------- */
+
+/* Gray note boxes (balance tiles, summaries, info strips, the board's columns) become etched group
+   boxes: a gray line with a white line inside it and below it. On a white panel the white lines
+   vanish and a quiet gray frame is left. Meter and band tracks (absolute or fixed-height) stay out. */
+[data-look="web90s"] div[class*=" bg-surface-2"]:not([class*="ft-"]):not(.absolute):not([class^="h-"]):not([class*=" h-"]):not([class*="bg-surface-2/40"]),
+[data-look="web90s"] div[class^="bg-surface-2"]:not([class*="ft-"]):not(.absolute):not([class*=" h-"]),
+[data-look="web90s"] p[class*=" bg-surface-2"]:not([class*="ft-"]),
+[data-look="web90s"] section[class*=" bg-surface-2"]:not([class*="ft-"]),
+[data-look="web90s"] details[class*=" bg-surface-2"]:not([class*="ft-"]),
+[data-look="web90s"] li[class*=" bg-surface-2"]:not([class*="ft-"]):not(.rounded-full):not([class*="bg-surface-2/40"]),
+[data-look="web90s"] .ft-datetile:not(.ft-datetile--bad):not(.ft-datetile--warn),
+[data-look="web90s"] .ft-board__col,
+[data-look="web90s"] .ft-ministat--tile {
+  background: transparent;
+  border: 1px solid #808080;
+  border-radius: 0;
+  box-shadow: inset 1px 1px #ffffff, 1px 1px 0 #ffffff;
+}
+
+/* Read-only text (a posting, a message preview, a release draft) is a white sunken well, like a
+   read-only edit box. */
+[data-look="web90s"] pre[class*=" bg-surface-2"] {
+  background: #ffffff;
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+  border-radius: 0;
+  box-shadow: inset 1px 1px #0a0a0a, inset -1px -1px #dfdfdf;
+}
+
+/* Gray tags (a candidate's source, removable tags) take the neutral badge: white, a gray rule, bold
+   Arial. Counts (span.num) take the tab count's small sunken box instead. */
+[data-look="web90s"] span[class*=" bg-surface-2"]:not([class*="ft-"]):not(.absolute):not(.num),
+[data-look="web90s"] span[class^="bg-surface-2"]:not([class*="ft-"]):not(.absolute):not(.num),
+[data-look="web90s"] li.rounded-full[class*=" bg-surface-2"]:not([class*="ft-"]),
+[data-look="web90s"] .ft-tag {
+  background: #ffffff;
+  border: 1px solid #808080;
+  border-radius: 0;
+  color: #222222;
+  font-family: var(--w90-ui);
+  font-weight: 700;
+}
+
+[data-look="web90s"] span.num[class*=" bg-surface-2"]:not([class*="ft-"]):not(.absolute),
+[data-look="web90s"] span.ft-count[class*=" bg-surface-2"],
+[data-look="web90s"] span.ft-checkmark--open.num[class*=" bg-surface-2"] {
+  background: #ffffff;
+  color: #000000;
+  border-radius: 0;
+  box-shadow: inset 1px 1px #808080, inset -1px -1px #dfdfdf;
+  font-family: var(--w90-ui);
+}
+
+/* The board's column count: white with a gray rule, on the column's group box. */
+[data-look="web90s"] section[class*=" bg-surface-2"] > header > span.num.bg-surface {
+  border: 1px solid #808080;
+  border-radius: 0;
+  font-family: var(--w90-ui);
+}
+
+/* Done steps (background check, adverse action) and checklist marks: the badge language, white with
+   a rule in the status color, never a solid green fill. An open task is an empty gray square. These
+   marks are not clickable, so they are never drawn as sunken check boxes. */
+[data-look="web90s"] span.num.bg-good.text-white,
+[data-look="web90s"] span[aria-hidden].bg-good.border-good {
+  background: #ffffff;
+  border: 1px solid var(--good);
+  color: var(--good);
+}
+
+[data-look="web90s"] span[aria-hidden].rounded-full.border-2.border-line-strong {
+  border-width: 1px;
+  border-color: #808080;
+}
+
+/* Hand-built secondary buttons and links ("Sweep 7" in the Inbox, hire and close-out links, toggle
+   rows in sheets, a stepper's future steps) get the kit button's raised bevel. */
+[data-look="web90s"] a.border-line-strong.bg-surface:not([class*="ft-"]),
+[data-look="web90s"] button.border-line-strong.bg-surface:not([class*="ft-"]),
+[data-look="web90s"] button.ft-stepper__step.border-line-strong.bg-surface,
+[data-look="web90s"] a.ring-line-strong.bg-surface:not([class*="ft-"]),
+[data-look="web90s"] .ft-main table td > button.border-line:not([class*="ft-"]),
+[data-look="web90s"] .ft-main table td > button.border-dashed:not([class*="ft-"]) {
+  background: var(--w90-face);
+  color: #000000;
+  border: 1px solid;
+  border-color: #ffffff #0a0a0a #0a0a0a #ffffff;
+  border-radius: 0;
+  box-shadow: inset 1px 1px #dfdfdf, inset -1px -1px #808080;
+  font-family: var(--w90-ui);
+  font-weight: 400;
+  text-decoration: none;
+  transition: none;
+}
+
+[data-look="web90s"] a.border-line-strong.bg-surface:not([class*="ft-"]):active,
+[data-look="web90s"] button.border-line-strong.bg-surface:not([class*="ft-"]):active:not(:disabled),
+[data-look="web90s"] button.ft-stepper__step.border-line-strong.bg-surface:active:not(:disabled),
+[data-look="web90s"] a.ring-line-strong.bg-surface:not([class*="ft-"]):active,
+[data-look="web90s"] .ft-main table td > button.border-line:not([class*="ft-"]):active,
+[data-look="web90s"] .ft-main table td > button.border-dashed:not([class*="ft-"]):active {
+  border-color: #0a0a0a #ffffff #ffffff #0a0a0a;
+  box-shadow: inset 1px 1px #808080, inset -1px -1px #dfdfdf;
+}
+
+/* A hand-built urgent link ("Fix in Training") is the danger button: raised, dark red frame and label. */
+[data-look="web90s"] a.border-bad.bg-surface:not([class*="ft-"]),
+[data-look="web90s"] .ft-btn.ft-btn--urgent:not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  background: var(--w90-face);
+  color: var(--w90-hover);
+  border: 1px solid var(--w90-hover);
+  border-radius: 0;
+  box-shadow: inset 1px 1px #ffffff, inset -1px -1px #0a0a0a, inset 2px 2px #dfdfdf, inset -2px -2px #808080;
+  font-family: var(--w90-ui);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+[data-look="web90s"] a.border-bad.bg-surface:not([class*="ft-"]):active,
+[data-look="web90s"] .ft-btn.ft-btn--urgent:active:not(:disabled):not(.ft-lookpreview:not([data-look="web90s"]) *) {
+  box-shadow: inset 1px 1px #808080, inset -1px -1px #808080;
+}
+
+/* Thin hand-built bar tracks (hiring metrics, the comp table's band line) are sunken white slots,
+   like the kit's chart tracks. */
+[data-look="web90s"] div[class*=" h-2 "][class*=" bg-surface-2"]:not([class*="ft-"]),
+[data-look="web90s"] span.absolute[class*=" bg-surface-2"]:not([class*="ft-"]) {
+  background: #ffffff;
+  box-shadow: inset 1px 1px #808080, inset -1px -1px #dfdfdf;
+}
+
+/* A band cell's face holds data (amounts, the people count), so it keeps the page type. */
+[data-look="web90s"] .ft-main table td > button.border-line:not([class*="ft-"]):not(.border-dashed) {
+  font-family: var(--font-body);
+}
+
+/* Disabled hand-built buttons: the etched gray label, at full opacity (Windows 95 never faded a
+   whole button). Filled states (the stepper's current step) keep their own colors. */
+[data-look="web90s"] button:not([class*="ft-"]):disabled:not(.bg-accent):not(.bg-accent-soft):not(.text-white):not(.text-accent-ink),
+[data-look="web90s"] button.ft-stepper__step:disabled:not(.bg-accent):not(.bg-accent-soft) {
+  opacity: 1;
+  color: #808080;
+  text-shadow: 1px 1px 0 #ffffff;
+}
+
+/* Chosen hand-built toggles that the screens fill with the accent (a time slot, a rating, a date
+   range) are pressed-in buttons too, like the kit's segmented items. */
+[data-look="web90s"] button[aria-pressed="true"].bg-accent:not([class*="ft-"]),
+[data-look="web90s"] button[aria-checked="true"].bg-accent:not([class*="ft-"]) {
+  background: var(--w90-dither);
+  color: #000000;
+  border-color: #0a0a0a #ffffff #ffffff #0a0a0a;
+  box-shadow: inset 1px 1px #808080, inset -1px -1px #dfdfdf;
+  font-family: var(--w90-ui);
+  font-weight: 700;
+}
+
+/* The candidate stage stepper is a row of buttons: Arial like every button, the current step bold. */
+[data-look="web90s"] nav ol > li > button:not([class*="ft-"]),
+[data-look="web90s"] .ft-stepper__step {
+  font-family: var(--w90-ui);
+  font-weight: 400;
+}
+
+[data-look="web90s"] nav ol > li > button[aria-current="step"]:not([class*="ft-"]),
+[data-look="web90s"] .ft-stepper__step--current {
+  font-weight: 700;
+}
+
+/* A side list of pressed buttons (the interview kits) is a Windows 95 list box: a white sunken well,
+   Arial items, the chosen one in navy. */
+[data-look="web90s"] .ft-main nav > ul:has(> li > button[aria-pressed]) {
+  row-gap: 0;
+  padding: 3px;
+  background: #ffffff;
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+  box-shadow: inset 1px 1px #0a0a0a, inset -1px -1px #dfdfdf;
+}
+
+[data-look="web90s"] .ft-main nav > ul > li > button[aria-pressed]:not([class*="ft-"]),
+[data-look="web90s"] .ft-navlist__item {
+  background: transparent;
+  color: #000000;
+  font-family: var(--w90-ui);
+  font-weight: 400;
+}
+
+[data-look="web90s"] .ft-main nav > ul > li > button[aria-pressed]:hover:not([class*="ft-"]),
+[data-look="web90s"] .ft-navlist__item:hover:not(.ft-navlist__item--on) {
+  background: #e0e0e0;
+}
+
+[data-look="web90s"] .ft-main nav > ul > li > button.bg-accent-soft[aria-pressed="true"]:not(.ft-segmented__item):not(.ft-chip):not(.ft-btn) {
+  background: #000080;
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: none;
+  font-weight: 400;
+}
+
+[data-look="web90s"] .ft-main nav > ul > li > button[aria-pressed]:focus-visible:not([class*="ft-"]),
+[data-look="web90s"] .ft-navlist__item:focus-visible {
+  outline: 2px dotted #000000;
+  outline-offset: -3px;
+}
+
+[data-look="web90s"] .ft-main nav > ul > li > button[aria-pressed="true"]:focus-visible:not([class*="ft-"]),
+[data-look="web90s"] .ft-navlist__item--on:focus-visible {
+  outline-color: #ffffff;
+}
+
+/* Hand-built text links drawn in gray (the person page's "People" back link, "For <name>" on task
+   rows) are links like any other: blue and underlined, red on hover. */
+[data-look="web90s"] .ft-main a.font-semibold.text-ink-2:not([class*="ft-"]),
+[data-look="web90s"] .ft-main a.font-semibold.text-ink-3:not([class*="ft-"]) {
+  color: var(--w90-link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+[data-look="web90s"] .ft-main a.font-semibold.text-ink-2:hover:not([class*="ft-"]),
+[data-look="web90s"] .ft-main a.font-semibold.text-ink-3:hover:not([class*="ft-"]) {
+  color: var(--w90-hover);
+}
+
+/* The back link matches the kit's page header back link (Times, 15px, regular). */
+[data-look="web90s"] .ft-main a.inline-flex.font-semibold.text-ink-3:not([class*="ft-"]) {
+  font-size: 15px;
+  font-weight: 400;
+}
+
+/* Names in hand-built tables open that person ("Tap a name"): blue and underlined, like row links. */
+[data-look="web90s"] .ft-main table:not(.ft-table) th[scope="row"] > button span.font-semibold.text-ink {
+  color: var(--w90-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+[data-look="web90s"] .ft-main table:not(.ft-table) th[scope="row"] > button:hover span.font-semibold.text-ink {
+  color: var(--w90-hover);
+}
+
+/* Overdue Inbox rows: a small beveled red ball bullet beside the title (the classic bullet GIF)
+   instead of a modern accent stripe down the row. */
+[data-look="web90s"] .ft-main li[class*="before:bg-bad"]::before {
+  top: 19px;
+  bottom: auto;
+  left: -1px;
+  width: 9px;
+  height: 9px;
+  background: #cc0000;
+  box-shadow: inset 1px 1px #ff6666, inset -1px -1px #440000;
+}
+
+/* The file picker (Settings > Data): a sunken field with a raised Choose File button. */
+[data-look="web90s"] input[type="file"] {
+  background: #ffffff;
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+  border-radius: 0;
+  box-shadow: inset 1px 1px #0a0a0a, inset -1px -1px #dfdfdf;
+  font-family: var(--w90-ui);
+}
+
+[data-look="web90s"] input[type="file"]::file-selector-button {
+  min-height: 40px;
+  background: var(--w90-face);
+  color: #000000;
+  border: 1px solid;
+  border-color: #ffffff #0a0a0a #0a0a0a #ffffff;
+  border-radius: 0;
+  box-shadow: inset 1px 1px #dfdfdf, inset -1px -1px #808080;
+  font-family: var(--w90-ui);
+  font-size: 14px;
+  font-weight: 400;
+}
+
+[data-look="web90s"] input[type="file"]:active::file-selector-button {
+  border-color: #0a0a0a #ffffff #ffffff #0a0a0a;
+  box-shadow: inset 1px 1px #808080, inset -1px -1px #dfdfdf;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Focus on beveled controls: the Windows 95 focus rectangle, dotted black inside the face, clear of
+   the 1px border and the bevel (2px, 3px on the default button). It never collides with a neighbor,
+   and stays black on title bars (black on the #c0c0c0 face is 12.6:1).
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-btn:focus-visible:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-iconbtn:focus-visible,
+[data-look="web90s"] .ft-segmented__item:focus-visible,
+[data-look="web90s"] .ft-chip:focus-visible,
+[data-look="web90s"] .ft-toast__action:focus-visible,
+[data-look="web90s"] .ft-toast__dismiss:focus-visible,
+[data-look="web90s"] a.bg-accent.text-accent-ink:focus-visible,
+[data-look="web90s"] a.border-line-strong.bg-surface:not([class*="ft-"]):focus-visible,
+[data-look="web90s"] button.border-line-strong.bg-surface:not([class*="ft-"]):focus-visible,
+[data-look="web90s"] button.ft-stepper__step.border-line-strong.bg-surface:focus-visible,
+[data-look="web90s"] a.ring-line-strong.bg-surface:not([class*="ft-"]):focus-visible,
+[data-look="web90s"] a.border-bad.bg-surface:not([class*="ft-"]):focus-visible,
+[data-look="web90s"] .ft-btn.ft-btn--urgent:focus-visible:not(.ft-lookpreview:not([data-look="web90s"]) *),
+[data-look="web90s"] .ft-main table td > button.border-line:not([class*="ft-"]):focus-visible,
+[data-look="web90s"] .ft-main table td > button.border-dashed:not([class*="ft-"]):focus-visible,
+[data-look="web90s"] button[aria-pressed="true"].bg-accent:not([class*="ft-"]):focus-visible,
+[data-look="web90s"] button[aria-checked="true"].bg-accent:not([class*="ft-"]):focus-visible,
+[data-look="web90s"] .ft-main button.bg-accent-soft:not([class*="ft-"]):focus-visible,
+[data-look="web90s"] .ft-sheet button.bg-accent-soft:not([class*="ft-"]):focus-visible {
+  outline: 2px dotted #000000;
+  outline-offset: -6px;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Privacy mask: a row of password-field asterisks on a white sunken strip, not a blur (screens had no
+   gaussian blur in 1997). Everything nested is hidden too (the band position charts in Comp). Fields
+   show a fixed six asterisks, so not even the length of the value shows.
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-private.ft-private--on,
+[data-look="web90s"] div.select-none.blur-\[6px\] {
+  filter: none;
+  color: transparent;
+  text-shadow: none;
+  background: #ffffff var(--w90-star) space no-repeat left center / auto 1em;
+  box-shadow: inset 1px 1px #808080, inset -1px -1px #dfdfdf;
+}
+
+/* Block masks (the offer builder's band meter) are taller than a line: one row of asterisks across
+   the middle of the sunken strip. */
+[data-look="web90s"] div.select-none.blur-\[6px\] {
+  background-size: auto 14px;
+}
+
+[data-look="web90s"] .ft-private.ft-private--on *,
+[data-look="web90s"] div.select-none.blur-\[6px\] * {
+  visibility: hidden;
+}
+
+/* Settings edit forms also blur the wrapper around money fields. Here the wrapper's blur is dropped
+   and the field shows its asterisks, like a password field (the kit keeps it hidden while typing). */
+[data-look="web90s"] .blur-\[5px\]:not(:focus-within) {
+  filter: none;
+}
+
+[data-look="web90s"] .blur-\[5px\]:not(:focus-within) .ft-input,
+[data-look="web90s"] .ft-input.ft-input--blurred {
+  color: transparent;
+  text-shadow: none;
+  background-image: var(--w90-star), var(--w90-star), var(--w90-star), var(--w90-star), var(--w90-star), var(--w90-star);
+  background-repeat: no-repeat;
+  background-origin: content-box;
+  background-size: 9px 14px;
+  background-position: 0 center, 9px center, 18px center, 27px center, 36px center, 45px center;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Charts: an Excel 97 area fill (opaque web-safe cyan, multiplied so gridlines and markers under it
+   still show) instead of a translucent wash; the dashed plan line is solid ink, not translucent.
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] svg path[opacity="0.1"] {
+  fill: #ccffff;
+  opacity: 1;
+  mix-blend-mode: multiply;
+}
+
+[data-look="web90s"] svg path[opacity="0.75"] {
+  opacity: 1;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Display menu cards (drawn in this look while it is active).
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-lookcard {
+  background: #ffffff;
+  border-color: #808080;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+[data-look="web90s"] .ft-lookcard:hover {
+  border-color: #0a0a0a;
+}
+
+[data-look="web90s"] .ft-lookcard.ft-lookcard--on {
+  border-color: #000080;
+  box-shadow: 0 0 0 2px #000080;
+}
+
+[data-look="web90s"] .ft-lookcard__check {
+  color: #000080;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Charts: tooltips are yellow Windows tips, tracks are sunken.
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-chart__tip {
+  background: var(--w90-tip);
+  border: 1px solid #0a0a0a;
+  border-radius: 0;
+  box-shadow: none;
+  color: #000000;
+  font-family: var(--w90-ui);
+}
+
+[data-look="web90s"] .ft-chart__track {
+  background-color: #ffffff;
+  box-shadow: inset 1px 1px #808080, inset -1px -1px #dfdfdf;
+}
+
+[data-look="web90s"] .ft-chart__bar {
+  border-radius: 0;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Decor (web90s/decor.tsx): marquee banner, footer with a visitor counter, odometer headcount.
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-w90-ticker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  margin-bottom: 12px;
+  padding: 0 8px;
+  overflow: hidden;
+  background: #000000;
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+  box-shadow: inset 1px 1px #0a0a0a;
+  color: #ffcc00;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+[data-look="web90s"] .ft-w90-ticker__new {
+  flex: none;
+  color: #ff3333;
+  animation: ft-web90s-blink 1s steps(1, end) 4;
+}
+
+[data-look="web90s"] .ft-w90-ticker__track {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  container-type: inline-size;
+}
+
+/* Like <marquee loop=3>: three slow passes from the right edge, then it glides in and rests at the
+   start of the message (the same rest state as reduced motion). Hover or keyboard focus pauses it. */
+[data-look="web90s"] .ft-w90-ticker__text {
+  display: inline-block;
+  animation:
+    ft-web90s-marquee 40s linear 3,
+    ft-web90s-marquee-rest 20s linear 120s 1 forwards;
+}
+
+[data-look="web90s"] .ft-w90-ticker:hover .ft-w90-ticker__text,
+[data-look="web90s"] .ft-main__inner:has(:focus-visible) .ft-w90-ticker__text {
+  animation-play-state: paused;
+}
+
+[data-look="web90s"] .ft-w90-footer {
+  margin-top: 48px;
+  text-align: center;
+  color: #222222;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+[data-look="web90s"] .ft-w90-footer__rule {
+  height: 0;
+  margin: 0 0 16px;
+  border: 0;
+  border-top: 1px solid #808080;
+  border-bottom: 1px solid #ffffff;
+}
+
+[data-look="web90s"] .ft-w90-footer__counter {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+[data-look="web90s"] .ft-w90-footer__small {
+  font-family: var(--w90-ui);
+  font-size: 12px;
+}
+
+[data-look="web90s"] .ft-w90-footer__new {
+  margin-left: 6px;
+  color: #990000;
+  font-family: var(--w90-ui);
+  font-size: 12px;
+  font-weight: 700;
+  animation: ft-web90s-blink 1s steps(1, end) 4;
+}
+
+[data-look="web90s"] .ft-w90-construction {
+  display: inline-block;
+  width: 36px;
+  height: 12px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 1px solid #0a0a0a;
+  background: repeating-linear-gradient(-45deg, #000000 0 4px, #ffcc00 4px 8px);
+}
+
+/* 88x31 web buttons: two lines of bold Arial on a flat face with a raised 1px edge. */
+[data-look="web90s"] .ft-w90-footer__badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+[data-look="web90s"] .ft-w90-badge88 {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  box-sizing: border-box;
+  width: 88px;
+  height: 31px;
+  border: 1px solid;
+  border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
+  font-family: var(--w90-ui);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+[data-look="web90s"] .ft-w90-badge88__top {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+[data-look="web90s"] .ft-w90-badge88__bottom {
+  font-size: 13px;
+}
+
+[data-look="web90s"] .ft-w90-badge88--navy {
+  background: #000080;
+  color: #ffff00;
+}
+
+[data-look="web90s"] .ft-w90-badge88--navy .ft-w90-badge88__top {
+  color: #ffffff;
+}
+
+[data-look="web90s"] .ft-w90-badge88--teal {
+  background: #008080;
+  color: #ffffff;
+}
+
+[data-look="web90s"] .ft-w90-badge88--black {
+  background: #000000;
+  color: #ffcc00;
+}
+
+[data-look="web90s"] .ft-w90-badge88--black .ft-w90-badge88__top {
+  color: #c0c0c0;
+}
+
+/* Odometer: white digits on black wheels in a sunken frame. */
+[data-look="web90s"] .ft-w90-odo {
+  display: inline-flex;
+  gap: 1px;
+  padding: 2px;
+  background: #404040;
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+  box-shadow: inset 1px 1px #0a0a0a;
+  vertical-align: middle;
+}
+
+[data-look="web90s"] .ft-w90-odo__digit {
+  display: inline-block;
+  min-width: 15px;
+  padding: 1px 2px;
+  text-align: center;
+  color: #ffffff;
+  background: linear-gradient(#2a2a2a 0, #000000 45%, #1a1a1a 50%, #000000 55%, #2a2a2a 100%);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-look="web90s"] .ft-w90-hc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+[data-look="web90s"] .ft-w90-hc__caption {
+  color: #222222;
+  font-family: var(--w90-ui);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+[data-look="web90s"] .ft-headcount--compact .ft-w90-odo__digit {
+  min-width: 13px;
+  font-size: 14px;
+}
+
+@keyframes ft-web90s-marquee {
+  from {
+    transform: translateX(100cqw);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes ft-web90s-marquee-rest {
+  from {
+    transform: translateX(100cqw);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* One blink per second (well under three flashes a second), four times, then it stays lit. */
+@keyframes ft-web90s-blink {
+  0% {
+    visibility: visible;
+  }
+  50% {
+    visibility: hidden;
+  }
+}
+
+/* Reduced motion (OS setting or the Display menu): the notice stands still at its start. */
+@media (prefers-reduced-motion: reduce) {
+  [data-look="web90s"] .ft-w90-ticker__text {
+    animation: none !important;
+    transform: none;
+  }
+
+  [data-look="web90s"] .ft-w90-ticker__new,
+  [data-look="web90s"] .ft-w90-footer__new {
+    animation: none !important;
+  }
+}
+
+[data-look="web90s"][data-reduced-motion] .ft-w90-ticker__text {
+  animation: none !important;
+  transform: none;
+}
+
+[data-look="web90s"][data-reduced-motion] .ft-w90-ticker__new,
+[data-look="web90s"][data-reduced-motion] .ft-w90-footer__new {
+  animation: none !important;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Server sync (src/app/Header.tsx). The chip is a sunken status bar cell, like the backup reminder
+   beside it: tinted yellow while changes wait and pink when something needs a hand. The notices are
+   the intranet's bordered boxes (yellow for warnings).
+   --------------------------------------------------------------------------------------------- */
+
+[data-look="web90s"] .ft-syncchip {
+  background: var(--w90-face);
+  color: #000000;
+  border: 1px solid;
+  border-color: #808080 #ffffff #ffffff #808080;
+  border-radius: 0;
+  box-shadow: none;
+  font-family: var(--w90-ui);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+[data-look="web90s"] .ft-syncchip:hover {
+  color: var(--w90-hover);
+  border-color: #808080 #ffffff #ffffff #808080;
+}
+
+[data-look="web90s"] .ft-syncchip.ft-syncchip--offline,
+[data-look="web90s"] .ft-syncchip.ft-syncchip--signed-out {
+  background: #ffffcc;
+}
+
+[data-look="web90s"] .ft-syncchip.ft-syncchip--attention {
+  background: #ffcccc;
+  color: #990000;
+}
+
+[data-look="web90s"] .ft-syncchip:not(.ft-syncchip--compact) .ft-syncchip__count {
+  min-width: 1.5rem;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+[data-look="web90s"] .ft-banner--sync:not(.ft-banner--storage) {
+  background: #ffffff;
+  border-color: #0a0a0a;
+  color: #000000;
+}
+
+[data-look="web90s"] .ft-banner--sync-rejected:not(.ft-banner--storage),
+[data-look="web90s"] .ft-banner--sync-paused:not(.ft-banner--storage),
+[data-look="web90s"] .ft-banner--sync-replaced:not(.ft-banner--storage) {
+  background: #ffffcc;
+}
+
+[data-look="web90s"] .ft-banner--sync .ft-banner__icon {
+  color: #000000;
+}

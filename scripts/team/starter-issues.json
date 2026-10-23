@@ -1,0 +1,229 @@
+{
+  "labels": [
+    {
+      "name": "security",
+      "color": "1F3FD1",
+      "description": "Workstream 1: security and team logins"
+    },
+    {
+      "name": "HR depth",
+      "color": "0E8A16",
+      "description": "Workstream 2: HR depth and integrations"
+    },
+    {
+      "name": "product and AI",
+      "color": "B60205",
+      "description": "Workstream 3: product, access and AI"
+    },
+    {
+      "name": "team",
+      "color": "5319E7",
+      "description": "Shared work for the whole team"
+    },
+    {
+      "name": "first task",
+      "color": "FBCA04",
+      "description": "The first pull request, due by the end of week 1"
+    },
+    {
+      "name": "deliverable",
+      "color": "C5DEF5",
+      "description": "A deliverable from the project plan: core (must ship) unless also labeled stretch"
+    },
+    {
+      "name": "stretch",
+      "color": "BFD4F2",
+      "description": "A stretch goal: spare time before week 6, once the workstream's core work is on track"
+    },
+    {
+      "name": "task",
+      "color": "EDEDED",
+      "description": "A piece of work small enough for one pull request"
+    },
+    {
+      "name": "bug",
+      "color": "D93F0B",
+      "description": "Something does not work as it should"
+    }
+  ],
+  "milestones": [
+    {
+      "title": "Week 1: first pull requests merged"
+    },
+    {
+      "title": "Week 2: release 1 review"
+    },
+    {
+      "title": "Week 4: release 2 review"
+    },
+    {
+      "title": "Week 6: release 3 review"
+    },
+    {
+      "title": "Week 8: final review"
+    }
+  ],
+  "issues": [
+    {
+      "title": "Onboarding: set up, run verify, walk the demo path",
+      "labels": [
+        "team",
+        "first task"
+      ],
+      "milestone": "Week 1: first pull requests merged",
+      "body": "Everyone does this in week 1. Follow the setup steps in CONTRIBUTING.md.\n\n## Done when\n\n- [ ] Claude Code installed and signed in\n- [ ] `npm run verify` passes on a clean clone\n- [ ] Demo path walked locally with the sample company: open a job, move a candidate to an offer, hire, onboarding checklist, pay run\n- [ ] A demo company made on the live server; careers page and Lark tried there\n- [ ] Asked Claude Code for a tour of your workstream's code, and checked its answers against the code\n- [ ] Your workstream's first pull request merged by the end of week 1"
+    },
+    {
+      "title": "Threat model for sign-in, invites and the careers form",
+      "labels": [
+        "security",
+        "first task",
+        "deliverable"
+      ],
+      "milestone": "Week 1: first pull requests merged",
+      "body": "Write `docs/THREATS.md`: what an attacker could want from First Twenty and how they could try to get it.\n\nStart from `server/src/auth.ts` (sign-in, sessions, the login rate limiter), `server/src/workspaces.ts` (sign-up and invites) and `server/src/careers/` (the public apply form).\n\nThe repo is public, so `docs/THREATS.md` names gaps, not working attacks. Any vulnerability you find goes through `SECURITY.md` (private vulnerability reporting), never a public issue or pull request.\n\n## Done when\n\n- [ ] Assets listed (logins, company data, careers applications, the assistant's budget)\n- [ ] Each entry point listed with the defenses already in the code, each with a file reference\n- [ ] The five biggest gaps ranked, each with a proposed fix (they become issues; anything exploitable is reported privately instead)\n- [ ] Reviewed by a teammate and the product owner"
+    },
+    {
+      "title": "Roles the server enforces for pay and personal records",
+      "labels": [
+        "security",
+        "deliverable"
+      ],
+      "milestone": "Week 4: release 2 review",
+      "body": "Today every login is created as an admin (`server/src/workspaces.ts`), and the manager and employee limits live only in the browser (`src/domain/access.ts`, `useViewer()`), which is a preview, not security.\n\nThis issue covers pay and personal records only. Roles for every other record are stretch work, filed as a new issue once this one is merged.\n\n## Done when\n\n- [ ] A design note approved in a Wednesday session before the code starts: roles, what each may read and write in pay and personal records, how sync filters those records per login (see `docs/SYNC.md`)\n- [ ] Each login has a role (admin, manager, employee); an invite picks the role\n- [ ] For pay and personal records, the server sends each login only what its role may read, and refuses writes it may not make\n- [ ] Tests try each forbidden read and write on those records, and fail if the check is removed\n- [ ] The UI's \"preview, not security\" notes are updated wherever the server now enforces the role, and kept everywhere else"
+    },
+    {
+      "title": "Password reset by email",
+      "labels": [
+        "security",
+        "deliverable"
+      ],
+      "milestone": "Week 6: release 3 review",
+      "body": "There is no way to recover a forgotten password today.\n\n## Done when\n\n- [ ] A reset link that is single-use, expires, and is stored hashed (follow the invite tokens' pattern)\n- [ ] Requests are rate-limited and never reveal whether an email has a login\n- [ ] Signing in after a reset ends the login's other sessions\n- [ ] Tests cover expiry, reuse, and the rate limit\n- [ ] Email delivery choice agreed with the product owner (it costs money and needs a sending domain)"
+    },
+    {
+      "title": "Pre-release security check and fixes",
+      "labels": [
+        "security",
+        "deliverable"
+      ],
+      "milestone": "Week 8: final review",
+      "body": "Any vulnerability found goes through `SECURITY.md` (private vulnerability reporting), never a public issue or pull request. The results pull request records only what is safe to make public.\n\n## Done when\n\n- [ ] `docs/SECURITY-CHECKLIST.md`: the checks to run before each release (dependencies, headers, open ports, backups, secrets, the threat model's gaps)\n- [ ] Run in weeks 7 and 8, with the results recorded in a pull request and every finding fixed or filed (anything exploitable through `SECURITY.md`)"
+    },
+    {
+      "title": "Encrypted storage and a real domain",
+      "labels": [
+        "security",
+        "deliverable",
+        "stretch"
+      ],
+      "milestone": "Week 8: final review",
+      "body": "Stretch work: only in spare time before week 6, once the core work is on track. Done together with the product owner, who holds the server access.\n\n## Done when\n\n- [ ] A runbook in `docs/SERVER.md`: moving the database to an encrypted volume, with the backup and restore steps tested on a copy first\n- [ ] A runbook for moving from the sslip.io address to a real domain (DNS, certificates, careers hosts)\n- [ ] The product owner has carried out both, and the live site still passes its health check"
+    },
+    {
+      "title": "New York: pay range in job posts",
+      "labels": [
+        "HR depth",
+        "first task",
+        "deliverable"
+      ],
+      "milestone": "Week 1: first pull requests merged",
+      "body": "California already requires a pay range in job posts, and the app handles it. Add New York's rule for jobs based there.\n\n## Done when\n\n- [ ] The rule's text, thresholds and effective date come from an official New York source, opened and read, recorded in `docs/LAW.md` with the link and the date checked\n- [ ] A New York-based job gets the same pay-range check and posting wording California jobs get, adjusted to New York's rule\n- [ ] Tests cover a New York job with and without a range\n- [ ] Nothing about California changes"
+    },
+    {
+      "title": "New York rule pack",
+      "labels": [
+        "HR depth",
+        "deliverable"
+      ],
+      "milestone": "Week 4: release 2 review",
+      "body": "Rules cover California employers only today (see `ARCHITECTURE.md`, \"Legal rules by work state\").\n\n## Done when\n\n- [ ] A design note approved in a Wednesday session before the code starts: each New York rule a 1-to-20-person company meets (thresholds, notices, final pay, leave), each with its official source\n- [ ] The rules implemented with tests, each recorded in `docs/LAW.md`"
+    },
+    {
+      "title": "Employees working in New York for a California company",
+      "labels": [
+        "HR depth",
+        "deliverable"
+      ],
+      "milestone": "Week 6: release 3 review",
+      "body": "## Done when\n\n- [ ] A person's work state drives their checklists, notices, final pay and leave rules, for California and New York\n- [ ] The threshold counts (5, 15, 20 employees) count people the way each rule's source says\n- [ ] Tests for a California company with a New York employee, and the reverse"
+    },
+    {
+      "title": "Gusto payroll export",
+      "labels": [
+        "HR depth",
+        "deliverable",
+        "stretch"
+      ],
+      "milestone": "Week 8: final review",
+      "body": "Stretch work: only in spare time before week 6, once the core work is on track.\n\nPay run prep exports CSVs for ADP RUN and Justworks today (`src/domain/payrun`).\n\n## Done when\n\n- [ ] A Gusto export matching Gusto's documented import format, with the documentation linked in the pull request\n- [ ] Tests on the sample company's pay runs, including a prorated first paycheck"
+    },
+    {
+      "title": "A second state's rule pack",
+      "labels": [
+        "HR depth",
+        "deliverable",
+        "stretch"
+      ],
+      "milestone": "Week 8: final review",
+      "body": "Stretch work: only in spare time before week 6, once the New York work is on track.\n\n## Done when\n\n- [ ] The state chosen with the product owner\n- [ ] Each rule a 1-to-20-person company meets, from an official source, recorded in `docs/LAW.md` with the date checked\n- [ ] The rules implemented with tests, done by week 6"
+    },
+    {
+      "title": "25 test questions for Lark, with correct answers",
+      "labels": [
+        "product and AI",
+        "first task",
+        "deliverable"
+      ],
+      "milestone": "Week 1: first pull requests merged",
+      "body": "Lark is the in-app assistant (`server/src/assistant/`). Nobody measures whether its answers are right.\n\n## Done when\n\n- [ ] 25 questions an admin of the sample company might ask, each with the correct answer worked out from the sample data (`docs/SAMPLE.md`)\n- [ ] A mix: simple lookups, legal deadlines, counts, questions it should refuse or answer with care (other people's pay for non-admins, legal advice)\n- [ ] Stored as a test fixture the scoring suite can read"
+    },
+    {
+      "title": "A test suite that scores Lark's answers",
+      "labels": [
+        "product and AI",
+        "deliverable"
+      ],
+      "milestone": "Week 2: release 1 review",
+      "body": "## Done when\n\n- [ ] A runner that asks Lark each fixture question and scores the answer (exact facts checked by code; wording judged against written criteria)\n- [ ] Runs against the fake model in CI (no cost), and against the real model only on demand, under a set spend cap\n- [ ] A report: accuracy, refusals that should have been answers, answers that should have been refusals\n- [ ] A baseline score recorded, so later prompt or tool changes can be compared"
+    },
+    {
+      "title": "Founder usability sessions",
+      "labels": [
+        "product and AI",
+        "deliverable"
+      ],
+      "milestone": "Week 4: release 2 review",
+      "body": "## Done when\n\n- [ ] Before the sessions, the advisor reviews the session script and consent form\n- [ ] If any results will be published as research, the advisor checks whether IRB review applies\n- [ ] Sessions with three founders. Each participant signs the consent form and uses only a demo company to post a job, hire and prepare a pay run\n- [ ] Notes kept out of the repo, with no personal details; the top issues filed, each with the task tried and what happened, and nothing that identifies the person or their company\n- [ ] The top fixes merged, each pull request linked here"
+    },
+    {
+      "title": "The three most common tasks on a phone",
+      "labels": [
+        "product and AI",
+        "deliverable"
+      ],
+      "milestone": "Week 6: release 3 review",
+      "body": "## Done when\n\n- [ ] The three most common tasks (agreed with the product owner) work at 375px wide and by keyboard only, in every look\n- [ ] Each problem found is fixed or filed, and the pull requests say which"
+    },
+    {
+      "title": "A second round of founder sessions",
+      "labels": [
+        "product and AI",
+        "deliverable",
+        "stretch"
+      ],
+      "milestone": "Week 8: final review",
+      "body": "Stretch work: only in spare time before week 6, once the core work is on track.\n\n## Done when\n\n- [ ] Sessions with three more founders, on the same tasks, after the fixes from the first round, under the same consent and demo-company rules\n- [ ] A comparison with nothing that identifies anyone: what got easier, what is still hard, and what the next team should do first"
+    },
+    {
+      "title": "A full WCAG 2.2 AA audit",
+      "labels": [
+        "product and AI",
+        "deliverable",
+        "stretch"
+      ],
+      "milestone": "Week 8: final review",
+      "body": "Stretch work: only in spare time before week 6, once the core work is on track.\n\n## Done when\n\n- [ ] Every page checked against WCAG 2.2 AA, by keyboard and with a screen reader\n- [ ] Each failure fixed or filed, with the success criterion it breaks"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+node_modules
+dist
+dist-single
+dist-careers/
+*.log
+.vite
+first-twenty.html
+scripts/profile*
+scripts/*.png
+
+# Server (docs/SYNC.md): local settings, the PGlite dev database, the server bundle
+.env
+.env.*
+!.env.example
+.data/
+dist-server/
+
+# Claude Code: settings.json is shared by the team; personal settings stay local
+.claude/settings.local.json

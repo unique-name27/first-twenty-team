@@ -1,0 +1,17 @@
+// Hiring domain (ATS). Import from '@/domain/hiring'.
+// Pure modules come first so they are fully initialized before any module that imports the store.
+export * from './util'
+export * from './parse'
+export * from './postings'
+export * from './fairChance'
+export * from './pipeline'
+export * from './metrics'
+export * from './offers'
+export * from './backgroundChecks'
+export * from './scheduling'
+export * from './scorecards'
+export * from './referrals'
+export * from './candidates'
+export * from './jobs'
+export * from './requisitions'
+export * from './messages'

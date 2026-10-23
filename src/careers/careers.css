@@ -1,0 +1,1367 @@
+/*
+  Careers pages (src/careers/render.ts): the static demo site (scripts/careers/build.ts) and the server's
+  live careers pages (server/src/careers/routes.ts, served at /assets/careers.css on a careers host).
+  First Twenty's default look, "Swiss precision" (src/themes/sleek.css), restated for public pages.
+  Tokens and rules are copied, not imported.
+
+  White ground, true-black ink, one grotesk (Archivo), square corners. Structure comes from rules:
+  a page head opens under a thick-and-thin rule (3px ink, 2px paper, 1px ink); a 2px ink rule starts a
+  section with a tracked uppercase micro-label under it; 1px light rules divide rows. One accent
+  (ultramarine) for action and the focus ring. Status is a square marker and a word. Figures are
+  tabular; big figures are set semi-condensed on Archivo's width axis.
+
+  Public-page sizes: 16px body (the app's 14px is for dense screens), every target at least 44px, and
+  rem/em units throughout so text zoom and 200% page zoom reflow instead of clipping.
+*/
+
+@font-face {
+  font-family: "Archivo Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  src:
+    url("archivo-latin-standard-normal.woff2") format("woff2-variations"),
+    url("archivo-latin-standard-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  --paper: #ffffff;
+  --surface-2: #f2f2f2;
+  --ink: #000000;
+  --ink-2: #262626;
+  --ink-3: #575757;
+  --line: #d2d2d2;
+  --line-strong: #8f8f8f;
+  --control-border: #767676;
+  --accent: #0035cc;
+  --accent-hover: #002799;
+  --accent-ink: #ffffff;
+  --good: #0e6b35;
+  --bad: #c2170c;
+  --focus: #0035cc;
+  --rule: #000000;
+  --hover: rgb(0 0 0 / 0.045);
+  --press: rgb(0 0 0 / 0.1);
+  --selection: rgb(0 53 204 / 0.2);
+  --focus-fill: rgb(0 53 204 / 0.06);
+  --link-line: rgb(0 0 0 / 0.55);
+  --w-regular: 400;
+  --w-medium: 500;
+  --w-semi: 600;
+  --w-bold: 700;
+  --figure-stretch: 84%;
+  --font: "Archivo Variable", "Helvetica Neue", Arial, system-ui, sans-serif;
+  color-scheme: light;
+}
+
+/* Dark, designed rather than inverted (the sleek dark tokens): a warm charcoal ground, rows that stay
+   visible, near-white section rules, a mid ultramarine fill with white words for the primary action, a
+   light tint of the same blue for the focus ring, and weights a step thinner so light words do not bloom. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #141413;
+    --surface-2: #1f1f1d;
+    --ink: #f3f2ee;
+    --ink-2: #dddcd6;
+    --ink-3: #aaa9a2;
+    --line: #3a3a37;
+    --line-strong: #7c7b75;
+    --control-border: #8e8d86;
+    --accent: #2766d2;
+    --accent-hover: #1d55b5;
+    --accent-ink: #ffffff;
+    --good: #56c78f;
+    --bad: #ff7468;
+    --focus: #86b3ff;
+    --rule: #f3f2ee;
+    --hover: rgb(255 255 255 / 0.06);
+    --press: rgb(255 255 255 / 0.13);
+    --selection: rgb(134 179 255 / 0.3);
+    --focus-fill: rgb(134 179 255 / 0.1);
+    --link-line: rgb(243 242 238 / 0.55);
+    --w-regular: 370;
+    --w-medium: 460;
+    --w-semi: 560;
+    --w-bold: 660;
+    color-scheme: dark;
+  }
+}
+
+/* ---------- Base ------------------------------------------------------------------------------ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 1rem;
+  font-weight: var(--w-regular);
+  line-height: 1.55;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--selection);
+}
+
+strong,
+b {
+  font-weight: var(--w-semi);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-weight: var(--w-semi);
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+}
+
+a {
+  color: var(--ink);
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--link-line);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+  text-decoration-color: currentColor;
+}
+
+/* Focus: a square 2px accent ring with a 2px paper gap, everywhere. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 0;
+}
+
+main:focus,
+[tabindex="-1"]:focus {
+  outline: none;
+}
+
+.vh {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.wrap {
+  width: 100%;
+  max-width: 76rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+
+@media (min-width: 48em) {
+  .wrap {
+    padding-inline: 2rem;
+  }
+}
+
+.skip {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: var(--w-semi);
+  text-decoration: none;
+  transform: translateY(calc(-100% - 1rem));
+}
+
+.skip:focus {
+  transform: none;
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ---------- Masthead -------------------------------------------------------------------------- */
+
+.masthead {
+  border-bottom: 1px solid var(--line);
+}
+
+.masthead__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 1.5rem;
+  padding-block: 0.375rem;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 44px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 1.125rem;
+  line-height: 1.2;
+}
+
+.brand:hover {
+  text-decoration: none;
+}
+
+.brand:hover .brand__name {
+  text-decoration: underline 2px;
+  text-underline-offset: 4px;
+}
+
+.brand__mark {
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
+  background: var(--ink);
+}
+
+.brand__name {
+  font-weight: var(--w-bold);
+  letter-spacing: -0.015em;
+}
+
+.brand__sub {
+  padding-left: 0.625rem;
+  border-left: 1px solid var(--line-strong);
+  color: var(--ink-2);
+}
+
+.masthead__demo {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 0.9375rem;
+  font-weight: var(--w-semi);
+}
+
+/* ---------- Fictional-company notice ------------------------------------------------------------ */
+
+.fiction {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.875rem;
+  margin: 1.25rem 0 0;
+  padding: 0.5rem 0 0.5rem 0.875rem;
+  border-left: 3px solid var(--ink);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.fiction__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: var(--w-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fiction__tag::before {
+  content: "";
+  width: 0.5625rem;
+  height: 0.5625rem;
+  background: var(--ink);
+}
+
+/* ---------- Page head: the thick-and-thin rule -------------------------------------------------- */
+
+.pagehead {
+  position: relative;
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  padding-bottom: 2.25rem;
+  border-top: 3px solid var(--rule);
+}
+
+/* The thin rule: 1px, 2px under the thick one. A border rather than a shadow, so forced colors keep it. */
+.pagehead::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  right: 0;
+  left: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.kicker {
+  margin: 0 0 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: var(--w-bold);
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.pagehead__title {
+  margin: 0;
+  font-size: clamp(2.25rem, 1.4rem + 3.4vw, 4.25rem);
+  font-weight: var(--w-bold);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+}
+
+.lede {
+  max-width: 38ch;
+  margin: 1rem 0 0;
+  font-size: clamp(1.25rem, 1.05rem + 0.8vw, 1.75rem);
+  font-weight: var(--w-medium);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.facts-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-2);
+}
+
+.facts-line li:not(:last-child)::after {
+  content: "·";
+  padding-inline: 0.625rem;
+  color: var(--ink-3);
+}
+
+/* On a phone the facts stack, one per line, without separators left dangling at line ends. */
+@media (max-width: 39.99em) {
+  .facts-line {
+    flex-direction: column;
+  }
+
+  .facts-line li:not(:last-child)::after {
+    content: none;
+  }
+}
+
+/* Big figures: semi-condensed numerals with sentence-case labels, divided by 1px rules. */
+.figures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 2rem 0 0;
+  border-top: 1px solid var(--line);
+}
+
+@media (min-width: 40em) {
+  .figures {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.figures > div {
+  padding: 0.75rem 1rem 0 0;
+}
+
+@media (min-width: 40em) {
+  .figures > div + div {
+    padding-left: 1.25rem;
+    border-left: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 39.99em) {
+  .figures > div:nth-child(even) {
+    padding-left: 1rem;
+    border-left: 1px solid var(--line);
+  }
+
+  .figures > div:nth-child(n + 3) {
+    margin-top: 0.75rem;
+    border-top: 1px solid var(--line);
+  }
+}
+
+.figures dt {
+  font-size: 0.875rem;
+  color: var(--ink-2);
+}
+
+.figures dd {
+  margin: 0.125rem 0 0;
+  font-size: clamp(2.5rem, 1.9rem + 2.2vw, 3.75rem);
+  font-weight: var(--w-semi);
+  font-stretch: var(--figure-stretch);
+  font-variant-numeric: tabular-nums lining-nums;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+/* ---------- Sections: 2px rule, uppercase micro-label ------------------------------------------- */
+
+.section {
+  margin-top: 3rem;
+  border-top: 2px solid var(--rule);
+}
+
+.section__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  padding: 0.625rem 0 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.label {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: var(--w-bold);
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+/* ---------- Open roles ------------------------------------------------------------------------- */
+
+.team {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  border-bottom: 1px solid var(--line);
+}
+
+@media (min-width: 56em) {
+  .team {
+    grid-template-columns: 15rem minmax(0, 1fr);
+    column-gap: 2.5rem;
+  }
+}
+
+.team__head {
+  padding: 1.125rem 0 0.25rem;
+}
+
+.team__name {
+  margin: 0;
+  font-size: 1.125rem;
+  line-height: 1.3;
+}
+
+.team__count {
+  margin: 0.125rem 0 0;
+  font-size: 0.875rem;
+  color: var(--ink-2);
+}
+
+.roles {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A role row is one big target: the title link stretches over the whole row. The row keeps to the
+   column, so its rules, hover fill and focus ring line up with every other rule on the page. */
+.role {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem 2rem;
+  margin-inline: 0;
+  padding: 1rem 0;
+  border-top: 1px solid var(--line);
+  transition: background-color 90ms linear;
+}
+
+.role:first-child {
+  border-top: 0;
+}
+
+@media (max-width: 55.99em) {
+  .role:first-child {
+    border-top: 1px solid var(--line);
+  }
+}
+
+@media (min-width: 40em) {
+  .role {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  .role__side {
+    text-align: right;
+  }
+}
+
+.role:hover {
+  background: var(--hover);
+}
+
+.role:active {
+  background: var(--press);
+}
+
+.role__title {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.role__link {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.role__link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.role:hover .role__link {
+  text-decoration: underline 2px;
+  text-underline-offset: 4px;
+}
+
+@supports selector(:has(a)) {
+  /* The ring sits on the row's own edge and a light accent tint fills it, so the focused row reads as
+     a selected cell while its text stays on the column line. */
+  .role:has(.role__link:focus-visible) {
+    outline: 2px solid var(--focus);
+    outline-offset: 0;
+    background: var(--focus-fill);
+  }
+
+  .role__link:focus-visible {
+    outline: none;
+  }
+}
+
+.role__meta {
+  margin: 0.375rem 0 0;
+  color: var(--ink-2);
+  font-size: 0.9375rem;
+}
+
+.role__side p {
+  margin: 0;
+}
+
+.role__pay {
+  font-size: 1.125rem;
+  font-weight: var(--w-semi);
+  line-height: 1.3;
+}
+
+.role__note,
+.role__posted {
+  font-size: 0.875rem;
+  color: var(--ink-2);
+}
+
+.empty {
+  padding: 1.5rem 0;
+}
+
+.about__grid {
+  display: grid;
+  gap: 1rem 3rem;
+  padding-top: 1rem;
+}
+
+@media (min-width: 56em) {
+  .about__grid {
+    grid-template-columns: minmax(0, 40rem) auto;
+    justify-content: space-between;
+    align-items: start;
+  }
+}
+
+.about__text,
+.about__action {
+  margin: 0;
+}
+
+/* ---------- Buttons ---------------------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.625rem 1.125rem;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: var(--w-medium);
+  line-height: 1.15;
+  letter-spacing: 0.005em;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 90ms linear,
+    border-color 90ms linear,
+    color 90ms linear;
+}
+
+.btn:hover {
+  text-decoration: none;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn--lg {
+  min-height: 48px;
+  padding-inline: 1.375rem;
+}
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: var(--w-semi);
+}
+
+.btn--primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn--primary:active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+/* An accent ring on an accent fill reads as a slightly bigger button: ink ring across the paper gap. */
+.btn--primary:focus-visible {
+  outline-color: var(--ink);
+}
+
+.btn--secondary {
+  border-color: var(--ink);
+}
+
+.btn--secondary:hover,
+.btn--ghost:hover {
+  background: var(--hover);
+  border-color: var(--ink);
+}
+
+.btn--secondary:active,
+.btn--ghost:active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.btn--ghost {
+  border-color: var(--line-strong);
+}
+
+.btn--block {
+  display: flex;
+  width: 100%;
+}
+
+/* ---------- Job page --------------------------------------------------------------------------- */
+
+.crumbs {
+  margin: 1rem 0 0;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 0.9375rem;
+  font-weight: var(--w-semi);
+}
+
+.pagehead--job {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem 2.5rem;
+  margin-top: 0.75rem;
+}
+
+.pagehead__text {
+  flex: 1 1 28rem;
+  min-width: 0;
+}
+
+.pagehead--job .pagehead__title {
+  max-width: 24ch;
+  font-size: clamp(2rem, 1.35rem + 2.4vw, 3.25rem);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+}
+
+.subtitle {
+  margin: 0.875rem 0 0;
+  font-size: 1.125rem;
+  line-height: 1.4;
+}
+
+.job {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "facts"
+    "posting";
+}
+
+.facts {
+  grid-area: facts;
+}
+
+.posting {
+  grid-area: posting;
+}
+
+@media (min-width: 60em) {
+  .job {
+    grid-template-columns: minmax(0, 1fr) 19rem;
+    grid-template-areas: "posting facts";
+    column-gap: 5rem;
+  }
+
+  /* The 1px rule that runs down the gutter between the main and side columns. */
+  .facts {
+    position: relative;
+  }
+
+  .facts::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -2.5rem;
+    width: 1px;
+    background: var(--line);
+  }
+}
+
+@media (min-width: 60em) and (min-height: 40em) {
+  .facts__inner {
+    position: sticky;
+    top: 1.5rem;
+  }
+}
+
+.facts__inner {
+  border-top: 2px solid var(--rule);
+}
+
+.facts__h {
+  padding: 0.625rem 0 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.facts__list {
+  margin: 0;
+}
+
+.facts__list > div {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: 0.25rem 1rem;
+  padding: 0.6875rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.facts__list dt {
+  font-size: 0.875rem;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+.facts__list dd {
+  margin: 0;
+  font-weight: var(--w-semi);
+  line-height: 1.4;
+}
+
+/* The way to apply stays in view with the sticky column. On narrower screens the facts sit right under
+   the page head's own Apply button, so this one would only repeat it. */
+.facts__apply {
+  margin: 1.25rem 0 0;
+}
+
+@media (max-width: 59.99em) {
+  .facts__apply {
+    display: none;
+  }
+}
+
+.facts__list > .facts__pay {
+  grid-template-columns: minmax(0, 1fr);
+  padding-block: 0.75rem 0.875rem;
+}
+
+.fig {
+  display: block;
+  font-size: clamp(1.625rem, 1.4rem + 0.6vw, 1.875rem);
+  font-weight: var(--w-semi);
+  font-stretch: var(--figure-stretch);
+  font-variant-numeric: tabular-nums lining-nums;
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+}
+
+.facts__sub {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: var(--w-regular);
+  color: var(--ink-2);
+}
+
+/* Status: a square marker and a word, in the status hue. */
+.status {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-weight: var(--w-semi);
+}
+
+.status__mark {
+  flex: none;
+  width: 0.625rem;
+  height: 0.625rem;
+  background: currentColor;
+}
+
+.status--good {
+  color: var(--good);
+}
+
+/* Posting body */
+.posting {
+  max-width: 44rem;
+  margin-top: 2.25rem;
+  font-size: 1.0625rem;
+  line-height: 1.6;
+}
+
+@media (min-width: 60em) {
+  .posting {
+    margin-top: 0;
+  }
+}
+
+.posting p {
+  margin: 0 0 1rem;
+}
+
+.psec {
+  margin-top: 2.25rem;
+  border-top: 2px solid var(--rule);
+}
+
+.psec:first-child {
+  margin-top: 0;
+}
+
+.psec__h {
+  margin: 0 0 1rem;
+  padding: 0.625rem 0 0.5rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.8125rem;
+  font-weight: var(--w-bold);
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.pblock {
+  margin-top: 1.75rem;
+}
+
+.pblock--lead p:first-child {
+  font-size: clamp(1.1875rem, 1.1rem + 0.4vw, 1.375rem);
+  font-weight: var(--w-medium);
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+}
+
+.pblock--after {
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.psec--fine {
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+}
+
+.ticks {
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.ticks li {
+  position: relative;
+  margin-bottom: 0.625rem;
+  padding-left: 1.375rem;
+}
+
+.ticks li::before {
+  content: "";
+  position: absolute;
+  top: 0.62em;
+  left: 0;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  background: var(--ink);
+}
+
+/* ---------- Apply ------------------------------------------------------------------------------ */
+
+.apply {
+  margin-top: 4rem;
+  border-top: 2px solid var(--rule);
+  scroll-margin-top: 1rem;
+}
+
+.apply__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem 5rem;
+  padding-top: 0.625rem;
+}
+
+@media (min-width: 60em) {
+  .apply__grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 40rem);
+  }
+}
+
+.apply__h {
+  margin: 0;
+}
+
+.apply__h .label {
+  display: block;
+}
+
+.apply__title {
+  display: block;
+  margin-top: 1rem;
+  font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.5rem);
+  font-weight: var(--w-bold);
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  text-transform: none;
+}
+
+.apply__meta {
+  margin: 0.875rem 0 0;
+  color: var(--ink-2);
+  line-height: 1.45;
+}
+
+.apply__pay {
+  margin: 1.25rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+/* On a phone the form follows the title straight away; the pay is already in the facts above. */
+@media (max-width: 59.99em) {
+  .apply__pay {
+    display: none;
+  }
+}
+
+@media (min-width: 60em) and (min-height: 40em) {
+  .apply__intro {
+    align-self: stretch;
+  }
+
+  .apply__sticky {
+    position: sticky;
+    top: 1.5rem;
+  }
+}
+
+.apply__body {
+  padding-top: 0.25rem;
+}
+
+.demo-note {
+  margin: 0 0 2rem;
+  padding: 0.25rem 0 0.25rem 1rem;
+  border-left: 3px solid var(--ink);
+}
+
+.demo-note p {
+  margin: 0.375rem 0 0;
+  color: var(--ink-2);
+}
+
+.demo-note .demo-note__lead {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.1875rem;
+  font-weight: var(--w-semi);
+  line-height: 1.3;
+}
+
+.form__req {
+  margin: 0 0 1.25rem;
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+}
+
+.field {
+  margin-bottom: 1.5rem;
+}
+
+.field__label {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-weight: var(--w-semi);
+  line-height: 1.35;
+}
+
+.opt {
+  font-weight: var(--w-regular);
+  color: var(--ink-2);
+}
+
+.field__hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.input {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--control-border);
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.4;
+  transition: border-color 90ms linear;
+}
+
+.textarea {
+  min-height: 9.5rem;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.input:hover {
+  border-color: var(--ink);
+}
+
+/* Focus hugs the field: a square 2px accent ring over the border. */
+.input:focus,
+.input:focus-visible {
+  border-color: var(--focus);
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+  border-radius: 2px;
+}
+
+/* An error says so on the field too: a 2px red frame (the message under it says what is wrong). */
+.input[aria-invalid="true"],
+.input[aria-invalid="true"]:hover {
+  border-color: var(--bad);
+  box-shadow: inset 0 0 0 1px var(--bad);
+}
+
+.file {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  padding: 0.125rem 0;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 0.9375rem;
+}
+
+.file::file-selector-button {
+  min-height: 44px;
+  margin-right: 0.875rem;
+  padding: 0.5rem 1.125rem;
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: var(--w-medium);
+  cursor: pointer;
+  transition: background-color 90ms linear;
+}
+
+.file:hover::file-selector-button {
+  background: var(--hover);
+}
+
+.file[aria-invalid="true"]::file-selector-button {
+  border-color: var(--bad);
+  box-shadow: inset 0 0 0 1px var(--bad);
+}
+
+.field__error {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0;
+  color: var(--bad);
+  font-weight: var(--w-semi);
+  line-height: 1.4;
+}
+
+.field__error::before {
+  content: "";
+  flex: none;
+  width: 0.625rem;
+  height: 0.625rem;
+  background: currentColor;
+}
+
+.field__error[hidden] {
+  display: none;
+}
+
+.errors {
+  margin: 0 0 1.75rem;
+  padding: 0.375rem 0 0.375rem 1rem;
+  border-left: 3px solid var(--bad);
+}
+
+.errors[hidden] {
+  display: none;
+}
+
+.errors__title {
+  margin: 0 0 0.25rem;
+  color: var(--bad);
+  font-size: 1.125rem;
+  line-height: 1.3;
+}
+
+.errors__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.errors__list a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--bad);
+  font-weight: var(--w-semi);
+  text-decoration-color: currentColor;
+}
+
+.selfid {
+  margin: 2rem 0 1.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+}
+
+.selfid__h {
+  margin: 0 0 0.375rem;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.selfid p {
+  margin: 0;
+}
+
+.form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+}
+
+.form__fine {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+}
+
+.done {
+  padding: 0.25rem 0 0.25rem 1.25rem;
+  border-left: 3px solid var(--good);
+}
+
+.done__status {
+  margin: 0;
+  font-size: 0.8125rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.done__title {
+  margin: 0.5rem 0 0.75rem;
+  font-size: clamp(1.5rem, 1.25rem + 1vw, 2rem);
+  font-weight: var(--w-bold);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.done p:not(.done__status) {
+  margin: 0 0 0.875rem;
+}
+
+.done__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+/* ---------- Footer ----------------------------------------------------------------------------- */
+
+.foot {
+  margin-top: 5rem;
+  padding-bottom: 2.5rem;
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+}
+
+.foot__grid {
+  display: grid;
+  gap: 0.75rem 3rem;
+  padding-top: 1.25rem;
+  border-top: 2px solid var(--rule);
+}
+
+
+@media (min-width: 48em) {
+  .foot__grid {
+    grid-template-columns: minmax(0, 38rem) auto;
+    justify-content: space-between;
+  }
+}
+
+.foot__note {
+  margin: 0;
+}
+
+.foot__note strong {
+  color: var(--ink);
+}
+
+.foot__links {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.foot__links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+/* ---------- Forced colors ---------------------------------------------------------------------- */
+
+/* Windows High Contrast drops backgrounds and box shadows. The square markers are backgrounds, so they
+   opt out and paint in the system text color; an invalid field gets a 3px frame instead of a shadow. */
+@media (forced-colors: active) {
+  .brand__mark,
+  .fiction__tag::before,
+  .status__mark,
+  .ticks li::before,
+  .field__error::before {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+
+  .facts::before {
+    forced-color-adjust: none;
+    background: GrayText;
+  }
+
+  .input[aria-invalid="true"],
+  .input[aria-invalid="true"]:hover {
+    border: 3px solid CanvasText;
+    box-shadow: none;
+  }
+
+  .file[aria-invalid="true"]::file-selector-button {
+    border: 3px solid ButtonText;
+    box-shadow: none;
+  }
+
+  .skip,
+  .btn--primary {
+    border: 1px solid;
+  }
+}
+
+/* ---------- Motion ----------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+
+  .btn:active {
+    transform: none;
+  }
+}

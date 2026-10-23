@@ -1,0 +1,20 @@
+# First Twenty nightly database backup (runs /usr/local/sbin/first-twenty-backup, a copy of backup.sh).
+# Started by first-twenty-backup.timer. Run one now: sudo systemctl start first-twenty-backup
+# Results: sudo journalctl -u first-twenty-backup -n 20
+
+[Unit]
+Description=First Twenty database backup
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Runs as root because it reads /etc/first-twenty/env (mode 600) and writes /var/backups/first-twenty.
+ExecStart=/usr/local/sbin/first-twenty-backup
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+# Read-only rather than hidden, so the aws CLI can still read /root/.aws/config if you use one.
+ProtectHome=read-only

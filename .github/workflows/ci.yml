@@ -1,0 +1,39 @@
+# Runs on every pull request and on every push to main. The branch rule on main requires the
+# "verify" check, so nothing merges unless typecheck, all tests and both builds pass.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify
+    # Pinned so the runner image does not change during the project (ubuntu-latest moves to Ubuntu 26 in October 2026).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck, tests, app build
+        run: npm run verify
+
+      - name: Server build
+        run: npm run server:build

@@ -1,0 +1,2717 @@
+/*
+  Look: Comic book. Fixed palette (never follows the OS dark setting or data-theme).
+  A Silver Age print comic: warm newsprint with Ben-Day dots, CMYK primaries (process yellow,
+  magenta-red, cyan-blue, black ink), thick ink outlines with hard offset shadows, yellow caption
+  boxes lettered in Bangers, speech-bubble notices and a starburst for overdue legal items.
+
+  Roles: yellow = captions and the primary action, nothing else; process orange = warnings; blue =
+  selected state and links; red = danger and overdue; black ink = every outline. Light fills are flat
+  process screens (cyan, green, orange, pink), never UI pastels. Body text is Comic Neue (bold for
+  labels); Bangers only for titles, captions and big numbers.
+
+  Depth: a hard offset shadow means "this stands up off the page": buttons, menus, modals, sheets, the
+  palette, toasts and the panels themselves. Captions, inputs, selection controls, callouts and banners
+  lie flat. Panel outlines are 3px ink; rules between rows inside a panel are a lighter pencil line.
+
+  Every selector is scoped to [data-look="comic"] (docs/LOOKS.md): the page's <html> carries it, and
+  so does this look's preview card in the Display menu. Selectors never put a comma inside :is() or
+  :not() (the contract test splits selector lists on commas).
+*/
+
+[data-look="comic"] {
+  /* Look-only palette (not part of the token contract) */
+  --comic-ink: #15110d;
+  --comic-yellow: #ffd23a;
+  --comic-yellow-soft: #fff2a8;
+  --comic-red: #d8232a;
+  --comic-blue: #1756b5;
+  --comic-white: #fffdf5;
+  /* Ben-Day dots: magenta-red at a low screen so text keeps 4.5:1 on the darkest dot. */
+  --comic-dot: rgb(214 60 60 / 0.15);
+  --comic-dot-blue: rgb(23 86 181 / 0.22);
+  /* Light ruled lines between table rows (ink at a newsprint screen). */
+  --comic-rule: #cbbd99;
+  /* Pencil rule between list rows inside panels and sheets: lighter than the 3px ink panel outline. */
+  --comic-pencil: #8a7d63;
+  /* Process orange: the warn fill (ink on it 10.5:1). */
+  --comic-orange: #ffb24a;
+
+  /* Color */
+  --paper: #f6edd5;
+  --surface: #fffdf5;
+  --surface-2: #fbf2da;
+  --surface-3: #f1e4c2;
+  --ink: #15110d;
+  --ink-2: #3a332a;
+  --ink-3: #4d463a;
+  --line: #15110d;
+  --line-strong: #15110d;
+  --control-border: #15110d;
+  --accent: #1756b5;
+  --accent-hover: #10479a;
+  --accent-ink: #ffffff;
+  /* Flat process screens, not UI pastels: cyan, green, orange, pink. Ink text on every one. */
+  --accent-soft: #9fd3f2;
+  --accent-soft-ink: #0e3c80;
+  --good: #176329;
+  --good-soft: #b9dd8a;
+  --warn: #7a3e00;
+  --warn-soft: #ffb24a;
+  /* Status inks are dark enough for 4.5:1 on their own screens and on the darkest halftone dot. */
+  --bad: #a10f17;
+  --bad-soft: #f9b8b0;
+  --focus: #1756b5;
+  --scrim: rgb(21 17 13 / 0.45);
+  /* Categorical chart hues, print inks: process blue, red, cyan, gold, magenta, green. Validated
+     (dataviz validate_palette.js, light, surface #fffdf5): every check passes, all six at 3:1 or more.
+     The order matters: green sits away from red and gold for deutan and protan separation. */
+  --cat-1: #1f6bd1;
+  --cat-2: #e0382e;
+  --cat-3: #0f8fb3;
+  --cat-4: #b98100;
+  --cat-5: #c8378f;
+  --cat-6: #2e9a3e;
+  color-scheme: light;
+
+  /* Type */
+  --font-display: "Bangers", "Comic Neue", "Comic Sans MS", cursive;
+  --font-body: "Comic Neue", "Comic Sans MS", "Chalkboard SE", sans-serif;
+  /* Numbers and codes are lettered by the same hand (a typewriter face is off-genre). */
+  --font-mono: "Comic Neue", "Comic Sans MS", monospace;
+  --font-size-base: 15.5px;
+  --line-height-base: 1.5;
+  --heading-weight: 400; /* Bangers has one weight; 400 keeps it from being faux-bolded. */
+  --heading-transform: uppercase;
+  --heading-tracking: 0.045em;
+  --eyebrow-transform: uppercase;
+  --eyebrow-tracking: 0.1em;
+
+  /* Shape and depth: square-ish corners, slightly uneven like inked by hand; hard shadows, no blur. */
+  --r-sm: 2px;
+  --r-md: 3px;
+  --r-lg: 4px 6px 5px 6px / 6px 4px 6px 5px;
+  --r-xl: 5px 8px 6px 7px / 7px 5px 8px 6px;
+  --r-2xl: 6px 10px 7px 9px / 9px 6px 10px 7px;
+  --r-pill: 9999px;
+  --border-w: 2px;
+  --border-w-strong: 3px;
+  /* shadow-card is mostly cards nested inside panels (kanban, wall, org rows): a small lift only. */
+  --shadow-sm: 2px 2px 0 #15110d;
+  --shadow: 2px 2px 0 #15110d;
+  --shadow-lg: 7px 7px 0 #15110d;
+  --focus-width: 3px;
+  --focus-style: solid;
+  --focus-offset: 3px;
+}
+
+/* ---------------------------------------------------------------- page: newsprint and dots */
+
+/*
+  The root paints the whole canvas, so the dots continue below the first screen of a long page.
+  A Ben-Day screen is staggered on the diagonal, not a square grid: two identical dot layers, the
+  second shifted half a cell, give the 45-degree lattice of a printed halftone.
+*/
+html[data-look="comic"] {
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(circle, var(--comic-dot) 0 1.4px, transparent 1.9px),
+    radial-gradient(circle, var(--comic-dot) 0 1.4px, transparent 1.9px);
+  background-size: 8px 8px;
+  background-position:
+    0 0,
+    4px 4px;
+}
+
+[data-look="comic"] body {
+  background: transparent;
+  font-weight: 400;
+}
+
+.ft-lookpreview[data-look="comic"] {
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(circle, var(--comic-dot) 0 1.4px, transparent 1.9px),
+    radial-gradient(circle, var(--comic-dot) 0 1.4px, transparent 1.9px);
+  background-size: 8px 8px;
+  background-position:
+    0 0,
+    4px 4px;
+}
+
+[data-look="comic"] ::selection {
+  background: var(--comic-yellow);
+  color: var(--comic-ink);
+}
+
+/*
+  Hook rules. They sit in a donut scope: from a comic root down to (not into) any element that carries
+  another look, so a Display menu preview card of another look inside a comic page is never inked.
+*/
+@scope ([data-look="comic"]) to ([data-look]:not([data-look="comic"])) {
+  :scope[data-look="comic"] .eyebrow {
+    font-size: 0.75rem;
+    color: var(--ink-2);
+  }
+
+  /* Thin scrollbars inside panels and tab strips: a pencil line, not a black bar. */
+  :scope[data-look="comic"] .scroll-thin {
+    scrollbar-color: var(--comic-rule) transparent;
+  }
+
+  /* ---------------------------------------------------------------- buttons */
+
+  :scope[data-look="comic"] .ft-btn {
+    border: var(--border-w-strong) solid var(--comic-ink);
+    border-radius: var(--r-lg);
+    font-family: var(--font-body);
+    font-weight: 700;
+    text-transform: uppercase;
+    /* Uppercase is wide already: a little tracking only, so labels like "Move to..." stay on one line. */
+    letter-spacing: 0.02em;
+    box-shadow: 3px 3px 0 var(--comic-ink);
+    transition:
+      transform 90ms ease-out,
+      box-shadow 90ms ease-out,
+      background-color 90ms ease-out;
+  }
+
+  /*
+    Weight follows size. Small and medium buttons repeat down card columns and table rows (kanban
+    ADVANCE and MOVE TO, time-off APPROVE and DECLINE), so they take a 2px edge and a 2px shadow; a
+    shadow only reads as "stands up" when it is not everywhere. Large buttons, the page header's
+    actions and NEW keep the full 3px weight.
+  */
+  :scope[data-look="comic"] .ft-btn--sm {
+    border-width: 2px;
+    box-shadow: 2px 2px 0 var(--comic-ink);
+    letter-spacing: 0;
+  }
+
+  /* Medium buttons sit in tight card columns (the kanban "Move to..." is 110px wide): 14px, no tracking. */
+  :scope[data-look="comic"] .ft-btn--md {
+    border-width: 2px;
+    box-shadow: 2px 2px 0 var(--comic-ink);
+    font-size: 14px;
+    letter-spacing: 0;
+  }
+
+  :scope[data-look="comic"] .ft-pagehead__actions .ft-btn:not(.ft-btn--ghost):not(.ft-btn--quiet),
+  :scope[data-look="comic"] .ft-btn.ft-newmenu {
+    border-width: var(--border-w-strong);
+    box-shadow: 3px 3px 0 var(--comic-ink);
+  }
+
+  /* The ring clears the hard shadow instead of running into it. */
+  :scope[data-look="comic"] .ft-btn:focus-visible,
+  :scope[data-look="comic"] .ft-iconbtn:focus-visible {
+    outline-offset: 5px;
+  }
+
+  /* Disabled: a dashed, flat, unprinted block, not a smudged one (no opacity, no shadow). */
+  :scope[data-look="comic"] .ft-btn:disabled,
+  :scope[data-look="comic"] .ft-iconbtn:disabled {
+    opacity: 1;
+    border-style: dashed;
+    border-color: var(--comic-ink);
+    background: var(--surface-3);
+    color: var(--ink-3);
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] .ft-btn--ghost:disabled,
+  :scope[data-look="comic"] .ft-iconbtn--ghost:disabled {
+    background: transparent;
+    border-color: transparent;
+  }
+
+  /* Lift and press keep the shadow's far edge still: the block moves, the printed shadow does not. */
+  :scope[data-look="comic"] .ft-btn:not(:disabled):hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 5px 5px 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-btn--sm:not(:disabled):hover,
+  :scope[data-look="comic"] .ft-btn--md:not(:disabled):hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-pagehead__actions .ft-btn:not(.ft-btn--ghost):not(.ft-btn--quiet):not(:disabled):hover,
+  :scope[data-look="comic"] .ft-btn.ft-newmenu:not(:disabled):hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 5px 5px 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-btn:not(:disabled):active,
+  :scope[data-look="comic"] .ft-pagehead__actions .ft-btn:not(.ft-btn--ghost):not(.ft-btn--quiet):not(:disabled):active,
+  :scope[data-look="comic"] .ft-btn.ft-newmenu:not(:disabled):active {
+    transform: translate(2px, 2px);
+    box-shadow: 0 0 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-btn--primary {
+    background: var(--comic-yellow);
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-btn--primary:not(:disabled):hover {
+    background: #ffdb5c;
+  }
+
+  :scope[data-look="comic"] .ft-btn--secondary {
+    background: var(--comic-white);
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-btn--secondary:not(:disabled):hover {
+    background: #ffffff;
+  }
+
+  :scope[data-look="comic"] .ft-btn--danger {
+    background: var(--comic-red);
+    color: #ffffff;
+  }
+
+  :scope[data-look="comic"] .ft-btn--danger:not(:disabled):hover {
+    background: #c91c22;
+    opacity: 1;
+  }
+
+  :scope[data-look="comic"] .ft-btn--quiet {
+    background: var(--surface-2);
+    color: var(--comic-ink);
+    border-width: 2px;
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] .ft-btn--quiet:not(:disabled):hover {
+    background: var(--comic-yellow-soft);
+    box-shadow: 3px 3px 0 var(--comic-ink);
+  }
+
+  /* Ghost: no ink until you point at it. */
+  :scope[data-look="comic"] .ft-btn--ghost {
+    background: transparent;
+    color: var(--ink-2);
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] .ft-btn--ghost:not(:disabled):hover {
+    background: var(--comic-yellow-soft);
+    color: var(--comic-ink);
+    border-color: var(--comic-ink);
+    box-shadow: 2px 2px 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-btn--ghost:not(:disabled):active {
+    box-shadow: none;
+  }
+
+  /* Icon buttons */
+  :scope[data-look="comic"] .ft-iconbtn {
+    border: 2px solid var(--comic-ink);
+    border-radius: var(--r-lg);
+    box-shadow: 2px 2px 0 var(--comic-ink);
+    transition:
+      transform 90ms ease-out,
+      box-shadow 90ms ease-out,
+      background-color 90ms ease-out;
+  }
+
+  :scope[data-look="comic"] .ft-iconbtn--primary {
+    background: var(--comic-yellow);
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-iconbtn--secondary {
+    background: var(--comic-white);
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-iconbtn--danger {
+    background: var(--comic-red);
+    color: #ffffff;
+  }
+
+  :scope[data-look="comic"] .ft-iconbtn--quiet {
+    background: var(--surface-2);
+    color: var(--comic-ink);
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] .ft-iconbtn--ghost {
+    background: transparent;
+    color: var(--ink-2);
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] .ft-iconbtn:not(:disabled):hover {
+    background: var(--comic-yellow-soft);
+    color: var(--comic-ink);
+    border-color: var(--comic-ink);
+    box-shadow: 3px 3px 0 var(--comic-ink);
+    transform: translate(-1px, -1px);
+  }
+
+  :scope[data-look="comic"] .ft-iconbtn--primary:not(:disabled):hover {
+    background: #ffdb5c;
+  }
+
+  :scope[data-look="comic"] .ft-iconbtn--danger:not(:disabled):hover {
+    background: #c91c22;
+    color: #ffffff;
+  }
+
+  :scope[data-look="comic"] .ft-iconbtn:not(:disabled):active {
+    transform: translate(1px, 1px);
+    box-shadow: none;
+  }
+
+  /* Pressed toggles (privacy blur): inked in blue. */
+  :scope[data-look="comic"] .ft-iconbtn--on {
+    background: var(--accent);
+    color: #ffffff;
+    border-color: var(--comic-ink);
+    box-shadow: inset 2px 2px 0 rgb(0 0 0 / 0.35);
+  }
+
+  :scope[data-look="comic"] .ft-iconbtn--on:not(:disabled):hover {
+    background: var(--accent-hover);
+    color: #ffffff;
+  }
+
+  /*
+    Lift and press are movement: with reduced motion only the shadow changes. !important so no lift
+    rule, however specific (page header actions, NEW, the inbox link button), can move a block.
+  */
+  @media (prefers-reduced-motion: reduce) {
+    :scope[data-look="comic"] .ft-btn:not(:disabled):hover,
+    :scope[data-look="comic"] .ft-btn:not(:disabled):active,
+    :scope[data-look="comic"] .ft-iconbtn:not(:disabled):hover,
+    :scope[data-look="comic"] .ft-iconbtn:not(:disabled):active {
+      transform: none !important;
+    }
+  }
+
+  :scope[data-look="comic"][data-reduced-motion] .ft-btn:not(:disabled):hover,
+  :scope[data-look="comic"][data-reduced-motion] .ft-btn:not(:disabled):active,
+  :scope[data-look="comic"][data-reduced-motion] .ft-iconbtn:not(:disabled):hover,
+  :scope[data-look="comic"][data-reduced-motion] .ft-iconbtn:not(:disabled):active {
+    transform: none !important;
+  }
+
+  /* ---------------------------------------------------------------- links, kbd, dots, avatars */
+
+  :scope[data-look="comic"] .ft-link {
+    color: var(--accent);
+    font-weight: 700;
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+  }
+
+  :scope[data-look="comic"] .ft-link:hover {
+    background: var(--comic-yellow-soft);
+    color: var(--accent-hover);
+  }
+
+  /*
+    One rule for every standalone link: blue, bold, a 2px underline. In-panel action links built
+    without the hook ("Open", "Milestones", "Open policy", "All checklists") follow .ft-link.
+  */
+  :scope[data-look="comic"] .ft-main__inner a.text-accent:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-sheet a.text-accent:not([class^="ft-"]):not([class*=" ft-"]) {
+    font-weight: 700;
+    text-decoration-line: underline;
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+  }
+
+  :scope[data-look="comic"] .ft-main__inner a.text-accent:not([class^="ft-"]):not([class*=" ft-"]):hover,
+  :scope[data-look="comic"] .ft-sheet a.text-accent:not([class^="ft-"]):not([class*=" ft-"]):hover {
+    background: var(--comic-yellow-soft);
+    color: var(--accent-hover);
+  }
+
+  /* Keys are lettered in the body face (a typewriter face is off-genre and its arrows render thin). */
+  :scope[data-look="comic"] .ft-kbd {
+    background: var(--comic-white);
+    border: 1.5px solid var(--comic-ink);
+    border-radius: var(--r-sm);
+    box-shadow: none;
+    color: var(--comic-ink);
+    font-family: "Comic Neue", "Segoe UI Symbol", "Apple Symbols", sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+  }
+
+  :scope[data-look="comic"] .ft-dot {
+    box-shadow: 0 0 0 1.5px var(--comic-ink);
+  }
+
+  /*
+    Avatars: an inked disc with lettered initials, never a pastel tint. Each person keeps a tell in a
+    long list: a light Ben-Day shade of their own print ink inside the white disc (ink initials stay at
+    8:1 or more on the darkest dot). Interim: the hue is read from the kit's per-person screen class;
+    the kit owner is asked to expose it as a custom property.
+  */
+  :scope[data-look="comic"] .ft-avatar {
+    --cmx-av: transparent;
+    background-color: var(--comic-white);
+    background-image:
+      radial-gradient(circle, var(--cmx-av) 0 1.3px, transparent 1.8px),
+      radial-gradient(circle, var(--cmx-av) 0 1.3px, transparent 1.8px);
+    background-size: 6px 6px;
+    background-position:
+      0 0,
+      3px 3px;
+    color: var(--comic-ink);
+    border: 2px solid var(--comic-ink);
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: 0.04em;
+  }
+
+  :scope[data-look="comic"] .ft-avatar[class*="var(--cat-1)"] {
+    --cmx-av: rgb(31 107 209 / 0.36);
+  }
+
+  :scope[data-look="comic"] .ft-avatar[class*="var(--cat-2)"] {
+    --cmx-av: rgb(224 56 46 / 0.36);
+  }
+
+  :scope[data-look="comic"] .ft-avatar[class*="var(--cat-3)"] {
+    --cmx-av: rgb(15 143 179 / 0.36);
+  }
+
+  :scope[data-look="comic"] .ft-avatar[class*="var(--cat-4)"] {
+    --cmx-av: rgb(185 129 0 / 0.42);
+  }
+
+  :scope[data-look="comic"] .ft-avatar[class*="var(--cat-5)"] {
+    --cmx-av: rgb(200 55 143 / 0.36);
+  }
+
+  :scope[data-look="comic"] .ft-avatar[class*="var(--cat-6)"] {
+    --cmx-av: rgb(46 154 62 / 0.38);
+  }
+
+  /* Small avatars (24-26px): Bangers initials no smaller than 11px, untracked so they fit the disc. */
+  :scope[data-look="comic"] .ft-avatar[style*="font-size: 10px"] {
+    font-size: 11px !important;
+    letter-spacing: 0;
+  }
+
+  :scope[data-look="comic"] .ft-avatar[style*="font-size: 11px"],
+  :scope[data-look="comic"] .ft-avatar[style*="font-size: 12px"] {
+    letter-spacing: 0;
+  }
+
+  /* Big portraits (person header, the wall) stand up a little. */
+  :scope[data-look="comic"] .ft-avatar[style*="width: 44px"],
+  :scope[data-look="comic"] .ft-avatar[style*="width: 48px"],
+  :scope[data-look="comic"] .ft-avatar[style*="width: 64px"] {
+    border-width: 2.5px;
+    box-shadow: 2px 2px 0 var(--comic-ink);
+  }
+
+  /* Muted (former employees, closed candidates): unprinted, with a dashed edge. */
+  :scope[data-look="comic"] .ft-avatar.bg-surface-2 {
+    background-color: var(--surface-3);
+    color: var(--ink-3);
+    border-style: dashed;
+  }
+
+  :scope[data-look="comic"] .ft-avatar--more {
+    background-color: var(--comic-ink);
+    color: #ffffff;
+  }
+
+  /* ---------------------------------------------------------------- badges: lettered tags */
+
+  :scope[data-look="comic"] .ft-badge {
+    border: 2px solid var(--comic-ink);
+    border-radius: var(--r-sm);
+    color: var(--comic-ink);
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: none;
+  }
+
+  /* In table cells, where every pixel of width counts, the lettering is a touch tighter. */
+  :scope[data-look="comic"] .ft-table .ft-badge {
+    font-size: 11.5px;
+    letter-spacing: 0.025em;
+  }
+
+  :scope[data-look="comic"] .ft-badge--neutral {
+    background: var(--comic-white);
+    color: var(--ink-2);
+  }
+
+  :scope[data-look="comic"] .ft-badge--accent {
+    background: var(--accent-soft);
+    color: var(--accent-soft-ink);
+  }
+
+  :scope[data-look="comic"] .ft-badge--good {
+    background: var(--good-soft);
+    color: #14561f;
+  }
+
+  :scope[data-look="comic"] .ft-badge--warn {
+    background: var(--warn-soft);
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-badge--outline {
+    background: transparent;
+    border-style: dashed;
+    color: var(--ink-2);
+  }
+
+  /* Overdue (the only red items): a jagged starburst sticker, white lettering on red with an ink edge. */
+  :scope[data-look="comic"] .ft-badge--bad {
+    position: relative;
+    isolation: isolate;
+    background: transparent;
+    border-color: transparent;
+    color: #ffffff;
+  }
+
+  :scope[data-look="comic"] .ft-badge--bad::before,
+  :scope[data-look="comic"] .ft-badge--bad::after {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    /* The four corners are blunted (2px in) so a narrow count badge has no hairline spikes there. */
+    clip-path: polygon(
+      2px 2px, 10% 3px, 20% 0, 30% 3px, 40% 0, 50% 3px, 60% 0, 70% 3px, 80% 0, 90% 3px, calc(100% - 2px) 2px,
+      calc(100% - 4px) 25%, 100% 50%, calc(100% - 4px) 75%, calc(100% - 2px) calc(100% - 2px),
+      90% calc(100% - 3px), 80% 100%, 70% calc(100% - 3px), 60% 100%, 50% calc(100% - 3px), 40% 100%,
+      30% calc(100% - 3px), 20% 100%, 10% calc(100% - 3px), 2px calc(100% - 2px),
+      4px 75%, 0 50%, 4px 25%
+    );
+  }
+
+  :scope[data-look="comic"] .ft-badge--bad::before {
+    inset: -1px;
+    background: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-badge--bad::after {
+    inset: 1.5px 0.5px;
+    background: var(--comic-red);
+  }
+
+  /* ---------------------------------------------------------------- page header */
+
+  :scope[data-look="comic"] .ft-pagehead__title {
+    font-size: 31px;
+    line-height: 1.02;
+    letter-spacing: 0.035em;
+    color: var(--comic-ink);
+    text-shadow:
+      2px 2px 0 var(--comic-yellow),
+      3px 3px 0 var(--comic-ink);
+  }
+
+  @container app (width >= 38.75rem) {
+    :scope[data-look="comic"] .ft-pagehead__title {
+      font-size: 44px;
+      text-shadow:
+        3px 3px 0 var(--comic-yellow),
+        4px 4px 0 var(--comic-ink);
+    }
+  }
+
+  /*
+    The person page title (ft-personhead) shares a baseline row with the #5 employee number, so it
+    letters at 40px instead of 44px to keep the row balanced.
+  */
+  @container app (width >= 38.75rem) {
+    :scope[data-look="comic"] .ft-personhead .ft-pagehead__title {
+      font-size: 40px;
+    }
+  }
+
+  /* The employee number beside that title: an ink box with a white lettered numeral, as on the wall. */
+  :scope[data-look="comic"] .ft-personhead .ft-empno {
+    padding: 3px 7px 1px;
+    background: var(--comic-ink);
+    color: #ffffff;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 20px;
+    line-height: 1;
+    letter-spacing: 0.05em;
+  }
+
+  /* The eyebrow over a title is a narration caption ("Tonight"). */
+  :scope[data-look="comic"] .ft-pagehead__eyebrow:not(:has(*)) {
+    width: fit-content;
+    padding: 1px 8px;
+    background: var(--comic-yellow);
+    border: 2px solid var(--comic-ink);
+    color: var(--comic-ink);
+    font-size: 12px;
+  }
+
+  :scope[data-look="comic"] .ft-pagehead__subtitle {
+    color: var(--ink-2);
+  }
+
+  /*
+    Colored words never sit on the halftone. Status words and links printed straight on the page (not
+    inside a panel, card or any filled box) get a paper knockout behind their letters, as a letterer
+    would: "3 legal deadlines are overdue." in a subtitle, "2 overdue courses" under a tab strip.
+  */
+  :scope[data-look="comic"] .ft-main__inner .text-bad:not(svg):not([class*="bg-"]):not([class*="bg-"] *),
+  :scope[data-look="comic"] .ft-main__inner .text-warn:not(svg):not([class*="bg-"]):not([class*="bg-"] *),
+  :scope[data-look="comic"] .ft-main__inner .text-good:not(svg):not([class*="bg-"]):not([class*="bg-"] *),
+  :scope[data-look="comic"] .ft-main__inner .text-accent:not(svg):not([class*="bg-"]):not([class*="bg-"] *),
+  :scope[data-look="comic"] .ft-main__inner .ft-link:not([class*="bg-"] *) {
+    background-color: var(--paper);
+    padding-inline: 2px;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+
+  :scope[data-look="comic"] .ft-pagehead__back {
+    color: var(--ink-2);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 13px;
+  }
+
+  :scope[data-look="comic"] .ft-pagehead__back:hover {
+    color: var(--comic-ink);
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+  }
+
+  /* ---------------------------------------------------------------- panels: inked comic panels */
+
+  :scope[data-look="comic"] .ft-panel {
+    background: var(--surface);
+    border: var(--border-w-strong) solid var(--comic-ink);
+    border-radius: var(--r-2xl);
+    box-shadow: 4px 4px 0 var(--comic-ink);
+  }
+
+  /* The head is part of the scene; the yellow caption box does the separating. */
+  :scope[data-look="comic"] .ft-panel__head {
+    border-bottom-color: transparent;
+    padding-bottom: 4px;
+  }
+
+  :scope[data-look="comic"] .ft-panel__icon {
+    display: none;
+  }
+
+  :scope[data-look="comic"] .ft-panel__title {
+    display: inline-block;
+    padding: 3px 9px 1px;
+    background: var(--comic-yellow);
+    border: 2px solid var(--comic-ink);
+    color: var(--comic-ink);
+    font-size: 18px;
+    line-height: 1.15;
+    letter-spacing: 0.06em;
+  }
+
+  /*
+    Silver Age narration boxes sit in the panel's top-left corner: the caption is pulled up and left
+    over the head's padding (14px, 20px) so the panel's own 3px outline frames its top and left, and
+    that corner of the panel is square. The caption keeps ink on its right and bottom only.
+  */
+  :scope[data-look="comic"] .ft-panel:has(> .ft-panel__head:first-child .ft-panel__title) {
+    border-top-left-radius: 0;
+  }
+
+  :scope[data-look="comic"] .ft-panel > .ft-panel__head:first-child .ft-panel__title {
+    margin: -14px 0 0 -20px;
+    padding: 5px 12px 3px 13px;
+    border-width: 0 2px 2px 0;
+  }
+
+  /* Comic Neue 400 has hairline strokes at 13.5px, so secondary lines take ink-2. */
+  :scope[data-look="comic"] .ft-panel__subtitle {
+    margin-top: 8px;
+    color: var(--ink-2);
+  }
+
+  /*
+    Rules between rows inside a panel, sheet or modal are a pencil line, lighter than the 3px ink
+    outline (whole-box cards with .border keep full ink).
+  */
+  :scope[data-look="comic"] .ft-panel .divide-line > *,
+  :scope[data-look="comic"] .ft-sheet .divide-line > *,
+  :scope[data-look="comic"] .ft-modal .divide-line > * {
+    border-color: var(--comic-pencil);
+  }
+
+  :scope[data-look="comic"] .ft-panel .divide-y > :not(:last-child),
+  :scope[data-look="comic"] .ft-sheet .divide-y > :not(:last-child),
+  :scope[data-look="comic"] .ft-modal .divide-y > :not(:last-child) {
+    border-bottom-width: 1.5px;
+  }
+
+  :scope[data-look="comic"] .ft-panel .border-b.border-line:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-sheet .border-b.border-line:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-modal .border-b.border-line:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-panel .ft-inboxrow.border-b.border-line {
+    border-bottom-width: 1.5px;
+    border-bottom-color: var(--comic-pencil);
+  }
+
+  :scope[data-look="comic"] .ft-panel .border-t.border-line:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-sheet .border-t.border-line:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-modal .border-t.border-line:not([class^="ft-"]):not([class*=" ft-"]) {
+    border-top-width: 1.5px;
+    border-top-color: var(--comic-pencil);
+  }
+
+  /*
+    Group headings inside panels and sheets ("Overdue", "Mon Oct 12", "Interviews and scorecards",
+    "Vesting") are lettered in Bangers, a display face that cramps below about 15px: a 16px floor.
+    Headings already set in the display utility (the time-off month) keep their own size.
+  */
+  :scope[data-look="comic"] .ft-panel h3:not(.ft-panel__title):not(.font-display):not(.eyebrow),
+  :scope[data-look="comic"] .ft-panel h4:not(.font-display):not(.eyebrow),
+  :scope[data-look="comic"] .ft-sheet h3:not(.font-display):not(.eyebrow),
+  :scope[data-look="comic"] .ft-sheet h4:not(.font-display):not(.eyebrow),
+  :scope[data-look="comic"] .ft-modal h3:not(.font-display):not(.eyebrow) {
+    font-size: 16px;
+    letter-spacing: 0.05em;
+  }
+
+  /* ---------------------------------------------------------------- description lists, section labels */
+
+  :scope[data-look="comic"] .ft-dl__term {
+    color: var(--ink-3);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 12px;
+  }
+
+  :scope[data-look="comic"] .ft-sectionlabel {
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-sectionlabel::after {
+    height: 2px;
+    background: var(--comic-ink);
+  }
+
+  /* ---------------------------------------------------------------- empty states: "Meanwhile..." */
+
+  :scope[data-look="comic"] .ft-empty__icon {
+    display: none;
+  }
+
+  /* Narration flavor only: the alt text after the slash keeps it out of the accessibility tree. */
+  /* Anchored top-left like a narration box in a panel corner, not centered over the title. */
+  :scope[data-look="comic"] .ft-empty::before {
+    content: "Meanwhile..." / "";
+    display: block;
+    align-self: flex-start;
+    margin-bottom: 4px;
+    padding: 1px 9px;
+    background: var(--comic-yellow);
+    border: 2px solid var(--comic-ink);
+    color: var(--comic-ink);
+    font-family: var(--font-display);
+    font-size: 14px;
+    letter-spacing: 0.08em;
+    transform: rotate(-2deg);
+  }
+
+  /* Inside a captioned panel the panel's caption already narrates: one narration box per corner. */
+  :scope[data-look="comic"] .ft-panel:has(.ft-panel__title) .ft-empty::before {
+    display: none;
+  }
+
+  :scope[data-look="comic"] .ft-empty__title {
+    font-size: 22px;
+    letter-spacing: 0.05em;
+  }
+
+  :scope[data-look="comic"] .ft-empty__body {
+    color: var(--ink-2);
+  }
+
+  /* ---------------------------------------------------------------- stats and meters */
+
+  /* A stat is a small flat panel; only a stat you can open (a link) stands up. */
+  :scope[data-look="comic"] .ft-stat {
+    border: var(--border-w-strong) solid var(--comic-ink);
+    border-radius: var(--r-xl);
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] a.ft-stat {
+    box-shadow: 3px 3px 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] a.ft-stat:hover {
+    background: var(--comic-yellow-soft);
+  }
+
+  :scope[data-look="comic"] .ft-stat__sub {
+    color: var(--ink-2);
+  }
+
+  :scope[data-look="comic"] .ft-stat__label {
+    color: var(--ink-2);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 12px;
+  }
+
+  :scope[data-look="comic"] .ft-stat__value {
+    font-size: 36px;
+    letter-spacing: 0.03em;
+  }
+
+  /* The empty part of a meter is a blue Ben-Day screen (no text sits there), staggered like the page's. */
+  :scope[data-look="comic"] .ft-meter {
+    height: 12px;
+    background-color: var(--comic-white);
+    background-image:
+      radial-gradient(circle, var(--comic-dot-blue) 0 1px, transparent 1.5px),
+      radial-gradient(circle, var(--comic-dot-blue) 0 1px, transparent 1.5px);
+    background-size: 5px 5px;
+    background-position:
+      0 0,
+      2.5px 2.5px;
+    border: 2px solid var(--comic-ink);
+    border-radius: var(--r-sm);
+  }
+
+  :scope[data-look="comic"] .ft-meter__bar {
+    border-radius: 0;
+    background-image:
+      radial-gradient(circle, rgb(255 255 255 / 0.35) 0 1px, transparent 1.4px),
+      radial-gradient(circle, rgb(255 255 255 / 0.35) 0 1px, transparent 1.4px);
+    background-size: 5px 5px;
+    background-position:
+      0 0,
+      2.5px 2.5px;
+  }
+
+  /* ---------------------------------------------------------------- callouts: narration captions */
+
+  /* Flat boxes printed in a process screen: they lie on the panel, they do not stand up. */
+  :scope[data-look="comic"] .ft-callout {
+    border: 2px solid var(--comic-ink);
+    border-radius: var(--r-sm);
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] .ft-callout--accent {
+    background: var(--accent-soft);
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-callout--neutral {
+    background: var(--comic-white);
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-callout--good {
+    background: var(--good-soft);
+  }
+
+  :scope[data-look="comic"] .ft-callout--warn {
+    background: var(--warn-soft);
+    color: var(--comic-ink);
+  }
+
+  /* Text on the pink screen is ink; only the alert icon stays red (4.8:1). */
+  :scope[data-look="comic"] .ft-callout--bad {
+    background: var(--bad-soft);
+  }
+
+  :scope[data-look="comic"] .ft-callout__title {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  :scope[data-look="comic"] .ft-callout__body {
+    color: var(--ink-2);
+  }
+
+  /* ---------------------------------------------------------------- form fields */
+
+  :scope[data-look="comic"] .ft-field__label {
+    color: var(--comic-ink);
+    font-weight: 700;
+  }
+
+  :scope[data-look="comic"] .ft-field__required {
+    color: var(--bad);
+  }
+
+  :scope[data-look="comic"] .ft-input,
+  :scope[data-look="comic"] .ft-select,
+  :scope[data-look="comic"] .ft-textarea {
+    background-color: var(--comic-white);
+    border: var(--border-w-strong) solid var(--comic-ink);
+    border-radius: var(--r-md);
+    color: var(--comic-ink);
+    box-shadow: inset 2px 2px 0 rgb(21 17 13 / 0.08);
+  }
+
+  :scope[data-look="comic"] .ft-input:hover,
+  :scope[data-look="comic"] .ft-select:hover,
+  :scope[data-look="comic"] .ft-textarea:hover {
+    border-color: var(--comic-ink);
+    background-color: #ffffff;
+  }
+
+  :scope[data-look="comic"] .ft-input:focus,
+  :scope[data-look="comic"] .ft-select:focus,
+  :scope[data-look="comic"] .ft-textarea:focus {
+    border-color: var(--comic-ink);
+    box-shadow: 3px 3px 0 var(--accent);
+  }
+
+  :scope[data-look="comic"] .ft-input:disabled,
+  :scope[data-look="comic"] .ft-select:disabled,
+  :scope[data-look="comic"] .ft-textarea:disabled {
+    background-color: var(--surface-3);
+    color: var(--ink-3);
+    box-shadow: none;
+  }
+
+  /* Privacy blur on a field: the kit hides the value with transparent text under a soft glow, so the
+     ink color above must not bring the digits back. */
+  :scope[data-look="comic"] .ft-input.ft-input--blurred {
+    color: transparent;
+  }
+
+  /*
+    A field that failed a save is inked in red with a hard red shadow, so an empty required box reads
+    as wrong at a glance, not only through the small message under it. The focus ring still draws.
+  */
+  :scope[data-look="comic"] .ft-input[aria-invalid="true"],
+  :scope[data-look="comic"] .ft-input[aria-invalid="true"]:hover,
+  :scope[data-look="comic"] .ft-input[aria-invalid="true"]:focus {
+    border-color: var(--bad);
+    box-shadow: 3px 3px 0 var(--comic-red);
+  }
+
+  :scope[data-look="comic"] .ft-select[aria-invalid="true"],
+  :scope[data-look="comic"] .ft-select[aria-invalid="true"]:hover,
+  :scope[data-look="comic"] .ft-select[aria-invalid="true"]:focus {
+    border-color: var(--bad);
+    box-shadow: 3px 3px 0 var(--comic-red);
+  }
+
+  :scope[data-look="comic"] .ft-textarea[aria-invalid="true"],
+  :scope[data-look="comic"] .ft-textarea[aria-invalid="true"]:hover,
+  :scope[data-look="comic"] .ft-textarea[aria-invalid="true"]:focus {
+    border-color: var(--bad);
+    box-shadow: 3px 3px 0 var(--comic-red);
+  }
+
+  :scope[data-look="comic"] .ft-field__error {
+    color: var(--bad);
+    font-weight: 700;
+  }
+
+  :scope[data-look="comic"] .ft-input::placeholder,
+  :scope[data-look="comic"] .ft-textarea::placeholder {
+    color: var(--ink-3);
+  }
+
+  :scope[data-look="comic"] input[type="file"]::file-selector-button {
+    margin-right: 10px;
+    padding: 6px 12px;
+    background: var(--comic-white);
+    border: 2px solid var(--comic-ink);
+    border-radius: var(--r-md);
+    box-shadow: 2px 2px 0 var(--comic-ink);
+    color: var(--comic-ink);
+    font: inherit;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+  }
+
+  :scope[data-look="comic"] input[type="file"]:hover::file-selector-button {
+    background: var(--comic-yellow-soft);
+  }
+
+  :scope[data-look="comic"] .ft-select__chevron {
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-searchbox__icon {
+    color: var(--comic-ink);
+  }
+
+  /* Checkbox: an inked box, blue with a white check when on. */
+  :scope[data-look="comic"] .ft-checkbox {
+    appearance: none;
+    display: inline-grid;
+    place-content: center;
+    margin-top: 1px;
+    background: var(--comic-white);
+    border: 2.5px solid var(--comic-ink);
+    border-radius: var(--r-sm);
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] .ft-checkbox:checked {
+    background-color: var(--accent);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.2 8.6l3 3L12.8 4.6' fill='none' stroke='white' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-size: 100% 100%;
+  }
+
+  :scope[data-look="comic"] .ft-checkbox:disabled {
+    background-color: var(--surface-3);
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] .ft-checkbox-row:hover .ft-checkbox:not(:disabled):not(:checked) {
+    background-color: var(--comic-yellow-soft);
+  }
+
+  /* Switch: inked track, white thumb with an ink edge; blue when on. */
+  :scope[data-look="comic"] .ft-switch__track {
+    background: var(--comic-white);
+    box-shadow: inset 0 0 0 2px var(--comic-ink);
+    border-radius: var(--r-pill);
+  }
+
+  :scope[data-look="comic"] .ft-switch--on .ft-switch__track {
+    background: var(--accent);
+    box-shadow: inset 0 0 0 2px var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-switch__thumb {
+    background: var(--comic-ink);
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] .ft-switch--on .ft-switch__thumb {
+    background: #ffffff;
+    box-shadow: 0 0 0 2px var(--comic-ink);
+  }
+
+  /* Segmented controls: an inked strip; the chosen option is filled blue. */
+  :scope[data-look="comic"] .ft-segmented {
+    background: var(--comic-white);
+    border: 2px solid var(--comic-ink);
+    border-radius: var(--r-lg);
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] .ft-segmented__item {
+    border-radius: var(--r-md);
+    color: var(--ink-2);
+    font-weight: 700;
+  }
+
+  :scope[data-look="comic"] .ft-segmented__item:not(:disabled):hover {
+    background: var(--comic-yellow-soft);
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-segmented__item--on,
+  :scope[data-look="comic"] .ft-segmented__item--on:not(:disabled):hover {
+    background: var(--accent);
+    color: #ffffff;
+    box-shadow: inset 0 0 0 2px var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-segmented__item--on > span {
+    color: inherit;
+  }
+
+  /* Disabled options (the Display menu's Theme in a fixed-palette look) are unprinted, like disabled buttons. */
+  :scope[data-look="comic"] .ft-segmented__item:disabled,
+  :scope[data-look="comic"] .ft-segmented__item--on:disabled {
+    opacity: 1;
+    background: var(--surface-3);
+    color: var(--ink-3);
+    box-shadow: none;
+    outline: 1.5px dashed var(--comic-ink);
+    outline-offset: -3px;
+  }
+
+  :scope[data-look="comic"] .ft-segmented__item:disabled:not(.ft-segmented__item--on) {
+    background: transparent;
+    outline-color: transparent;
+  }
+
+  /* On a phone the three inbox filters fit one row inside the inked strip. */
+  @container app (width < 25rem) {
+    :scope[data-look="comic"] .ft-segmented__item {
+      padding-inline: 8px;
+      font-size: 12px;
+    }
+  }
+
+  /* ---------------------------------------------------------------- chips */
+
+  :scope[data-look="comic"] .ft-chip {
+    background: var(--comic-white);
+    border: 2px solid var(--comic-ink);
+    border-radius: var(--r-lg);
+    color: var(--comic-ink);
+    font-weight: 700;
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] .ft-chip:not(:disabled):hover {
+    background: var(--comic-yellow-soft);
+    color: var(--comic-ink);
+  }
+
+  /*
+    The chosen style comes from the group, not the chip: in a single-choice group (radio chips, date
+    chips with their "Pick" chip) the chosen one is solid blue; only a multi-select group uses the
+    cyan screen with a check. The same meaning never shows in two colors in one form.
+  */
+  :scope[data-look="comic"] .ft-chip--on,
+  :scope[data-look="comic"] .ft-chip--on:not(:disabled):hover {
+    background: var(--accent);
+    color: #ffffff;
+    border-color: var(--comic-ink);
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] .ft-chips--multi .ft-chip--on,
+  :scope[data-look="comic"] .ft-chips--multi .ft-chip--on:not(:disabled):hover {
+    background: var(--accent-soft);
+    color: var(--accent-soft-ink);
+  }
+
+  :scope[data-look="comic"] .ft-cite {
+    background: var(--comic-white);
+    border: 1.5px solid var(--comic-ink);
+    border-radius: var(--r-sm);
+    color: var(--ink-2);
+  }
+
+  :scope[data-look="comic"] .ft-cite-link:hover .ft-cite {
+    background: var(--comic-yellow-soft);
+    color: var(--comic-ink);
+  }
+
+  /* ---------------------------------------------------------------- tabs: folder tabs on an ink rule */
+
+  /* The active tab is filled with whatever it opens onto: the paper on a page, the panel inside one. */
+  :scope[data-look="comic"] .ft-tabs {
+    --cmx-tab-fill: var(--paper);
+    border-bottom: 3px solid var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-panel .ft-tabs,
+  :scope[data-look="comic"] .ft-sheet .ft-tabs,
+  :scope[data-look="comic"] .ft-modal .ft-tabs {
+    --cmx-tab-fill: var(--surface);
+  }
+
+  /* When the strip scrolls on a phone, its bar is a hairline pencil line. */
+  :scope[data-look="comic"] .ft-tabs-wrap {
+    scrollbar-width: thin;
+    scrollbar-color: var(--comic-pencil) transparent;
+  }
+
+  /* 13px with light tracking: uppercase is wide, and the person page strip must fit at 1280. */
+  :scope[data-look="comic"] .ft-tab {
+    border: 3px solid transparent;
+    border-bottom: 0;
+    border-radius: 4px 6px 0 0;
+    color: var(--ink-2);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    font-size: 13px;
+  }
+
+  :scope[data-look="comic"] .ft-tab:hover {
+    background: var(--comic-yellow-soft);
+    color: var(--comic-ink);
+  }
+
+  /*
+    Inked on three sides at the panel weight (3px); its open bottom edge breaks the rule, so it reads
+    as attached to its page. The strongest state in the strip, stronger than a neighbor's hover.
+  */
+  :scope[data-look="comic"] .ft-tab--active,
+  :scope[data-look="comic"] .ft-tab--active:hover {
+    background: var(--cmx-tab-fill);
+    border-color: var(--comic-ink);
+    color: var(--comic-ink);
+    font-weight: 700;
+  }
+
+  :scope[data-look="comic"] .ft-tab--active::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -3px;
+    height: 3px;
+    background: var(--cmx-tab-fill);
+    pointer-events: none;
+  }
+
+  :scope[data-look="comic"] .ft-tab__indicator {
+    display: none;
+  }
+
+  /* Counts: an ink box with a white lettered numeral (18.8:1). */
+  :scope[data-look="comic"] .ft-tab__count {
+    background: var(--comic-ink);
+    border: 1.5px solid var(--comic-ink);
+    border-radius: var(--r-sm);
+    color: #ffffff;
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: 0.04em;
+  }
+
+  /* ---------------------------------------------------------------- tables */
+
+  :scope[data-look="comic"] .ft-table__headrow {
+    border-bottom: 3px solid var(--comic-ink);
+  }
+
+  /*
+    Comic Neue is wide, so lettered headers are tracked only lightly and cells give back a few pixels
+    of side padding: the tables fit the width they fit in Sleek (checklists at 1280 shows every column).
+  */
+  :scope[data-look="comic"] .ft-table__th {
+    background: transparent;
+    color: var(--comic-ink);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 11.5px;
+    padding-inline: 12px;
+  }
+
+  :scope[data-look="comic"] .ft-table__cell {
+    padding-inline: 12px;
+  }
+
+  /*
+    A long column head wraps to two lines instead of widening its column (as Sleek's do): the lettered
+    caps run wide, and a half-width register (the 409A table in Comp and plan, Equity) was 14px wider
+    than its panel at 1280 and 64px at 1180 with every head on one line. Heads sit on the bottom rule.
+  */
+  :scope[data-look="comic"] .ft-table__th {
+    white-space: normal;
+    line-height: 1.2;
+    vertical-align: bottom;
+  }
+
+  /* A sort head stays a 40px target and grows for a second line; its words keep to the column's edge. */
+  :scope[data-look="comic"] .ft-table__sort {
+    min-height: 40px;
+    height: auto;
+    padding-block: 4px;
+    text-align: inherit;
+  }
+
+  :scope[data-look="comic"] .ft-table__th.text-right > .ft-table__sort {
+    justify-content: flex-end;
+  }
+
+  :scope[data-look="comic"] .ft-table--dense .ft-table__th,
+  :scope[data-look="comic"] .ft-table--dense .ft-table__cell {
+    padding-inline: 9px;
+  }
+
+  /* The outer edges keep the kit's inset, so the first column still lines up with the panel's text. */
+  :scope[data-look="comic"] .ft-table__th:first-child,
+  :scope[data-look="comic"] .ft-table__cell:first-child {
+    padding-left: 16px;
+  }
+
+  :scope[data-look="comic"] .ft-table__th:last-child,
+  :scope[data-look="comic"] .ft-table__cell:last-child {
+    padding-right: 16px;
+  }
+
+  :scope[data-look="comic"] .ft-table__sort {
+    text-transform: inherit;
+    letter-spacing: inherit;
+  }
+
+  :scope[data-look="comic"] .ft-table__sort:hover {
+    color: var(--accent);
+  }
+
+  :scope[data-look="comic"] .ft-table__row:not(:last-child) {
+    border-bottom: 1.5px solid var(--comic-rule);
+  }
+
+  :scope[data-look="comic"] .ft-table__row--link:hover {
+    background: var(--comic-yellow-soft);
+  }
+
+  :scope[data-look="comic"] .ft-table__rowlink:hover {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+  }
+
+  /*
+    Keyboard focus on a row link: the link is an inline <a> around block content, so its own outline
+    paints nothing. The row takes the ring and a yellow highlight instead.
+  */
+  :scope[data-look="comic"] .ft-table__row:has(.ft-table__rowlink:focus-visible) {
+    outline: 3px solid var(--focus);
+    outline-offset: -3px;
+    background: var(--comic-yellow-soft);
+  }
+
+  /* Hand-built tables in panels (the bands grid) letter their headers like the kit tables. */
+  :scope[data-look="comic"] .ft-panel thead th:not(.ft-table__th) {
+    color: var(--comic-ink);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 11.5px;
+  }
+
+  /* ---------------------------------------------------------------- overlays */
+
+  /* A flat ink tint: a second dot screen over the page's dots would print as moire. */
+  :scope[data-look="comic"] .ft-scrim {
+    background-color: var(--scrim);
+    background-image: none;
+  }
+
+  :scope[data-look="comic"] .ft-sheet {
+    background: var(--surface);
+    border-left: 3px solid var(--comic-ink);
+    box-shadow:
+      -6px 0 0 var(--comic-yellow),
+      -9px 0 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-sheet__head {
+    border-bottom: 3px solid var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-sheet__title,
+  :scope[data-look="comic"] .ft-modal__title {
+    display: inline-block;
+    padding: 3px 10px 1px;
+    background: var(--comic-yellow);
+    border: 2px solid var(--comic-ink);
+    color: var(--comic-ink);
+    font-size: 22px;
+    line-height: 1.15;
+    letter-spacing: 0.05em;
+  }
+
+  :scope[data-look="comic"] .ft-sheet__subtitle {
+    margin-top: 8px;
+    color: var(--ink-2);
+  }
+
+  :scope[data-look="comic"] .ft-sheet__foot {
+    background: var(--surface-2);
+    border-top: 3px solid var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-modal {
+    background: var(--surface);
+    border: 3px solid var(--comic-ink);
+    border-radius: var(--r-xl);
+    box-shadow: 8px 8px 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-modal__foot {
+    border-top: 3px solid var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-menu {
+    background: var(--surface);
+    border: 3px solid var(--comic-ink);
+    border-radius: var(--r-lg);
+    box-shadow: 5px 5px 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-menu__divider {
+    height: 2px;
+    background: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-menuitem {
+    border-radius: var(--r-md);
+    color: var(--comic-ink);
+    font-weight: 700;
+  }
+
+  :scope[data-look="comic"] .ft-menuitem:not(:disabled):hover {
+    background: var(--comic-yellow-soft);
+  }
+
+  :scope[data-look="comic"] .ft-menuitem--danger {
+    color: var(--bad);
+  }
+
+  :scope[data-look="comic"] .ft-menuitem--danger:not(:disabled):hover {
+    background: var(--comic-red);
+    color: #ffffff;
+  }
+
+  /* Command palette: the keyboard selection is a cyan screen (selection is blue in this look). */
+  :scope[data-look="comic"] .ft-palette {
+    background: var(--surface);
+    border: 3px solid var(--comic-ink);
+    border-radius: var(--r-xl);
+    box-shadow: 8px 8px 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-palette__head {
+    border-bottom: 3px solid var(--comic-ink);
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-palette__head > svg {
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-palette__input {
+    font-weight: 700;
+    font-size: 17px;
+  }
+
+  /* The ring goes around the whole search row, inside it, clear of the palette's border and rule. */
+  :scope[data-look="comic"] .ft-palette__input:focus-visible {
+    outline: none;
+  }
+
+  :scope[data-look="comic"] .ft-palette__head:has(.ft-palette__input:focus-visible) {
+    outline: 3px solid var(--focus);
+    outline-offset: -7px;
+    border-radius: var(--r-md);
+  }
+
+  :scope[data-look="comic"] .ft-palette__group {
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-palette__item {
+    border: 2px solid transparent;
+    border-radius: var(--r-md);
+  }
+
+  :scope[data-look="comic"] .ft-palette__item--active {
+    background: var(--accent-soft);
+    border-color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-palette__item--active .ft-palette__icon {
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-palette__item--active svg {
+    color: var(--comic-ink);
+  }
+
+  /* ---------------------------------------------------------------- toasts: speech bubbles */
+
+  :scope[data-look="comic"] .ft-toast {
+    position: relative;
+    background: #ffffff;
+    border: 3px solid var(--comic-ink);
+    border-radius: 22px;
+    box-shadow: 4px 4px 0 var(--comic-ink);
+  }
+
+  /* The tail: an ink wedge, then a white wedge that opens the bubble's outline where they meet. */
+  :scope[data-look="comic"] .ft-toast::before,
+  :scope[data-look="comic"] .ft-toast::after {
+    content: "";
+    position: absolute;
+    pointer-events: none;
+  }
+
+  :scope[data-look="comic"] .ft-toast::before {
+    left: 30px;
+    bottom: -17px;
+    width: 24px;
+    height: 17px;
+    background: var(--comic-ink);
+    clip-path: polygon(0 0, 100% 0, 8% 100%);
+  }
+
+  :scope[data-look="comic"] .ft-toast::after {
+    left: 33.5px;
+    bottom: -11px;
+    width: 16px;
+    height: 14px;
+    background: #ffffff;
+    clip-path: polygon(0 0, 100% 0, 6% 100%);
+  }
+
+  :scope[data-look="comic"] .ft-toast__text {
+    color: var(--comic-ink);
+    font-weight: 700;
+  }
+
+  :scope[data-look="comic"] .ft-toast__action {
+    border: 2px solid var(--comic-ink);
+    border-radius: var(--r-lg);
+    background: var(--comic-yellow);
+    color: var(--comic-ink);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    box-shadow: 2px 2px 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-toast__action:hover {
+    background: #ffdb5c;
+  }
+
+  :scope[data-look="comic"] .ft-toast__dismiss {
+    color: var(--comic-ink);
+    border-radius: 50%;
+  }
+
+  :scope[data-look="comic"] .ft-toast__dismiss:hover {
+    background: var(--comic-yellow-soft);
+  }
+
+  /* ---------------------------------------------------------------- charts */
+
+  /* Tooltips are speech balloons: the toast's two-wedge tail, smaller, at the lower left. */
+  :scope[data-look="comic"] .ft-chart__tip {
+    background: #ffffff;
+    border: 2px solid var(--comic-ink);
+    border-radius: 14px;
+    box-shadow: 3px 3px 0 var(--comic-ink);
+    overflow: visible;
+  }
+
+  :scope[data-look="comic"] .ft-chart__tip::before,
+  :scope[data-look="comic"] .ft-chart__tip::after {
+    content: "";
+    position: absolute;
+    pointer-events: none;
+  }
+
+  :scope[data-look="comic"] .ft-chart__tip::before {
+    left: 16px;
+    bottom: -11px;
+    width: 15px;
+    height: 11px;
+    background: var(--comic-ink);
+    clip-path: polygon(0 0, 100% 0, 8% 100%);
+  }
+
+  :scope[data-look="comic"] .ft-chart__tip::after {
+    left: 18px;
+    bottom: -7px;
+    width: 10px;
+    height: 9px;
+    background: #ffffff;
+    clip-path: polygon(0 0, 100% 0, 6% 100%);
+  }
+
+  :scope[data-look="comic"] .ft-chart__track {
+    border-radius: 0;
+  }
+
+  /* An empty bar track is a blue Ben-Day screen; the bar prints solid over it. */
+  :scope[data-look="comic"] .ft-chart--bars .ft-chart__track {
+    background-color: var(--comic-white);
+    background-image:
+      radial-gradient(circle, var(--comic-dot-blue) 0 1px, transparent 1.5px),
+      radial-gradient(circle, var(--comic-dot-blue) 0 1px, transparent 1.5px);
+    background-size: 5px 5px;
+    background-position:
+      0 0,
+      2.5px 2.5px;
+    box-shadow: inset 0 0 0 1.5px var(--comic-ink);
+  }
+
+  /*
+    Step chart areas take a Ben-Day dot fill in their series ink (patterns drawn once by the masthead
+    decor, src/themes/comic/decor.tsx). With no pattern the area is simply not filled.
+  */
+  :scope[data-look="comic"] .ft-chart--step path[opacity="0.1"][fill="var(--accent)"] {
+    fill: url(#cmx-benday-accent) none;
+    opacity: 1;
+  }
+
+  :scope[data-look="comic"] .ft-chart--step path[opacity="0.1"][fill="var(--cat-2)"] {
+    fill: url(#cmx-benday-cat-2) none;
+    opacity: 1;
+  }
+
+  :scope[data-look="comic"] .ft-chart--step path[opacity="0.1"][fill="var(--cat-3)"] {
+    fill: url(#cmx-benday-cat-3) none;
+    opacity: 1;
+  }
+
+  :scope[data-look="comic"] .ft-chart--bars .ft-chart__bar {
+    border-radius: 0;
+    box-shadow: inset 0 0 0 1.5px var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-chart--segments .ft-chart__bar {
+    border-radius: 0;
+    box-shadow: inset 0 0 0 1.5px var(--comic-ink);
+  }
+
+  /*
+    A chart segment filled with the border token (the option pool's "Available" remainder and its
+    legend swatch, set inline) would print as solid ink, the loudest mark on the page. Redefine the
+    token on that element only, so it reads as an inked outline on paper.
+  */
+  :scope[data-look="comic"] [style*="--line-strong"] {
+    --line-strong: var(--comic-white);
+    box-shadow: inset 0 0 0 2px var(--comic-ink);
+  }
+
+  /* Gridlines in pencil; the legal threshold lines (line-strong) stay in ink. */
+  :scope[data-look="comic"] .ft-chart line[stroke="var(--line)"] {
+    stroke: var(--comic-rule);
+    stroke-width: 1.5px;
+  }
+
+  :scope[data-look="comic"] .ft-chart__legend {
+    color: var(--ink-2);
+  }
+
+  /* ---------------------------------------------------------------- pieces without hooks yet */
+
+  /*
+    Interim rules for screen pieces that carry no ft-* hook yet (hooks requested from the screen
+    owners): they target semantic utilities and ARIA, never incidental classes. They replace the old
+    pale pills with inked counts, lettered tags and an arrow stepper.
+  */
+
+  /* Counts beside a heading (inbox groups, pipeline columns) and numbered steps: an ink box, white numeral. */
+  :scope[data-look="comic"] .num.rounded-full.bg-surface-2:not(.absolute):not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .num.rounded-full.bg-surface:not(.absolute):not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-count.num.rounded-full:not(.ft-badge),
+  :scope[data-look="comic"] .ft-checkmark--open.num.rounded-full.bg-surface-2 {
+    background: var(--comic-ink);
+    color: #ffffff;
+    border-radius: var(--r-sm);
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: 0.04em;
+  }
+
+  /* Source chips and candidate tags: white lettered tags with an ink edge. */
+  :scope[data-look="comic"] span.rounded-full.bg-surface-2:not(.num):not(.absolute):not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] li.rounded-full.bg-surface-2:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-tag {
+    background: var(--comic-white);
+    border: 2px solid var(--comic-ink);
+    border-radius: var(--r-sm);
+    color: var(--comic-ink);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  /* The candidate stage stepper: an arrow strip of inked chevrons (two clipped layers: ink, then fill). */
+  :scope[data-look="comic"] nav[aria-label^="Stages for"] button {
+    --cmx-step-ink: var(--comic-pencil);
+    --cmx-step-fill: var(--surface-2);
+    position: relative;
+    isolation: isolate;
+    padding-inline: 22px 18px;
+    background: transparent;
+    border-color: transparent;
+    border-radius: 0;
+    color: var(--ink-2);
+    font-weight: 700;
+    font-size: 12.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    opacity: 1;
+  }
+
+  :scope[data-look="comic"] nav[aria-label^="Stages for"] button::before,
+  :scope[data-look="comic"] nav[aria-label^="Stages for"] button::after {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%, 12px 50%);
+  }
+
+  :scope[data-look="comic"] nav[aria-label^="Stages for"] button::before {
+    inset: 3px 0;
+    background: var(--cmx-step-ink);
+  }
+
+  :scope[data-look="comic"] nav[aria-label^="Stages for"] button::after {
+    inset: 6px 3.5px;
+    background: var(--cmx-step-fill);
+  }
+
+  :scope[data-look="comic"] nav[aria-label^="Stages for"] li:first-child button::before,
+  :scope[data-look="comic"] nav[aria-label^="Stages for"] li:first-child button::after {
+    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%);
+  }
+
+  :scope[data-look="comic"] nav[aria-label^="Stages for"] li:first-child button {
+    padding-left: 16px;
+  }
+
+  /* Done: white with a check, full ink. */
+  :scope[data-look="comic"] nav[aria-label^="Stages for"] button.bg-accent-soft {
+    --cmx-step-ink: var(--comic-ink);
+    --cmx-step-fill: var(--comic-white);
+    color: var(--comic-ink);
+  }
+
+  /* Current: blue with white lettering. */
+  :scope[data-look="comic"] nav[aria-label^="Stages for"] button[aria-current="step"] {
+    --cmx-step-ink: var(--comic-ink);
+    --cmx-step-fill: var(--accent);
+    color: #ffffff;
+  }
+
+  :scope[data-look="comic"] nav[aria-label^="Stages for"] button:disabled:not([aria-current="step"]):not(.bg-accent-soft) {
+    color: var(--ink-3);
+  }
+
+  :scope[data-look="comic"] nav[aria-label^="Stages for"] button:not(:disabled):hover {
+    --cmx-step-ink: var(--comic-ink);
+    --cmx-step-fill: var(--comic-yellow-soft);
+    color: var(--comic-ink);
+  }
+
+  /*
+    Links drawn as filled primary buttons without the ft-btn hook ("Start a job from this kit", the
+    solo founder's first action, Me link buttons): inked like the primary button, lift and press included.
+  */
+  :scope[data-look="comic"] a.bg-accent.text-accent-ink:not([class^="ft-"]):not([class*=" ft-"]) {
+    background: var(--comic-yellow);
+    color: var(--comic-ink);
+    border: var(--border-w-strong) solid var(--comic-ink);
+    border-radius: var(--r-lg);
+    box-shadow: 3px 3px 0 var(--comic-ink);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    transition:
+      transform 90ms ease-out,
+      box-shadow 90ms ease-out,
+      background-color 90ms ease-out;
+  }
+
+  :scope[data-look="comic"] a.bg-accent.text-accent-ink:not([class^="ft-"]):not([class*=" ft-"]):hover {
+    background: #ffdb5c;
+    transform: translate(-2px, -2px);
+    box-shadow: 5px 5px 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] a.bg-accent.text-accent-ink:not([class^="ft-"]):not([class*=" ft-"]):active {
+    transform: translate(2px, 2px);
+    box-shadow: 0 0 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] a.bg-accent.text-accent-ink:not([class^="ft-"]):not([class*=" ft-"]):focus-visible {
+    outline-offset: 5px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :scope[data-look="comic"] a.bg-accent.text-accent-ink:not([class^="ft-"]):not([class*=" ft-"]):hover,
+    :scope[data-look="comic"] a.bg-accent.text-accent-ink:not([class^="ft-"]):not([class*=" ft-"]):active {
+      transform: none;
+    }
+  }
+
+  :scope[data-look="comic"][data-reduced-motion] a.bg-accent.text-accent-ink:not([class^="ft-"]):not([class*=" ft-"]):hover,
+  :scope[data-look="comic"][data-reduced-motion] a.bg-accent.text-accent-ink:not([class^="ft-"]):not([class*=" ft-"]):active {
+    transform: none;
+  }
+
+  /* The offer builder's equity summary: a flat inked note, not a soft beige blob. */
+  :scope[data-look="comic"] .ft-sheet .rounded-xl.bg-surface-2:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-panel .rounded-xl.bg-surface-2:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-ministat--tile.bg-surface-2 {
+    background: var(--comic-white);
+    border: 2px solid var(--comic-ink);
+    border-radius: var(--r-sm);
+  }
+
+  /* Position-in-band meters (offer builder, comp table): square inked track, cyan band. */
+  :scope[data-look="comic"] [role="img"] .absolute.rounded-full.bg-surface-2,
+  :scope[data-look="comic"] [role="img"] .absolute.rounded-full.bg-surface-3 {
+    background: var(--comic-white);
+    border-radius: 0;
+    box-shadow: inset 0 0 0 1.5px var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] [role="img"] .absolute.bg-accent-soft {
+    background: var(--accent-soft);
+    border-radius: 0;
+    box-shadow: inset 0 0 0 2px var(--comic-ink);
+  }
+
+  /* The option pool bar: every segment inked, square ends; its legend swatches inked to match. */
+  :scope[data-look="comic"] [role="img"][aria-label^="Option pool"] > div {
+    border-radius: 0;
+    box-shadow: inset 0 0 0 2px var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] dt > span.rounded-sm[style*="background"] {
+    border-radius: 0;
+    box-shadow: inset 0 0 0 1.5px var(--comic-ink);
+  }
+
+  /*
+    Flat process-screen tiles built without a hook (compliance calendar date tiles, the selected
+    interview kit, time-off calendar events, notes and warnings in panels and sheets) are inked like
+    every other filled box: an inset ink edge (no layout shift) and square corners; a tile that already
+    has a border takes ink on it instead. One rule per screen color, no comma inside :not().
+  */
+  :scope[data-look="comic"] .ft-main__inner .bg-bad-soft:not([class^="ft-"]):not([class*=" ft-"]):not(.absolute):not([class*="border"]),
+  :scope[data-look="comic"] .ft-sheet .bg-bad-soft:not([class^="ft-"]):not([class*=" ft-"]):not(.absolute):not([class*="border"]),
+  :scope[data-look="comic"] .ft-modal .bg-bad-soft:not([class^="ft-"]):not([class*=" ft-"]):not(.absolute):not([class*="border"]),
+  :scope[data-look="comic"] .ft-datetile--bad {
+    box-shadow: inset 0 0 0 2px var(--comic-ink);
+    border-radius: var(--r-sm);
+  }
+
+  :scope[data-look="comic"] .ft-main__inner .bg-warn-soft:not([class^="ft-"]):not([class*=" ft-"]):not(.absolute):not([class*="border"]),
+  :scope[data-look="comic"] .ft-sheet .bg-warn-soft:not([class^="ft-"]):not([class*=" ft-"]):not(.absolute):not([class*="border"]),
+  :scope[data-look="comic"] .ft-modal .bg-warn-soft:not([class^="ft-"]):not([class*=" ft-"]):not(.absolute):not([class*="border"]),
+  :scope[data-look="comic"] .ft-datetile--warn {
+    box-shadow: inset 0 0 0 2px var(--comic-ink);
+    border-radius: var(--r-sm);
+  }
+
+  :scope[data-look="comic"] .ft-main__inner .bg-accent-soft:not([class^="ft-"]):not([class*=" ft-"]):not(.absolute):not([class*="border"]),
+  :scope[data-look="comic"] .ft-sheet .bg-accent-soft:not([class^="ft-"]):not([class*=" ft-"]):not(.absolute):not([class*="border"]),
+  :scope[data-look="comic"] .ft-modal .bg-accent-soft:not([class^="ft-"]):not([class*=" ft-"]):not(.absolute):not([class*="border"]),
+  :scope[data-look="comic"] .ft-navlist__item--on.bg-accent-soft {
+    box-shadow: inset 0 0 0 2px var(--comic-ink);
+    border-radius: var(--r-sm);
+  }
+
+  :scope[data-look="comic"] .ft-main__inner .bg-good-soft:not([class^="ft-"]):not([class*=" ft-"]):not(.absolute):not([class*="border"]),
+  :scope[data-look="comic"] .ft-sheet .bg-good-soft:not([class^="ft-"]):not([class*=" ft-"]):not(.absolute):not([class*="border"]),
+  :scope[data-look="comic"] .ft-modal .bg-good-soft:not([class^="ft-"]):not([class*=" ft-"]):not(.absolute):not([class*="border"]) {
+    box-shadow: inset 0 0 0 2px var(--comic-ink);
+    border-radius: var(--r-sm);
+  }
+
+  :scope[data-look="comic"] .ft-main__inner .bg-bad-soft.border:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-main__inner .bg-warn-soft.border:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-main__inner .bg-accent-soft.border:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-main__inner .bg-good-soft.border:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-sheet .bg-bad-soft.border:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-sheet .bg-warn-soft.border:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-sheet .bg-accent-soft.border:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-sheet .bg-good-soft.border:not([class^="ft-"]):not([class*=" ft-"]),
+  :scope[data-look="comic"] .ft-scenario--on.bg-accent-soft.border,
+  :scope[data-look="comic"] .ft-stepper__step--done.bg-accent-soft.border {
+    border-color: var(--comic-ink);
+    border-radius: var(--r-sm);
+  }
+
+  /* SOC2 gap rows: no translucent wash (print has none); the red margin bar of the overdue inbox rows. */
+  :scope[data-look="comic"] .ft-panel li[class*="bg-bad-soft/"] {
+    background: var(--surface);
+    box-shadow: inset 6px 0 0 var(--comic-red);
+  }
+
+  /*
+    Links drawn as buttons without the ft-btn hook: the inbox "Sweep 7" navigate action (the inbox's
+    large secondary button), the SOC2 "Fix in Training" links (medium secondary). Inked, lettered,
+    lifting and pressing like the kit buttons; still under reduced motion.
+  */
+  :scope[data-look="comic"] a[data-inbox-primary],
+  :scope[data-look="comic"] .ft-panel li a.border-bad:not([class^="ft-"]):not([class*=" ft-"]) {
+    background: var(--comic-white);
+    color: var(--comic-ink);
+    border: var(--border-w-strong) solid var(--comic-ink);
+    border-radius: var(--r-lg);
+    box-shadow: 3px 3px 0 var(--comic-ink);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    transition:
+      transform 90ms ease-out,
+      box-shadow 90ms ease-out,
+      background-color 90ms ease-out;
+  }
+
+  :scope[data-look="comic"] .ft-panel li a.border-bad:not([class^="ft-"]):not([class*=" ft-"]) {
+    border-width: 2px;
+    box-shadow: 2px 2px 0 var(--comic-ink);
+    font-size: 14px;
+    letter-spacing: 0;
+  }
+
+  :scope[data-look="comic"] a[data-inbox-primary]:hover {
+    background: #ffffff;
+    transform: translate(-2px, -2px);
+    box-shadow: 5px 5px 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-panel li a.border-bad:not([class^="ft-"]):not([class*=" ft-"]):hover {
+    background: #ffffff;
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] a[data-inbox-primary]:active,
+  :scope[data-look="comic"] .ft-panel li a.border-bad:not([class^="ft-"]):not([class*=" ft-"]):active {
+    transform: translate(2px, 2px);
+    box-shadow: 0 0 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] a[data-inbox-primary]:focus-visible,
+  :scope[data-look="comic"] .ft-panel li a.border-bad:not([class^="ft-"]):not([class*=" ft-"]):focus-visible {
+    outline-offset: 5px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :scope[data-look="comic"] a[data-inbox-primary]:hover,
+    :scope[data-look="comic"] a[data-inbox-primary]:active,
+    :scope[data-look="comic"] .ft-panel li a.border-bad:not([class^="ft-"]):not([class*=" ft-"]):hover,
+    :scope[data-look="comic"] .ft-panel li a.border-bad:not([class^="ft-"]):not([class*=" ft-"]):active {
+      transform: none !important;
+    }
+  }
+
+  :scope[data-look="comic"][data-reduced-motion] a[data-inbox-primary]:hover,
+  :scope[data-look="comic"][data-reduced-motion] a[data-inbox-primary]:active,
+  :scope[data-look="comic"][data-reduced-motion] .ft-panel li a.border-bad:not([class^="ft-"]):not([class*=" ft-"]):hover,
+  :scope[data-look="comic"][data-reduced-motion] .ft-panel li a.border-bad:not([class^="ft-"]):not([class*=" ft-"]):active {
+    transform: none !important;
+  }
+
+  /*
+    Org chart rows lie flat (2px ink, no resting shadow) so the tree, not a wall of boxes, carries the
+    page; a row stands up only under the pointer or keyboard focus.
+  */
+  :scope[data-look="comic"] [role="treeitem"] > div.shadow-card {
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] [role="treeitem"]:hover > div.shadow-card,
+  :scope[data-look="comic"] [role="treeitem"]:focus-visible > div.shadow-card {
+    background: #ffffff;
+    box-shadow: 2px 2px 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] [role="treeitem"] > span.border-l-2 {
+    border-color: var(--comic-ink);
+  }
+
+  /*
+    The first twenty wall is a Silver Age roll-call page, not a grid of soft cards: square inked
+    panels, the employee number in an ink box with a white numeral, the name lettered in Bangers and
+    the start date in a yellow caption strip along the bottom edge. Alumni keep an unprinted dashed
+    outline. Matched by the seats' labels (interim: the People owner is asked for an ft-wallcard hook).
+  */
+  :scope[data-look="comic"] [aria-label^="Seat "] {
+    border-radius: 0;
+  }
+
+  :scope[data-look="comic"] a[aria-label^="Seat "]:has(> .ft-avatar) {
+    overflow: hidden;
+    border-width: var(--border-w-strong);
+    border-color: var(--comic-ink);
+    box-shadow: 3px 3px 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] a[aria-label^="Seat "].border-accent:has(> .ft-avatar) {
+    border-color: var(--accent);
+  }
+
+  :scope[data-look="comic"] a[aria-label^="Seat "].bg-transparent:has(> .ft-avatar) {
+    border-style: dashed;
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] a[aria-label^="Seat "]:has(> .ft-avatar):hover {
+    background: var(--comic-yellow-soft);
+  }
+
+  :scope[data-look="comic"] a[aria-label^="Seat "]:has(> .ft-avatar) > span.font-mono {
+    align-self: flex-start;
+    margin-top: 10px;
+    padding: 2px 6px 0;
+    background: var(--comic-ink);
+    color: #ffffff;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 15px;
+    line-height: 1.1;
+    letter-spacing: 0.05em;
+  }
+
+  :scope[data-look="comic"] a[aria-label^="Seat "]:has(> .ft-avatar) > span.font-semibold {
+    margin-top: 5px;
+    color: var(--comic-ink);
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 18px;
+    line-height: 1.1;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  :scope[data-look="comic"] a[aria-label^="Seat "].bg-transparent:has(> .ft-avatar) > span.font-semibold {
+    color: var(--ink-3);
+  }
+
+  :scope[data-look="comic"] a[aria-label^="Seat "]:has(> .ft-avatar) > span.mt-auto {
+    margin: auto -14px -12px;
+    padding: 4px 14px 3px;
+    background: var(--comic-yellow);
+    border-top: 2px solid var(--comic-ink);
+    color: var(--comic-ink);
+    font-weight: 700;
+  }
+
+  :scope[data-look="comic"] a[aria-label^="Seat "].bg-transparent:has(> .ft-avatar) > span.mt-auto {
+    background: var(--surface-3);
+    border-top-style: dashed;
+    color: var(--ink-2);
+  }
+
+  /* Hand-built citation pills (compliance calendar "Course" and "Source"): square inked tags like .ft-cite. */
+  :scope[data-look="comic"] .ft-main__inner a.rounded-full > span.rounded-full {
+    background: var(--comic-white);
+    border: 1.5px solid var(--comic-ink);
+    border-radius: var(--r-sm);
+    color: var(--ink-2);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  :scope[data-look="comic"] .ft-main__inner a.rounded-full:hover > span.rounded-full {
+    background: var(--comic-yellow-soft);
+    color: var(--comic-ink);
+  }
+
+  /*
+    Stat-like figures built without the Stat kit (person equity "Total options", pay, monthly cost; the
+    option pool legend) are lettered in Bangers like the other big numbers. Only figures behind the
+    privacy blur, so plain text values (a title, a manager) keep the body face.
+  */
+  :scope[data-look="comic"] .ft-panel div.num.font-bold:has(> .ft-private),
+  :scope[data-look="comic"] .ft-panel dd.num.font-bold {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 19px;
+    line-height: 1.1;
+    letter-spacing: 0.02em;
+  }
+
+  /* Three figures share a row in narrow panels (People cost): full size only where there is room. */
+  @container app (width >= 38.75rem) {
+    :scope[data-look="comic"] .ft-panel div.num.font-bold:has(> .ft-private),
+    :scope[data-look="comic"] .ft-panel dd.num.font-bold {
+      font-size: 23px;
+      letter-spacing: 0.03em;
+    }
+  }
+
+  /*
+    The vesting chart (person equity, Me) carries no ft-chart hook yet: matched by its role and label.
+    Its area takes the Ben-Day fill, its line the heavier process-blue stroke, its grid the pencil.
+  */
+  :scope[data-look="comic"] svg[aria-label^="Vesting:"] path[opacity="0.1"][fill="var(--accent)"] {
+    fill: url(#cmx-benday-accent) none;
+    opacity: 1;
+  }
+
+  :scope[data-look="comic"] svg[aria-label^="Vesting:"] path[fill="none"][stroke="var(--accent)"] {
+    stroke-width: 2.5px;
+  }
+
+  :scope[data-look="comic"] svg[aria-label^="Vesting:"] line[stroke="var(--line)"] {
+    stroke: var(--comic-rule);
+    stroke-width: 1.5px;
+  }
+
+  :scope[data-look="comic"] svg[aria-label^="Vesting:"] circle[fill="var(--accent)"] {
+    stroke: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] svg[aria-label^="Vesting:"] ~ div.shadow-pop {
+    background: #ffffff;
+    border: 2px solid var(--comic-ink);
+    border-radius: 14px;
+    box-shadow: 3px 3px 0 var(--comic-ink);
+  }
+
+  /* ---------------------------------------------------------------- shell: rail */
+
+  :scope[data-look="comic"] .ft-rail {
+    background-color: var(--paper);
+    background-image:
+      radial-gradient(circle, var(--comic-dot) 0 1.4px, transparent 1.9px),
+      radial-gradient(circle, var(--comic-dot) 0 1.4px, transparent 1.9px);
+    background-size: 8px 8px;
+    background-position:
+      0 0,
+      4px 4px;
+    border-right: 3px solid var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-rail--sheet {
+    box-shadow: 6px 0 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-rail__note {
+    color: var(--ink-3);
+  }
+
+  :scope[data-look="comic"] .ft-brand__mark {
+    background: var(--comic-red);
+    color: #ffffff;
+    border: 2px solid var(--comic-ink);
+    border-radius: var(--r-md);
+    box-shadow: 2px 2px 0 var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-brand__name {
+    font-size: 21px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  :scope[data-look="comic"] .ft-topbar .ft-brand__name {
+    font-size: 18px;
+  }
+
+  :scope[data-look="comic"] .ft-brand__meta {
+    color: var(--ink-2);
+  }
+
+  /* Headcount: the number sits in a yellow burst. */
+  :scope[data-look="comic"] .ft-headcount {
+    isolation: isolate;
+  }
+
+  :scope[data-look="comic"] a.ft-headcount:hover {
+    background: var(--comic-yellow-soft);
+    box-shadow: inset 0 0 0 2px var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-headcount__value {
+    position: relative;
+    font-size: 34px;
+    letter-spacing: 0.02em;
+    padding-inline: 2px;
+  }
+
+  :scope[data-look="comic"] .ft-headcount__value::before,
+  :scope[data-look="comic"] .ft-headcount__value::after {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    clip-path: polygon(50% 0%, 61% 18%, 82% 8%, 79% 31%, 100% 38%, 84% 54%, 97% 76%, 74% 76%, 68% 100%, 52% 85%, 33% 99%, 29% 78%, 5% 81%, 16% 59%, 0% 42%, 20% 32%, 14% 9%, 37% 19%);
+  }
+
+  :scope[data-look="comic"] .ft-headcount__value::before {
+    inset: -15px -15px -13px -15px;
+    background: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-headcount__value::after {
+    inset: -11px -11px -9px -11px;
+    background: var(--comic-yellow);
+  }
+
+  :scope[data-look="comic"] .ft-headcount__label {
+    color: var(--comic-ink);
+    font-weight: 700;
+    margin-left: 10px;
+  }
+
+  /* Blue words on the rail's halftone get a paper knockout behind the letters. */
+  :scope[data-look="comic"] .ft-headcount__incoming {
+    color: var(--accent);
+    font-weight: 700;
+    background: var(--paper);
+    padding-inline: 3px;
+  }
+
+  /* Nav: the current section is a blue block with an ink edge. */
+  :scope[data-look="comic"] .ft-navitem {
+    border: 2px solid transparent;
+    border-radius: var(--r-lg);
+    color: var(--comic-ink);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  :scope[data-look="comic"] .ft-navitem:hover {
+    background: var(--comic-yellow-soft);
+    border-color: var(--comic-ink);
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-navitem--active,
+  :scope[data-look="comic"] .ft-navitem--active:hover {
+    background: var(--accent);
+    border-color: var(--comic-ink);
+    color: #ffffff;
+    box-shadow: 3px 3px 0 var(--comic-ink);
+  }
+
+  /* The nav scrolls in a tight column, so its focus ring sits inside the item: blue on paper, yellow on blue. */
+  :scope[data-look="comic"] .ft-navitem:focus-visible {
+    outline-offset: -7px;
+  }
+
+  :scope[data-look="comic"] .ft-navitem--active:focus-visible {
+    outline-color: var(--comic-yellow);
+  }
+
+  :scope[data-look="comic"] .ft-viewas {
+    background: var(--surface);
+    border: 2px solid var(--comic-ink);
+    border-radius: var(--r-lg);
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] .ft-viewas__title {
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-viewas__roles {
+    box-shadow: none;
+  }
+
+  /* Phone top bar */
+  :scope[data-look="comic"] .ft-topbar {
+    background-color: var(--paper);
+    border-bottom: 3px solid var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-topbar__count {
+    color: var(--comic-ink);
+  }
+
+  /* ---------------------------------------------------------------- shell: header and banners */
+
+  :scope[data-look="comic"] .ft-search {
+    background: var(--comic-white);
+    border: var(--border-w-strong) solid var(--comic-ink);
+    border-radius: var(--r-md);
+    color: var(--ink-2);
+    box-shadow: none;
+    font-weight: 700;
+  }
+
+  :scope[data-look="comic"] .ft-search:hover {
+    border-color: var(--comic-ink);
+    color: var(--comic-ink);
+    background: #ffffff;
+  }
+
+  :scope[data-look="comic"] .ft-backup {
+    background: var(--comic-white);
+    border: 2px solid var(--comic-ink);
+    border-radius: var(--r-sm);
+    color: var(--comic-ink);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 11.5px;
+  }
+
+  /* A warning sticker in process orange (yellow is kept for captions and the primary action). */
+  :scope[data-look="comic"] .ft-backup--stale {
+    background: var(--warn-soft);
+    box-shadow: 2px 2px 0 var(--comic-ink);
+    transform: rotate(-2deg);
+  }
+
+  /* Notices lie flat on the page: the sample notice is an unprinted dashed box, the preview a cyan screen. */
+  :scope[data-look="comic"] .ft-banner {
+    border: 2px solid var(--comic-ink);
+    border-radius: var(--r-sm);
+    box-shadow: none;
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-banner--sample {
+    background: var(--comic-white);
+    border-style: dashed;
+  }
+
+  :scope[data-look="comic"] .ft-banner--preview {
+    background: var(--accent-soft);
+  }
+
+  :scope[data-look="comic"] .ft-banner--storage {
+    background: var(--warn-soft);
+  }
+
+  :scope[data-look="comic"] .ft-banner__action {
+    color: var(--comic-ink);
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+  }
+
+  :scope[data-look="comic"] .ft-banner__action:hover {
+    background: var(--comic-yellow-soft);
+  }
+
+  /* ---------------------------------------------------------------- Display menu cards */
+
+  :scope[data-look="comic"] .ft-lookcard {
+    border: 2px solid var(--comic-ink);
+    border-radius: var(--r-lg);
+    box-shadow: 3px 3px 0 var(--comic-ink);
+    overflow: hidden;
+  }
+
+  :scope[data-look="comic"] .ft-lookcard--on {
+    box-shadow:
+      0 0 0 2px var(--comic-ink),
+      5px 5px 0 var(--accent);
+  }
+
+  :scope[data-look="comic"] .ft-lookcard__check {
+    color: var(--accent);
+  }
+
+  /* ---------------------------------------------------------------- decor (src/themes/comic/decor.tsx) */
+
+  :scope[data-look="comic"] .ft-decor--banner {
+    margin-bottom: 18px;
+  }
+
+  :scope[data-look="comic"] .cmx-mast {
+    display: flex;
+    align-items: stretch;
+    min-height: 48px;
+    overflow: hidden;
+    background: var(--comic-red);
+    border: 3px solid var(--comic-ink);
+    color: #ffffff;
+    font-family: var(--font-display);
+    line-height: 1;
+    user-select: none;
+  }
+
+  :scope[data-look="comic"] .cmx-mast__box {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 10px;
+    background: var(--comic-white);
+    border-right: 3px solid var(--comic-ink);
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .cmx-mast__price {
+    font-size: 22px;
+  }
+
+  :scope[data-look="comic"] .cmx-mast__issue {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  :scope[data-look="comic"] .cmx-mast__title {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    padding: 4px 14px;
+  }
+
+  /* White lettering on red (5:1); the big name is yellow with an ink outline (large text, 3:1 or more). */
+  :scope[data-look="comic"] .cmx-mast__imprint {
+    color: #ffffff;
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    text-shadow: 1px 1px 0 var(--comic-ink);
+  }
+
+  /* A cover logo: big blocky yellow letters with an ink outline and a stacked ink extrude. */
+  :scope[data-look="comic"] .cmx-mast__name {
+    color: var(--comic-yellow);
+    font-size: 24px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    text-shadow:
+      -1px -1px 0 var(--comic-ink),
+      1px -1px 0 var(--comic-ink),
+      -1px 1px 0 var(--comic-ink),
+      1px 1px 0 var(--comic-ink),
+      2px 2px 0 var(--comic-ink),
+      3px 3px 0 var(--comic-ink);
+  }
+
+  @container app (width >= 38.75rem) {
+    :scope[data-look="comic"] .cmx-mast__title {
+      gap: 6px;
+      padding-block: 5px 9px;
+    }
+
+    :scope[data-look="comic"] .cmx-mast__name {
+      font-size: 32px;
+      letter-spacing: 0.04em;
+      transform: skewY(-2deg);
+      transform-origin: left center;
+      text-shadow:
+        -1px -1px 0 var(--comic-ink),
+        1px -1px 0 var(--comic-ink),
+        -1px 1px 0 var(--comic-ink),
+        1px 1px 0 var(--comic-ink),
+        2px 2px 0 var(--comic-ink),
+        3px 3px 0 var(--comic-ink),
+        4px 4px 0 var(--comic-ink);
+    }
+  }
+
+  /* Interior pages: a slim 32px imprint strip (price box, imprint, dots) instead of the cover. */
+  :scope[data-look="comic"] .cmx-mast--slim {
+    min-height: 0;
+    align-items: stretch;
+  }
+
+  :scope[data-look="comic"] .cmx-mast--slim .cmx-mast__box {
+    padding: 3px 9px 2px;
+  }
+
+  :scope[data-look="comic"] .cmx-mast--slim .cmx-mast__price {
+    font-size: 17px;
+  }
+
+  :scope[data-look="comic"] .cmx-mast--slim .cmx-mast__imprint {
+    align-self: center;
+    min-width: 0;
+    padding: 5px 12px 4px;
+    overflow: hidden;
+    font-size: 15px;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+    text-overflow: clip;
+  }
+
+  :scope[data-look="comic"] .ft-decor--banner:has(.cmx-mast--slim) {
+    margin-bottom: 14px;
+  }
+
+  /* Ben-Day pattern defs for chart areas: drawn once, takes no space. */
+  :scope[data-look="comic"] .cmx-defs {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+  }
+
+  :scope[data-look="comic"] .cmx-mast__dots {
+    flex: 1 1 0;
+    min-width: 0;
+    background-image:
+      radial-gradient(circle, rgb(255 210 58 / 0.95) 0 2.3px, transparent 2.8px),
+      radial-gradient(circle, rgb(255 210 58 / 0.95) 0 2.3px, transparent 2.8px);
+    background-size: 10px 10px;
+    background-position:
+      0 0,
+      5px 5px;
+    mask-image: linear-gradient(to right, transparent, #000 70%);
+  }
+
+  /* Large text on a phone: a one-line strip, so the masthead never pushes the page below the fold. */
+  @container app (width < 20rem) {
+    :scope[data-look="comic"] .cmx-mast {
+      min-height: 0;
+    }
+
+    :scope[data-look="comic"] .cmx-mast:not(.cmx-mast--slim) .cmx-mast__imprint,
+    :scope[data-look="comic"] .cmx-mast__issue,
+    :scope[data-look="comic"] .cmx-mast__dots {
+      display: none;
+    }
+
+    :scope[data-look="comic"] .cmx-mast--slim .cmx-mast__imprint {
+      font-size: 13px;
+      letter-spacing: 0.06em;
+    }
+
+    :scope[data-look="comic"] .cmx-mast__month {
+      display: none;
+    }
+
+    :scope[data-look="comic"] .cmx-mast__price {
+      font-size: 16px;
+    }
+
+    :scope[data-look="comic"] .cmx-mast__title {
+      padding: 4px 10px;
+    }
+
+    :scope[data-look="comic"] .cmx-mast__name {
+      font-size: 17px;
+    }
+  }
+
+  :scope[data-look="comic"] .ft-decor--footer {
+    margin-top: 40px;
+  }
+
+  :scope[data-look="comic"] .cmx-tbc {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  :scope[data-look="comic"] .cmx-tbc__box {
+    padding: 4px 12px 2px;
+    background: var(--comic-yellow);
+    border: 3px solid var(--comic-ink);
+    color: var(--comic-ink);
+    font-family: var(--font-display);
+    font-size: 22px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    transform: rotate(-1.5deg);
+  }
+
+  /* Marker tally (decor Headcount) */
+  :scope[data-look="comic"] .cmx-tally {
+    max-width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  :scope[data-look="comic"] .cmx-tally__mark,
+  :scope[data-look="comic"] .cmx-tally__slash {
+    fill: none;
+    stroke-linecap: round;
+  }
+
+  :scope[data-look="comic"] .cmx-tally__mark--on {
+    stroke: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .cmx-tally__mark--incoming,
+  :scope[data-look="comic"] .cmx-tally__slash--incoming {
+    stroke: var(--accent);
+    stroke-linecap: butt;
+    stroke-dasharray: 5 4;
+  }
+
+  :scope[data-look="comic"] .cmx-tally__mark--off,
+  :scope[data-look="comic"] .cmx-tally__slash--off {
+    stroke: #bfae84;
+  }
+
+  :scope[data-look="comic"] .cmx-tally__slash--on {
+    stroke: var(--comic-red);
+  }
+
+  :scope[data-look="comic"] .cmx-tally__scale {
+    fill: var(--ink-2);
+    font-family: var(--font-display);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+  }
+}
+
+/* ---------------------------------------------------------------- Server sync (Header.tsx) */
+
+@scope ([data-look="comic"]) to ([data-look]:not([data-look="comic"])) {
+  /* The sync chip is a lettered caption tag on paper: white with an ink edge and no shadow, so the
+     calm Synced state never reads as a second primary button (yellow stays for actions such as + New).
+     Syncing turns pale yellow, waiting states become the orange warning sticker (like a stale backup),
+     trouble a red one. */
+  :scope[data-look="comic"] .ft-syncchip {
+    background: var(--comic-white);
+    border: 2px solid var(--comic-ink);
+    border-radius: var(--r-sm);
+    color: var(--comic-ink);
+    box-shadow: none;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 11.5px;
+  }
+
+  :scope[data-look="comic"] .ft-syncchip:hover {
+    background: var(--comic-yellow-soft);
+    border-color: var(--comic-ink);
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-syncchip .ft-syncchip__icon {
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-syncchip--syncing {
+    background: var(--comic-yellow-soft);
+  }
+
+  :scope[data-look="comic"] .ft-syncchip--paused {
+    background: var(--comic-white);
+    border-style: dashed;
+    box-shadow: none;
+  }
+
+  :scope[data-look="comic"] .ft-syncchip--offline,
+  :scope[data-look="comic"] .ft-syncchip--signed-out {
+    background: var(--warn-soft);
+    box-shadow: 2px 2px 0 var(--comic-ink);
+    transform: rotate(-2deg);
+  }
+
+  :scope[data-look="comic"] .ft-syncchip--attention,
+  :scope[data-look="comic"] .ft-syncchip--attention:hover {
+    background: var(--comic-red);
+    color: #ffffff;
+    box-shadow: 2px 2px 0 var(--comic-ink);
+    transform: rotate(-2deg);
+  }
+
+  :scope[data-look="comic"] .ft-syncchip--attention .ft-syncchip__icon {
+    color: #ffffff;
+  }
+
+  :scope[data-look="comic"] .ft-syncchip--attention .ft-syncchip__count {
+    background: #ffffff;
+    color: var(--comic-ink);
+  }
+
+  /* Sync notices are caption boxes (pale yellow, ink edge); warnings are printed in process orange. */
+  :scope[data-look="comic"] .ft-banner--sync:not(.ft-banner--storage) {
+    background: var(--comic-yellow-soft);
+    color: var(--comic-ink);
+  }
+
+  :scope[data-look="comic"] .ft-banner--sync-rejected:not(.ft-banner--storage),
+  :scope[data-look="comic"] .ft-banner--sync-paused:not(.ft-banner--storage),
+  :scope[data-look="comic"] .ft-banner--sync-replaced:not(.ft-banner--storage) {
+    background: var(--warn-soft);
+  }
+
+  :scope[data-look="comic"] .ft-banner--sync .ft-banner__icon {
+    color: var(--comic-ink);
+  }
+}

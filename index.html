@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>First Twenty</title>
+    <meta name="description" content="Hiring and people records for a company's first twenty people." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a44c9'/%3E%3Cpath d='M9 8v16M13 8v16M17 8v16M21 8v16' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3Cpath d='M6 21L26 11' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <script>
+      // Apply the saved look (and a forced light or dark theme) before the first paint, so the page never
+      // flashes the default skin. src/app/App.tsx owns these attributes after that; keep the ids in sync
+      // with src/themes/ids.ts.
+      (function () {
+        var root = document.documentElement
+        var p = {}
+        try {
+          p = JSON.parse(localStorage.getItem('first-twenty:prefs:v1') || '{}') || {}
+        } catch (e) {}
+        // Renamed looks load as their new id (src/themes/ids.ts, RENAMED_LOOKS).
+        var saved = p.look === 'ledger' ? 'trading' : p.look
+        var look = ['sleek', 'web90s', 'comic', 'trading'].indexOf(saved) >= 0 ? saved : 'sleek'
+        root.setAttribute('data-look', look)
+        if (look === 'sleek' && (p.theme === 'light' || p.theme === 'dark') && !root.hasAttribute('data-theme')) {
+          root.setAttribute('data-theme', p.theme)
+          root.setAttribute('data-theme-owner', 'app')
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

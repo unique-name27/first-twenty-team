@@ -1,0 +1,280 @@
+@import "tailwindcss";
+
+/*
+  Looks (docs/LOOKS.md): every look-specific value lives in its own file under src/themes, scoped to
+  [data-look="<id>"] so a preview card can carry a different look than the page. This file holds only
+  the shared machinery: breakpoints, resets, the token-to-utility mapping and base element styles that
+  read the tokens. Look files are unlayered, so their hook-class rules (.ft-btn, .ft-panel, ...) win
+  over Tailwind utilities without !important.
+*/
+@import "./themes/sleek.css";
+@import "./themes/web90s.css";
+@import "./themes/comic.css";
+@import "./themes/trading.css";
+
+/*
+  Breakpoints follow the width the layout really has, not the window. Text size (Display menu) zooms
+  the whole page, and media queries ignore zoom: at 150% on a 1280px window only about 850 CSS px
+  are free, yet lg: rules would still apply. So body is a named size container ("app", below) and the
+  sm/md/lg/xl/2xl variants (and their max-* twins) query it. A container excludes the window's
+  scrollbar while a media query includes it, so each step sits 1.25rem (20px) below Tailwind's
+  default (40/48/64/80/96rem); at 100% the layout switches where it did before.
+*/
+@custom-variant sm (@container app (width >= 38.75rem));
+@custom-variant md (@container app (width >= 46.75rem));
+@custom-variant lg (@container app (width >= 62.75rem));
+@custom-variant xl (@container app (width >= 78.75rem));
+@custom-variant 2xl (@container app (width >= 94.75rem));
+@custom-variant max-sm (@container app (width < 38.75rem));
+@custom-variant max-md (@container app (width < 46.75rem));
+@custom-variant max-lg (@container app (width < 62.75rem));
+@custom-variant max-xl (@container app (width < 78.75rem));
+@custom-variant max-2xl (@container app (width < 94.75rem));
+
+/*
+  Utilities read the look tokens, so the existing bg-*, text-*, border, rounded-* and shadow-* classes
+  in every screen follow the active look. (Self-references such as --font-display: var(--font-display)
+  are intentional: the look files define the real values, unlayered, on :root and [data-look].)
+*/
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-control: var(--control-border);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-ink: var(--accent-soft-ink);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-cat-1: var(--cat-1);
+  --color-cat-2: var(--cat-2);
+  --color-cat-3: var(--cat-3);
+  --color-cat-4: var(--cat-4);
+  --color-cat-5: var(--cat-5);
+  --color-cat-6: var(--cat-6);
+
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+
+  /* rounded (bare), rounded-sm ... rounded-2xl. rounded-full reads --r-pill (below the theme). */
+  --radius: var(--r-sm);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+  --radius-2xl: var(--r-2xl);
+
+  /* border, border-b, divide-y ... (bare widths) */
+  --default-border-width: var(--border-w);
+
+  /* shadow (bare) and shadow-sm: small lift; shadow-card: panels; shadow-pop: overlays. */
+  --shadow: var(--shadow-sm);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-card: var(--shadow);
+  --shadow-pop: var(--shadow-lg);
+}
+
+/* Unlayered so it beats Tailwind's rounded-full (infinity px): a square look can square the pills too. */
+.rounded-full {
+  border-radius: var(--r-pill);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/*
+  Body is a size container (below), and containment stops its background from propagating to the
+  canvas, so the root paints the paper too: otherwise everything below the first screen of a long page
+  shows the browser's default canvas (white, or neutral gray in dark mode).
+*/
+html {
+  background: var(--paper);
+}
+
+body {
+  /* The query container for the sm/md/lg breakpoints (see the top of this file). */
+  container: app / inline-size;
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/*
+  A look preview (Display menu card) carries its own data-look; give it the page basics the body
+  gives the app. Looks style page-level texture on "[data-look=x] body" and ".ft-lookpreview[data-look=x]".
+*/
+.ft-lookpreview {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+}
+
+/* In the base layer so utilities (mt-1 on a <p>, font-sans on a heading) can override these resets. */
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-weight: var(--heading-weight);
+    text-transform: var(--heading-transform);
+    letter-spacing: var(--heading-tracking);
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  p {
+    margin: 0;
+  }
+}
+
+/*
+  Headings marked font-bold (the kit's and most screens') take the look's heading weight, so a
+  display face with one weight (Bangers) is never faux-bolded. Same layer as the utility, higher
+  specificity.
+*/
+@layer utilities {
+  :is(h1, h2, h3, h4).font-bold {
+    font-weight: var(--heading-weight);
+  }
+}
+
+/*
+  The focus ring itself stays unlayered, so no utility (focus:outline-none on a field) can remove it.
+  Its offset and rounding live in the base layer, so a component's own focus-visible:outline-offset-*
+  (inset rings on tabs inside scroll strips, chart markers) and rounded-* (round chips) win.
+*/
+:focus-visible {
+  outline: var(--focus-width) var(--focus-style) var(--focus);
+}
+
+@layer base {
+  :focus-visible {
+    outline-offset: var(--focus-offset);
+    border-radius: var(--r-md);
+  }
+}
+
+/*
+  A text field focused by script (a sheet's first field, a deep link such as #settings.server) shows the
+  same ring. Browsers match :focus-visible there only after keyboard use, and some looks give fields no
+  :focus state of their own, so the caret would be the only sign of where typing goes. Unlayered, like
+  the ring above; :where keeps it below a look's own field focus rule (sleek's hugging ring).
+*/
+:where(.ft-input, .ft-select, .ft-textarea):focus:not(:focus-visible) {
+  outline: var(--focus-width) var(--focus-style) var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+/* Page titles that receive focus after navigation (focusPageStart) are not controls: no ring. */
+[data-focus-target]:focus,
+[data-focus-target]:focus-visible {
+  outline: none;
+}
+
+.tabular,
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.eyebrow {
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: var(--eyebrow-transform);
+  color: var(--ink-3);
+}
+
+/* Thin, theme-aware scrollbars inside panels. */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Content slides in fully opaque (never from opacity 0, per ARCHITECTURE.md); only scrims fade. */
+@keyframes ft-sheet-in {
+  from {
+    transform: translateX(24px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes ft-pop-in {
+  from {
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes ft-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.anim-sheet {
+  animation: ft-sheet-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.anim-pop {
+  animation: ft-pop-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.anim-fade {
+  animation: ft-fade-in 140ms ease-out;
+}
+
+/* App-level reduced motion (Display menu), in addition to the OS setting. */
+:root[data-reduced-motion] *,
+:root[data-reduced-motion] *::before,
+:root[data-reduced-motion] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}

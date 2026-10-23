@@ -1,0 +1,37 @@
+name: Task
+description: A piece of work for the board, small enough for one pull request
+labels: ["task"]
+body:
+  - type: dropdown
+    id: workstream
+    attributes:
+      label: Workstream
+      options:
+        - "Workstream 1: Security and team logins"
+        - "Workstream 2: HR depth and integrations"
+        - "Workstream 3: Product, access and AI"
+        - "Team: shared work"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What and why
+      description: What should change, and who it helps.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: Checks a reviewer can confirm. Include the tests that should exist.
+      value: |
+        - [ ]
+        - [ ] Tests cover it, and `npm run verify` passes
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources
+      description: Official links for any legal or HR rule involved (statute, regulation, agency page).
