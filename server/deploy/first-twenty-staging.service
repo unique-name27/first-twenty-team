@@ -1,0 +1,78 @@
+# First Twenty staging server (systemd unit): main after CI passes, on the same instance as the live server.
+# Installed by setup-auto-deploy.sh to /etc/systemd/system/first-twenty-staging.service. Caddy proxies the
+# staging domain to this process on 127.0.0.1:8788 (docs/SERVER.md, "Automatic deploys from GitHub").
+#
+#   sudo systemctl status first-twenty-staging        is it running?
+#   sudo journalctl -u first-twenty-staging -n 100    recent logs
+#
+# It runs the code in /opt/first-twenty-staging as its own user, with its own database and settings
+# (/etc/first-twenty-staging/env, root only), so nothing here can read or change the live server's.
+# The hardening is the same as first-twenty.service, with two differences: the network allows loopback
+# only (the assistant is off on staging, so neither the DNS stub nor the Claude API is reachable), and
+# the memory and CPU limits below keep a busy or broken staging server from slowing the live one.
+
+[Unit]
+Description=First Twenty staging server
+Documentation=file:///opt/first-twenty-staging/docs/SERVER.md
+Wants=network-online.target
+After=network-online.target postgresql.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=first-twenty-staging
+Group=first-twenty-staging
+WorkingDirectory=/opt/first-twenty-staging
+EnvironmentFile=/etc/first-twenty-staging/env
+Environment=NODE_ENV=production
+# The schema owner's connection is for first-twenty-staging-migrate.service only.
+UnsetEnvironment=MIGRATION_DATABASE_URL
+ExecStart=/usr/bin/node dist-server/server.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+UMask=0077
+LimitNOFILE=65536
+
+# The live server comes first: under memory pressure the kernel stops this one, and it gets a smaller
+# share of the CPU while both are busy.
+MemoryHigh=200M
+MemoryMax=320M
+OOMScoreAdjust=500
+CPUWeight=50
+
+# Hardening, as in first-twenty.service.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+StateDirectory=first-twenty-staging
+StateDirectoryMode=0750
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Loopback only: Caddy connects in from 127.0.0.1 and Postgres is at 127.0.0.1. pg_hba.conf and the
+# database grants keep the staging roles in first_twenty_staging (setup-auto-deploy.sh writes both).
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1/32 ::1/128
+
+[Install]
+WantedBy=multi-user.target

@@ -8,6 +8,7 @@
 #   bash server/deploy/deploy.sh --no-pull                     the code is already in place
 #   bash server/deploy/deploy.sh --archive ~/first-twenty.tgz  unpack a code archive first (no git needed)
 #   bash server/deploy/deploy.sh --skip-backup                 migrate without a fresh backup (not advised)
+#   bash server/deploy/deploy.sh --ignore-scripts              npm ci without package install scripts
 #
 # Steps: get the code, npm ci, npm run build:all, check for pending migrations, back up the database
 # when there are any (sudo systemctl start first-twenty-backup), npm run server:migrate (with the
@@ -21,6 +22,15 @@
 #
 # Rolled back with git checkout <commit>? Run git switch main (or your branch) before the next plain
 # deploy: until then git pull has no branch to update, and this script stops and says so.
+#
+# Staging (--instance staging; docs/SERVER.md, "Automatic deploys from GitHub") is the copy in
+# /opt/first-twenty-staging, deployed by first-twenty-autoupdate as the first-twenty-staging user:
+#   cd /opt/first-twenty-staging && bash server/deploy/deploy.sh --instance staging --no-pull
+# It restarts first-twenty-staging, takes no backup and installs with --ignore-scripts. That user may run
+# exactly two commands with sudo (setup-auto-deploy.sh allows them): starting first-twenty-staging-migrate,
+# which migrates with the owner password only root can read, and restarting first-twenty-staging. It cannot
+# read /etc/first-twenty-staging/env either, so the port, address and app file it checks come from
+# FT_PORT (default 8788), FT_PUBLIC_ORIGIN and FT_APP_FILE.
 #
 # Copying code without git, from your computer (Git Bash or PowerShell, in the project folder):
 #   git archive --format=tar.gz -o first-twenty.tgz HEAD
@@ -42,6 +52,8 @@ ENV_FILE=${FIRST_TWENTY_ENV:-/etc/first-twenty/env}
 PULL=true
 ARCHIVE=""
 SKIP_BACKUP=false
+INSTANCE=live
+IGNORE_SCRIPTS=false
 
 step() { printf '\n==> %s\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
@@ -58,10 +70,36 @@ while [ $# -gt 0 ]; do
       ;;
     --archive=*) ARCHIVE=${1#*=}; shift ;;
     --skip-backup) SKIP_BACKUP=true; shift ;;
+    --ignore-scripts) IGNORE_SCRIPTS=true; shift ;;
+    --instance)
+      [ -n "${2:-}" ] || die "--instance needs live or staging."
+      INSTANCE=$2
+      shift 2
+      ;;
+    --instance=*) INSTANCE=${1#*=}; shift ;;
     -h | --help) sed -n '2,/^set -euo/p' "$0" | sed -e '/^set -euo/d' -e 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Unknown option: $1. Run with --help for usage." ;;
   esac
 done
+
+# What differs between the live server and the staging copy.
+UNIT_FILE=first-twenty.service
+DEFAULT_PORT=8787
+LOCK_FILE="${TMPDIR:-/tmp}/first-twenty-deploy.lock"
+case "$INSTANCE" in
+  live) ;;
+  staging)
+    SERVICE=first-twenty-staging
+    BACKUP_SERVICE=""
+    ENV_FILE=${FIRST_TWENTY_ENV:-/etc/first-twenty-staging/env}
+    UNIT_FILE=first-twenty-staging.service
+    MIGRATE_SERVICE=first-twenty-staging-migrate.service
+    DEFAULT_PORT=8788
+    LOCK_FILE="${TMPDIR:-/tmp}/first-twenty-staging-deploy.lock"
+    IGNORE_SCRIPTS=true
+    ;;
+  *) die "--instance must be live or staging, not $INSTANCE." ;;
+esac
 
 # The folder the installed service runs its code from (WorkingDirectory= in its unit), or nothing when
 # the unit is not installed or systemd cannot say. systemctl marks a folder that may be missing with "!".
@@ -92,18 +130,35 @@ command -v npm >/dev/null 2>&1 || die "npm is not installed. Run server/deploy/s
 command -v curl >/dev/null 2>&1 || die "curl is not installed."
 cd "$APP_DIR"
 
-# One deploy at a time.
-exec 9>"${TMPDIR:-/tmp}/first-twenty-deploy.lock"
-flock -n 9 || die "Another deploy is already running."
+# One deploy at a time. first-twenty-autoupdate (auto-update.sh) takes this lock itself before it checks out
+# the code, and says so with FT_DEPLOY_LOCK_HELD=1.
+if [ "${FT_DEPLOY_LOCK_HELD:-}" != 1 ]; then
+  exec 9>"$LOCK_FILE"
+  flock -n 9 || die "Another deploy is already running."
+fi
 
-echo "Deploying First Twenty in $APP_DIR"
-# sudo true, not sudo -v: on Ubuntu EC2 the login has a NOPASSWD rule and the sudo group rule without one,
-# and sudo -v asks for a password unless every rule has NOPASSWD (sudoers verifypw=all), so it fails there.
-sudo true || die "This needs sudo for reading the settings and restarting the service."
+if [ "$INSTANCE" = staging ]; then
+  echo "Deploying First Twenty staging in $APP_DIR"
+  # sudo -l asks only whether a command is allowed, so a missing sudoers rule stops the deploy before the build.
+  sudo -n -l systemctl restart "$SERVICE.service" >/dev/null 2>&1 ||
+    die "This user may not restart $SERVICE with sudo. Install the rule with: sudo bash server/deploy/setup-auto-deploy.sh --staging-only"
+else
+  echo "Deploying First Twenty in $APP_DIR"
+  # sudo true, not sudo -v: on Ubuntu EC2 the login has a NOPASSWD rule and the sudo group rule without one,
+  # and sudo -v asks for a password unless every rule has NOPASSWD (sudoers verifypw=all), so it fails there.
+  sudo true || die "This needs sudo for reading the settings and restarting the service."
+fi
 
 # Reads one value from the root-only settings file. Only settings that are not secret are read with it:
-# PORT, PUBLIC_ORIGIN, APP_FILE and BACKUP_DIR.
+# PORT, PUBLIC_ORIGIN, APP_FILE and BACKUP_DIR. Staging cannot read its settings file, so it reads FT_PORT,
+# FT_PUBLIC_ORIGIN and FT_APP_FILE from its own environment instead (first-twenty-autoupdate-staging.service
+# sets them).
 env_value() {
+  if [ "$INSTANCE" = staging ]; then
+    local name="FT_$1"
+    printf '%s' "${!name:-}"
+    return 0
+  fi
   sudo sed -n -E "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"?([^\"]*)\"?[[:space:]]*$/\1/p" "$ENV_FILE" 2>/dev/null | tail -n 1
 }
 
@@ -140,6 +195,12 @@ newest_dump() {
 # "Restore a backup", with this deploy's dump filled in).
 rollback_hint() {
   local code
+  if [ "$INSTANCE" = staging ]; then
+    printf '\nStaging keeps no backups and holds demo data only. To go back, pause automatic deploys\n'
+    printf '(sudo touch /etc/first-twenty-staging/autodeploy.paused), then as the first-twenty-staging user:\n'
+    printf '  git checkout --detach %s && bash server/deploy/deploy.sh --instance staging --no-pull\n' "${BEFORE:-<previous commit>}"
+    return 0
+  fi
   if [ -n "$BEFORE" ]; then
     code="git checkout $BEFORE"
   else
@@ -190,6 +251,11 @@ if [ -d .git ] && command -v git >/dev/null 2>&1; then
   BEFORE=$(git rev-parse --short HEAD 2>/dev/null || true)
   BRANCH=$(git symbolic-ref -q --short HEAD 2>/dev/null || true)
 fi
+# first-twenty-autoupdate checks out the new commit before it runs this script, so it passes the commit
+# that ran before, for the way back.
+if [[ ${FT_PREVIOUS_COMMIT:-} =~ ^[0-9a-f]{7,40}$ ]]; then
+  BEFORE=${FT_PREVIOUS_COMMIT:0:12}
+fi
 if [ -n "$ARCHIVE" ]; then
   [ -f "$ARCHIVE" ] || die "Archive not found: $ARCHIVE"
   rc=0
@@ -222,7 +288,13 @@ if [ "$AVAIL_KB" -gt 0 ] && [ "$AVAIL_KB" -lt 1500000 ]; then
   warn "Less than 1.5 GB of memory and swap is free; the build may fail. Re-running setup-ec2.sh adds a 2 GB"
   warn "swap file on an instance with under 2 GB of memory (or pass --swap 2G)."
 fi
-npm ci --no-audit --no-fund
+if [ "$IGNORE_SCRIPTS" = true ]; then
+  # The only install script in package-lock.json is esbuild's (for tsx, a development tool), and the build
+  # does not need it: Vite, Tailwind and Lightning CSS find their native builds without install scripts.
+  npm ci --ignore-scripts --no-audit --no-fund
+else
+  npm ci --no-audit --no-fund
+fi
 
 # ------------------------------------------------------------------------------------------------
 step "Building the app and the server (npm run build:all)"
@@ -234,61 +306,78 @@ case "$APP_FILE" in /*) APP_PATH=$APP_FILE ;; *) APP_PATH=$APP_DIR/$APP_FILE ;; 
 [ -f "$APP_PATH" ] || warn "APP_FILE ($APP_FILE) was not found after the build; the server cannot serve the app at /."
 
 # ------------------------------------------------------------------------------------------------
-# Migrations only move forward, so a database that a migration changed can go back only by restoring a
-# dump. The nightly one can be most of a day old, so take one now whenever a migration is about to run.
-step "Checking for database migrations (npm run server:migrate -- --status)"
-STATUS=$(bash "$SCRIPT_DIR/with-env.sh" npm run server:migrate -- --status) ||
-  die "Could not read the migration status (see above). Nothing was migrated, and the server is still running the version it already loaded."
-printf '%s\n' "$STATUS" | sed -nE 's/^(Applied|Pending) \(/    &/p'
-PENDING=$(printf '%s\n' "$STATUS" | sed -nE 's/^Pending \(([0-9]+)\).*/\1/p' | tail -n 1)
-
 BACKUP_FILE=""
 BACKUP_RAN=true
 MIGRATED=false
-if [ "$PENDING" = 0 ]; then
-  info "No migrations to apply, so no backup is needed first."
-elif [ "$SKIP_BACKUP" = true ]; then
-  warn "Migrating without a fresh backup (--skip-backup). Going back would mean restoring an older dump."
+if [ "$INSTANCE" = staging ]; then
+  # Staging holds demo data only and keeps no backups. The migration unit reads the owner password from the
+  # root-only settings file and runs dist-server/migrate.mjs as this user; start waits until it has finished.
+  step "Applying database migrations (sudo systemctl start $MIGRATE_SERVICE)"
+  sudo -n systemctl start "$MIGRATE_SERVICE" ||
+    die "Migrations failed, so the server was not restarted and still runs the version it already loaded. See why with: sudo journalctl -u ${MIGRATE_SERVICE%.service} -n 50"
 else
-  [ -n "$PENDING" ] || info "Could not tell whether migrations are pending, so taking a backup to be safe."
-  step "Backing up the database before migrating (sudo systemctl start $BACKUP_SERVICE)"
-  BACKUP_DIR=$(env_value BACKUP_DIR)
-  BACKUP_DIR=${BACKUP_DIR:-/var/backups/first-twenty}
-  LAST_DUMP=$(newest_dump)
-  # A oneshot service: systemctl start waits until the backup has finished.
-  sudo systemctl start "$BACKUP_SERVICE" || BACKUP_RAN=false
-  NEW_DUMP=$(newest_dump)
-  if [ -z "$NEW_DUMP" ] || [ "$NEW_DUMP" = "$LAST_DUMP" ]; then
-    [ "$BACKUP_RAN" = true ] ||
-      die "The backup failed, so nothing was migrated and the server is still running the version it already loaded. See why with: sudo journalctl -u $BACKUP_SERVICE -n 30   (Set up with --no-backups? Take a backup your own way, then deploy again with --skip-backup.)"
-    die "The backup finished but no new dump appeared in $BACKUP_DIR, so nothing was migrated. See: sudo journalctl -u $BACKUP_SERVICE -n 30"
-  fi
-  BACKUP_FILE=$BACKUP_DIR/$NEW_DUMP
-  if [ "$BACKUP_RAN" != true ]; then
-    # backup.sh gives a dump its final name only after pg_restore has read it back, so this one is good:
-    # what failed came after it, which in backup.sh is the copy to S3. The local dump is the way back.
-    warn "The backup service reported an error after it wrote and checked $BACKUP_FILE, most likely in the copy to S3. That local dump is the way back, so the deploy goes on. See why with: sudo journalctl -u $BACKUP_SERVICE -n 30"
-  fi
-  info "Backed up to $BACKUP_FILE"
-fi
+  # Migrations only move forward, so a database that a migration changed can go back only by restoring a
+  # dump. The nightly one can be most of a day old, so take one now whenever a migration is about to run.
+  step "Checking for database migrations (npm run server:migrate -- --status)"
+  STATUS=$(bash "$SCRIPT_DIR/with-env.sh" npm run server:migrate -- --status) ||
+    die "Could not read the migration status (see above). Nothing was migrated, and the server is still running the version it already loaded."
+  printf '%s\n' "$STATUS" | sed -nE 's/^(Applied|Pending) \(/    &/p'
+  PENDING=$(printf '%s\n' "$STATUS" | sed -nE 's/^Pending \(([0-9]+)\).*/\1/p' | tail -n 1)
 
-# ------------------------------------------------------------------------------------------------
-step "Applying database migrations (npm run server:migrate)"
-if ! bash "$SCRIPT_DIR/with-env.sh" npm run server:migrate; then
-  die "Migrations failed (output above). Each migration runs in its own transaction, so the one that failed left nothing behind. The server is still running the version it already loaded.${BACKUP_FILE:+ The backup from just before is $BACKUP_FILE (docs/SERVER.md, \"Restore a backup\").}"
+  if [ "$PENDING" = 0 ]; then
+    info "No migrations to apply, so no backup is needed first."
+  elif [ "$SKIP_BACKUP" = true ]; then
+    warn "Migrating without a fresh backup (--skip-backup). Going back would mean restoring an older dump."
+  else
+    [ -n "$PENDING" ] || info "Could not tell whether migrations are pending, so taking a backup to be safe."
+    step "Backing up the database before migrating (sudo systemctl start $BACKUP_SERVICE)"
+    BACKUP_DIR=$(env_value BACKUP_DIR)
+    BACKUP_DIR=${BACKUP_DIR:-/var/backups/first-twenty}
+    LAST_DUMP=$(newest_dump)
+    # A oneshot service: systemctl start waits until the backup has finished.
+    sudo systemctl start "$BACKUP_SERVICE" || BACKUP_RAN=false
+    NEW_DUMP=$(newest_dump)
+    if [ -z "$NEW_DUMP" ] || [ "$NEW_DUMP" = "$LAST_DUMP" ]; then
+      [ "$BACKUP_RAN" = true ] ||
+        die "The backup failed, so nothing was migrated and the server is still running the version it already loaded. See why with: sudo journalctl -u $BACKUP_SERVICE -n 30   (Set up with --no-backups? Take a backup your own way, then deploy again with --skip-backup.)"
+      die "The backup finished but no new dump appeared in $BACKUP_DIR, so nothing was migrated. See: sudo journalctl -u $BACKUP_SERVICE -n 30"
+    fi
+    BACKUP_FILE=$BACKUP_DIR/$NEW_DUMP
+    if [ "$BACKUP_RAN" != true ]; then
+      # backup.sh gives a dump its final name only after pg_restore has read it back, so this one is good:
+      # what failed came after it, which in backup.sh is the copy to S3. The local dump is the way back.
+      warn "The backup service reported an error after it wrote and checked $BACKUP_FILE, most likely in the copy to S3. That local dump is the way back, so the deploy goes on. See why with: sudo journalctl -u $BACKUP_SERVICE -n 30"
+    fi
+    info "Backed up to $BACKUP_FILE"
+  fi
+
+  step "Applying database migrations (npm run server:migrate)"
+  if ! bash "$SCRIPT_DIR/with-env.sh" npm run server:migrate; then
+    die "Migrations failed (output above). Each migration runs in its own transaction, so the one that failed left nothing behind. The server is still running the version it already loaded.${BACKUP_FILE:+ The backup from just before is $BACKUP_FILE (docs/SERVER.md, \"Restore a backup\").}"
+  fi
+  [ "$PENDING" = 0 ] || MIGRATED=true
 fi
-[ "$PENDING" = 0 ] || MIGRATED=true
 
 # ------------------------------------------------------------------------------------------------
 step "Restarting $SERVICE"
-if ! sudo cmp -s "$SCRIPT_DIR/first-twenty.service" "/etc/systemd/system/$SERVICE.service"; then
-  warn "The systemd unit in server/deploy differs from the installed one. Apply it with"
-  warn "  sudo bash server/deploy/setup-ec2.sh your-domain   (safe to re-run; it only updates what changed)"
+if [ "$INSTANCE" = staging ]; then
+  # Installed unit files are readable by everyone, so this comparison needs no sudo.
+  if ! cmp -s "$SCRIPT_DIR/$UNIT_FILE" "/etc/systemd/system/$SERVICE.service"; then
+    warn "The systemd unit in server/deploy differs from the installed one. Apply it with"
+    warn "  sudo bash server/deploy/setup-auto-deploy.sh --staging-only   (safe to re-run)"
+  fi
+  # Exactly the command the sudoers rule allows, .service included.
+  sudo -n systemctl restart "$SERVICE.service"
+else
+  if ! sudo cmp -s "$SCRIPT_DIR/$UNIT_FILE" "/etc/systemd/system/$SERVICE.service"; then
+    warn "The systemd unit in server/deploy differs from the installed one. Apply it with"
+    warn "  sudo bash server/deploy/setup-ec2.sh your-domain   (safe to re-run; it only updates what changed)"
+  fi
+  sudo systemctl restart "$SERVICE"
 fi
-sudo systemctl restart "$SERVICE"
 
 PORT=$(env_value PORT)
-PORT=${PORT:-8787}
+PORT=${PORT:-$DEFAULT_PORT}
 HEALTH_URL=${HEALTH_URL:-http://127.0.0.1:$PORT/api/health}
 HEALTH_WAIT=${HEALTH_WAIT_SECONDS:-30}
 [[ $HEALTH_WAIT =~ ^[1-9][0-9]*$ ]] || HEALTH_WAIT=30
@@ -302,6 +391,12 @@ for _ in $(seq 1 "$HEALTH_WAIT"); do
   sleep 1
 done
 if [ "$ok" != true ]; then
+  if [ "$INSTANCE" = staging ]; then
+    # The staging user cannot read the journal.
+    printf '\nERROR: The server did not report healthy within %s seconds. See its log with: sudo journalctl -u %s -n 40\n' "$HEALTH_WAIT" "$SERVICE" >&2
+    rollback_hint >&2
+    exit 1
+  fi
   sudo journalctl -u "$SERVICE" -n 40 --no-pager || true
   printf '\nERROR: The server did not report healthy within %s seconds (recent logs above).\n' "$HEALTH_WAIT" >&2
   rollback_hint >&2
