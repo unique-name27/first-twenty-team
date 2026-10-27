@@ -10,7 +10,8 @@
 # with sudo (the sudoers file setup-auto-deploy.sh writes): starting first-twenty-staging-migrate and
 # restarting first-twenty-staging. Because it calls sudo, systemd's no-new-privileges sandboxing (and every
 # option that implies it) cannot be used here; the build gets a private /tmp, a read-only /usr and /etc,
-# no access to /home, and less CPU, I/O and memory priority than the live server.
+# no access to /home or to the EC2 metadata service, and less CPU, I/O and memory priority than the live
+# server.
 
 [Unit]
 Description=First Twenty staging: deploy main after CI passes
@@ -35,3 +36,8 @@ PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
 ProtectControlGroups=true
+# The build needs the internet (npm, GitHub), but never the EC2 instance metadata service: an instance role
+# there (backup.sh's copy to S3 uses one) would hand out AWS credentials to main's code. Link-local
+# 169.254.0.0/16 holds the IPv4 address and fd00:ec2::254 the IPv6 one. (Caddy's admin API is on a Unix
+# socket staging cannot open; setup-auto-deploy.sh moves it there.)
+IPAddressDeny=169.254.0.0/16 fd00:ec2::/32

@@ -27,6 +27,11 @@
 		# HTTP/1.1 and HTTP/2 only. HTTP/3 would need UDP 443, which the security group keeps closed.
 		protocols h1 h2
 	}
+	# Caddy's admin API can change every site. By default it listens on 127.0.0.1:2019, where any process on
+	# the instance can reach it, including a staging copy that runs code before it is released (docs/SERVER.md,
+	# "Automatic deploys from GitHub"). On this Unix socket only Caddy and root can open it, and
+	# sudo systemctl reload caddy works as before (caddy reload by hand needs sudo).
+	admin unix//var/lib/caddy/admin.sock
 }
 
 # Plain http: only the redirect to https (Caddy answers its certificate challenges before any route).

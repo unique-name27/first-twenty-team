@@ -168,6 +168,16 @@ describe('the automatic deploy scripts (static checks)', () => {
     expect(code).not.toMatch(/git[^\n]*\bpull\b/)
     expect(autoUpdate).toContain('merge-base --is-ancestor "$TARGET" refs/remotes/origin/main')
   })
+
+  it('tell a running oneshot unit by its ActiveState, since systemctl is-active never sees one', () => {
+    const code = autoUpdate
+      .split('\n')
+      .filter((l) => !l.trimStart().startsWith('#'))
+      .join('\n')
+    expect(code).not.toContain('is-active')
+    expect(code).toContain('systemctl show -p ActiveState --value "$OTHER_UNIT"')
+    expect(code).toMatch(/activating \| active \| reloading \| deactivating\) return 0/)
+  })
 })
 
 describe('the staging units', () => {
@@ -269,6 +279,21 @@ describe('the staging units', () => {
     expect(values(updaterLive, 'Environment')).toContain('FT_RELEASE_AUTHOR=unique-name27')
     expect(autoUpdate).toContain('DEPLOY_LOCK="${TMPDIR:-/tmp}/first-twenty-deploy.lock"')
     expect(deploy).toContain('LOCK_FILE="${TMPDIR:-/tmp}/first-twenty-deploy.lock"')
+  })
+
+  it("share staging's deploy lock between the updater (private /tmp) and a staging deploy by hand", () => {
+    // The updater's state folder is /var/lib/first-twenty-staging/autoupdate, so both name the same file.
+    expect(autoUpdate).toContain('STATE_DIR=${FT_STATE_DIR:-/var/lib/first-twenty-staging/autoupdate}')
+    expect(autoUpdate).toContain('DEPLOY_LOCK="$(dirname "$STATE_DIR")/deploy.lock"')
+    expect(deploy).toContain('LOCK_FILE=${FT_STAGING_LOCK:-/var/lib/first-twenty-staging/deploy.lock}')
+    expect(setup).toContain('STAGING_HOME=/var/lib/first-twenty-staging\n')
+  })
+
+  it('keep the staging build away from the EC2 metadata service and its instance role', () => {
+    expect(values(updaterStaging, 'IPAddressDeny')).toEqual(['169.254.0.0/16 fd00:ec2::/32'])
+    expect(values(updaterStaging, 'IPAddressAllow')).toEqual([])
+    // The staging server and its migrations allow loopback only, so the metadata service is out of reach there too.
+    for (const unit of [stagingUnit, migrateUnit]) expect(values(unit, 'IPAddressDeny')).toEqual(['any'])
   })
 
   it('tick every 5 minutes with a small random delay', () => {
@@ -421,9 +446,36 @@ hba_block
     expect(rules).toEqual([
       ['host', 'first_twenty_staging', 'first_twenty_staging,first_twenty_staging_owner', '127.0.0.1/32', 'scram-sha-256'],
       ['host', 'first_twenty_staging', 'first_twenty_staging,first_twenty_staging_owner', '::1/128', 'scram-sha-256'],
-      ['host', 'all', 'first_twenty_staging,first_twenty_staging_owner', '127.0.0.1/32', 'reject'],
-      ['host', 'all', 'first_twenty_staging,first_twenty_staging_owner', '::1/128', 'reject'],
+      // Code on staging can read these roles' passwords: every other way in is closed.
+      ['local', 'all', 'first_twenty_staging,first_twenty_staging_owner', 'reject'],
+      ['host', 'all', 'first_twenty_staging,first_twenty_staging_owner', '0.0.0.0/0', 'reject'],
+      ['host', 'all', 'first_twenty_staging,first_twenty_staging_owner', '::/0', 'reject'],
     ])
+  })
+
+  it('puts the staging lines at the top of pg_hba.conf once, and replaces an older version of them', () => {
+    const r = bash(`${prelude}
+${['hba_block', 'hba_with_block'].map((n) => shellFunction(setup, n)).join('\n')}
+STAGING_DB=first_twenty_staging STAGING_ROLE=first_twenty_staging STAGING_OWNER=first_twenty_staging_owner
+printf '# ubuntu header\\nlocal all postgres peer\\nhost all all 127.0.0.1/32 scram-sha-256\\n' > "$work/fresh"
+echo "--- fresh"; hba_with_block "$work/fresh"
+hba_with_block "$work/fresh" > "$work/once"
+echo "--- again"; hba_with_block "$work/once" | cmp -s - "$work/once" && echo same
+printf '# BEGIN first-twenty-staging (old)\\nhost all first_twenty_staging 127.0.0.1/32 reject\\n# END first-twenty-staging\\nlocal all postgres peer\\n' > "$work/old"
+echo "--- old"; hba_with_block "$work/old"
+`)
+    expect(r.stderr).toBe('')
+    const out = sections(r.stdout)
+    const fresh = out.fresh.split('\n')
+    expect(fresh[0]).toMatch(/^# BEGIN first-twenty-staging/)
+    expect(fresh.indexOf('# END first-twenty-staging')).toBeLessThan(fresh.indexOf('local all postgres peer'))
+    expect(fresh).toContain('host all all 127.0.0.1/32 scram-sha-256')
+    expect(out.again.trim()).toBe('same')
+    const old = out.old.split('\n')
+    expect(old.filter((l) => l.startsWith('# BEGIN first-twenty-staging'))).toHaveLength(1)
+    expect(old).not.toContain('# BEGIN first-twenty-staging (old)')
+    expect(old.some((l) => /^local\s+all\s+first_twenty_staging,first_twenty_staging_owner\s+reject$/.test(l))).toBe(true)
+    expect(old[old.length - 2]).toBe('local all postgres peer')
   })
 
   it('renders the units and the Caddy site for the staging domain, the deploy login and the release author', () => {
@@ -483,6 +535,7 @@ mkdir -p "$work/origin/server/deploy"
 cat > "$work/origin/server/deploy/deploy.sh" <<'EOF'
 #!/usr/bin/env bash
 echo "deploy.sh $* lock=\${FT_DEPLOY_LOCK_HELD:-} previous=\${FT_PREVIOUS_COMMIT:-} head=$(git rev-parse HEAD)" >> "$CALLS"
+echo "during: $(grep '^failed=' "$FT_STATE_DIR/state" || echo 'failed=')" >> "$CALLS"
 if [ "\${FAKE_DEPLOY:-ok}" != ok ]; then echo "(stub) the build failed"; exit 1; fi
 echo "(stub) deployed"
 EOF
@@ -515,10 +568,19 @@ while [ $# -gt 0 ]; do
     -o) out=$2; shift ;;
     -w | --max-time | --proto) shift ;;
     -H) case "$2" in If-None-Match:*) inm=\${2#If-None-Match: } ;; esac; shift ;;
-    https://*) url=$1 ;;
+    https://* | http://*) url=$1 ;;
   esac
   shift
 done
+# Caddy's admin API: closed (as after setup) unless FAKE_CADDY_ADMIN=open.
+case "$url" in
+  http://127.0.0.1:2019/* | 'http://[::1]:2019/'*)
+    echo "caddy-admin-check $url" >> "$CALLS"
+    [ "\${FAKE_CADDY_ADMIN:-}" = open ] && exit 0
+    echo "curl: (7) Failed to connect" >&2
+    exit 7
+    ;;
+esac
 path=\${url#https://api.github.com/repos/unique-name27/first-twenty-team/}
 echo "curl $path\${inm:+ if-none-match=$inm}" >> "$CALLS"
 if [ -n "\${FAKE_GH_DOWN:-}" ]; then echo "curl: (6) Could not resolve host: api.github.com" >&2; printf 000; exit 6; fi
@@ -544,13 +606,18 @@ case "$*" in
 esac
 exit 0
 EOF
+# A oneshot unit that is running reports "activating" (never "active"), and systemctl is-active fails for it.
 cat > "$work/bin/systemctl" <<'EOF'
 #!/usr/bin/env bash
-if [ "$1" = is-active ] && [ "$3" = "\${FAKE_ACTIVE:-}" ]; then
-  n=$(cat "$FAKE_ACTIVE_COUNT" 2>/dev/null || echo 0)
-  if [ "$n" -lt "\${FAKE_ACTIVE_POLLS:-1000}" ]; then echo $((n + 1)) > "$FAKE_ACTIVE_COUNT"; exit 0; fi
+[ "$1" != is-active ] || { echo "systemctl is-active must not be used for oneshot units" >&2; exit 3; }
+if [ "$1 $2 $3 $4" = "show -p ActiveState --value" ]; then
+  if [ "$5" = "\${FAKE_ACTIVE:-}" ]; then
+    n=$(cat "$FAKE_ACTIVE_COUNT" 2>/dev/null || echo 0)
+    if [ "$n" -lt "\${FAKE_ACTIVE_POLLS:-1000}" ]; then echo $((n + 1)) > "$FAKE_ACTIVE_COUNT"; echo activating; exit 0; fi
+  fi
+  echo inactive
+  exit 0
 fi
-[ "$1" = is-active ] && exit 3
 echo "systemctl $*" >> "$CALLS"
 EOF
 printf '#!/usr/bin/env bash\\necho "sleep $*" >> "$CALLS"\\n' > "$work/bin/sleep"
@@ -572,8 +639,8 @@ checks() { # checks <case> <sha> <status> <conclusion json> [app]
   fx "$1" "commits/$2/check-runs?check_name=verify&filter=latest" 200 "\\"c-$3\\"" \\
     "$(printf '{"total_count":2,"check_runs":[{"id":41,"name":"verify","head_sha":"%s","status":"completed","conclusion":"failure","app":{"slug":"%s"}},{"id":42,"name":"verify","head_sha":"%s","status":"%s","conclusion":%s,"app":{"slug":"%s"}}]}' "$2" "\${5:-github-actions}" "$2" "$3" "$4" "\${5:-github-actions}")"
 }
-release() { # release <case> <tag> <author> <draft> <prerelease> [etag]
-  fx "$1" releases/latest 200 "\${6:-\\"r-$2\\"}" "$(printf '{"id":7,"tag_name":"%s","draft":%s,"prerelease":%s,"author":{"login":"%s"},"body":"notes = here"}' "$2" "$4" "$5" "$3")"
+release() { # release <case> <tag> <author> <draft> <prerelease> [etag] [published_at] [id]
+  fx "$1" releases/latest 200 "\${6:-\\"r-$2\\"}" "$(printf '{"id":%s,"tag_name":"%s","draft":%s,"prerelease":%s,"author":{"login":"%s"},"published_at":"%s","body":"notes = here"}' "\${8:-7}" "$2" "$4" "$5" "$3" "\${7:-2099-01-01T00:00:00Z}")"
 }
 deployed() { printf 'deployed_sha=%s\\n' "$2" > "$work/cases/$1/state/state"; }
 au() { # au <label> <case> <channel> "<VAR=value ...>" [args]
@@ -640,6 +707,15 @@ au s-rate s-rate staging ''
 newcase s-down "$C1"; deployed s-down "$C1"
 au s-down s-down staging 'FAKE_GH_DOWN=1'
 
+newcase s-checkout "$C1"; deployed s-checkout "$C1"
+fx s-checkout commits/main 200 '"h2"' "$C2"; checks s-checkout "$C2" completed '"success"'
+echo untracked > "$work/cases/s-checkout/app/two.txt"
+au s-checkout s-checkout staging ''
+
+newcase s-caddy-open "$C1"; deployed s-caddy-open "$C1"
+fx s-caddy-open commits/main 200 '"h2"' "$C2"; checks s-caddy-open "$C2" completed '"success"'
+au s-caddy-open s-caddy-open staging 'FAKE_CADDY_ADMIN=open'
+
 # --- live
 newcase l-deploy "$C1"
 release l-deploy v2 unique-name27 false false; fx l-deploy commits/v2 200 '"t2"' "$C2"; checks l-deploy "$C2" completed '"success"'
@@ -690,6 +766,25 @@ newcase l-fail "$C1"
 release l-fail v2 unique-name27 false false; fx l-fail commits/v2 200 '"t2"' "$C2"; checks l-fail "$C2" completed '"success"'
 au l-fail l-fail live 'FAKE_DEPLOY=fail'
 
+newcase l-caddy-open "$C1"
+release l-caddy-open v2 unique-name27 false false; fx l-caddy-open commits/v2 200 '"t2"' "$C2"; checks l-caddy-open "$C2" completed '"success"'
+au l-caddy-open l-caddy-open live 'FAKE_CADDY_ADMIN=open'
+
+# A release published in 2001 whose tag now points at a commit made today: the tag was moved. A new release
+# (another id) of the same commit, published after it, goes out.
+newcase l-moved "$C1"
+release l-moved v2 unique-name27 false false '"r-old"' 2001-01-01T00:00:00Z 7
+fx l-moved commits/v2 200 '"t2"' "$C2"; checks l-moved "$C2" completed '"success"'
+au l-moved-1 l-moved live ''
+au l-moved-2 l-moved live ''
+release l-moved v2 unique-name27 false false '"r-new"' 2099-01-01T00:00:00Z 8
+au l-moved-3 l-moved live ''
+
+newcase l-no-date "$C1"
+fx l-no-date releases/latest 200 '"r-nd"' '{"id":9,"tag_name":"v2","draft":false,"prerelease":false,"author":{"login":"unique-name27"}}'
+fx l-no-date commits/v2 200 '"t2"' "$C2"; checks l-no-date "$C2" completed '"success"'
+au l-no-date l-no-date live ''
+
 # --- a commit that keeps failing: three tries, then nothing until a newer commit is on main
 newcase s-three "$C1"; deployed s-three "$C1"
 fx s-three commits/main 200 '"h2"' "$C2"; checks s-three "$C2" completed '"success"'
@@ -727,8 +822,34 @@ au s-three-5 s-three staging 'FAKE_DEPLOY=fail'
     expect(s).toContain('rc=0')
     expect(curls('s-deploy-1')).toEqual(['curl commits/main', `curl commits/${sha.C2}/check-runs?check_name=verify&filter=latest`])
     expect(deploys('s-deploy-1')).toEqual([`deploy.sh --instance staging --no-pull lock=1 previous=${sha.C1} head=${sha.C2}`])
+    // The try is on record while deploy.sh runs (a run that systemd stops still counts), and cleared after.
+    expect(callsOf(s)).toContain(`during: failed=${sha.C2}:1`)
+    expect(s).toContain('state: failed=\n')
     expect(s).toContain(`state: deployed_sha=${sha.C2}`)
     expect(outOf(s)).toContain(`deployed main at ${sha.C2.slice(0, 7)}`)
+  })
+
+  it('counts a checkout that git refuses as a failed try, and leaves the code as it was', () => {
+    const s = get('s-checkout')
+    expect(s).toContain('rc=1')
+    expect(deploys('s-checkout')).toEqual([])
+    expect(outOf(s)).toContain(`git could not check out ${sha.C2.slice(0, 7)}`)
+    expect(s).toContain(`state: failed=${sha.C2}:1`)
+  })
+
+  it("staging: deploys nothing while Caddy's admin API answers on 127.0.0.1:2019; live does not depend on it", () => {
+    const s = get('s-caddy-open')
+    expect(s).toContain('rc=1')
+    expect(deploys('s-caddy-open')).toEqual([])
+    expect(callsOf(s)).toContain('caddy-admin-check http://127.0.0.1:2019/config/')
+    expect(outOf(s)).toContain("Caddy's admin API answers on 127.0.0.1:2019")
+    expect(outOf(s)).toContain('setup-auto-deploy.sh --staging-only')
+    // Not a failed try: nothing ran.
+    expect(s).not.toMatch(/state: failed=\S/)
+    // With the admin API closed, staging asks once per deploy and goes ahead.
+    expect(callsOf(get('s-deploy-1'))).toContain('caddy-admin-check http://127.0.0.1:2019/config/')
+    expect(deploys('l-caddy-open')).toHaveLength(1)
+    expect(callsOf(get('l-caddy-open')).filter((c) => c.startsWith('caddy-admin-check'))).toEqual([])
   })
 
   it('staging: an unchanged answer (304) costs one request and nothing else', () => {
@@ -829,6 +950,20 @@ au s-three-5 s-three staging 'FAKE_DEPLOY=fail'
     expect(outOf(get('l-older'))).toContain(`the deployed commit ${sha.C2.slice(0, 7)} already contains it`)
   })
 
+  it('live: never deploys a tag that points at a commit made after the release was published, until a new release', () => {
+    expect(deploys('l-moved-1')).toEqual([])
+    expect(get('l-moved-1')).toContain('rc=0')
+    expect(outOf(get('l-moved-1'))).toContain('its commit was made after the release was published, so the tag was moved')
+    // Remembered for this release: one request, no fetch.
+    expect(callsOf(get('l-moved-2'))).toEqual(['curl releases/latest if-none-match="r-old"'])
+    expect(outOf(get('l-moved-2'))).toContain('the tag was moved')
+    // A newer release of the same commit deploys it.
+    expect(deploys('l-moved-3')).toEqual([`deploy.sh --no-pull lock=1 previous=${sha.C1} head=${sha.C2}`])
+    // A release without a publication time is not trusted.
+    expect(deploys('l-no-date')).toEqual([])
+    expect(outOf(get('l-no-date'))).toContain('GitHub gave no publication time for it')
+  })
+
   it('live: says when there is no release yet, and records the checked-out commit on request', () => {
     expect(get('l-none')).toContain('rc=0')
     expect(outOf(get('l-none'))).toContain('no release has been published')
@@ -919,7 +1054,7 @@ run() { # run <name> "<VAR=value ...>" [deploy.sh options]
   mkdir -p "$dir"
   : > "$dir/calls"
   printf 'PORT=8787\\n' > "$dir/env"
-  env FAKE_WORKDIR="$app" CALLS="$dir/calls" PATH="$work/bin:$PATH" FIRST_TWENTY_ENV="$dir/env" TMPDIR="$dir" \\
+  env FAKE_WORKDIR="$app" CALLS="$dir/calls" PATH="$work/bin:$PATH" FIRST_TWENTY_ENV="$dir/env" TMPDIR="$dir" FT_STAGING_LOCK="$dir/staging.lock" \\
     HEALTH_WAIT_SECONDS=2 $vars bash "$app/server/deploy/deploy.sh" "$@" > "$dir/out" 2>&1 || rc=$?
   echo "--- $name"
   echo "rc=$rc"
@@ -1025,6 +1160,207 @@ run bad-instance '' --instance demo
 })
 
 // ---------------------------------------------------------------------------------------------------
+// setup-auto-deploy.sh: Caddy's admin API and the staging site
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * setup_caddy run for real against a scratch /etc/caddy, with stub caddy, systemctl, curl, runuser,
+ * install and stat. "$work/<case>/admin-open" stands for Caddy's admin API listening on 127.0.0.1:2019:
+ * while it exists, systemctl reload fails (the new Caddyfile names the socket, where nothing listens yet)
+ * and caddy reload --address localhost:2019 closes it, unless FAKE_RELOAD=fail or FAKE_STAYS_OPEN=1.
+ */
+const caddyHarness = `
+mkdir -p "$work/bin"
+cat > "$work/bin/caddy" <<'EOF'
+#!/usr/bin/env bash
+echo "caddy $*" >> "$CALLS"
+case "$1" in
+  validate) exit "\${FAKE_VALIDATE:-0}" ;;
+  reload)
+    [ "\${FAKE_RELOAD:-ok}" = ok ] || exit 1
+    [ -n "\${FAKE_STAYS_OPEN:-}" ] || rm -f "$CASE/admin-open"
+    ;;
+esac
+exit 0
+EOF
+cat > "$work/bin/systemctl" <<'EOF'
+#!/usr/bin/env bash
+echo "systemctl $*" >> "$CALLS"
+if [ "$*" = 'reload caddy' ] && [ -f "$CASE/admin-open" ]; then echo "Job for caddy.service failed" >&2; exit 1; fi
+exit 0
+EOF
+cat > "$work/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+[ -f "$CASE/admin-open" ]
+EOF
+cat > "$work/bin/runuser" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" = -u ] && shift 2
+[ "$1" = -- ] && shift
+exec "$@"
+EOF
+printf '#!/usr/bin/env bash\\necho "install $*" >> "$CALLS"\\n' > "$work/bin/install"
+printf '#!/usr/bin/env bash\\n[ "$1 $2" = "-c %%U" ] && { echo caddy; exit 0; }\\nexec /usr/bin/stat "$@"\\n' > "$work/bin/stat"
+chmod +x "$work"/bin/*
+cat > "$work/plain.caddyfile" <<'EOF'
+# Managed by First Twenty setup-ec2.sh. Re-running the script rewrites this file.
+{
+	servers {
+		protocols h1 h2
+	}
+}
+
+hr.example.test {
+	reverse_proxy 127.0.0.1:8787
+}
+EOF
+printf 'hr.example.test {\\n\\treverse_proxy 127.0.0.1:8787\\n}\\n' > "$work/no-global.caddyfile"
+printf '{\\n\\tadmin localhost:2019\\n}\\n\\nhr.example.test {\\n\\treverse_proxy 127.0.0.1:8787\\n}\\n' > "$work/own-admin.caddyfile"
+# sc <case> <Caddyfile> <admin open: yes|no> "<VAR=value ...>": one run of setup_caddy, printed as a section.
+sc() {
+  local name=$1 dir="$work/$1" rc=0
+  if [ ! -d "$dir" ]; then
+    mkdir -p "$dir/etc/first-twenty.d" "$dir/caddyhome"
+    cp "$work/$2" "$dir/etc/Caddyfile"
+    cp "$work/$2" "$dir/before"
+  fi
+  if [ "$3" = yes ]; then : > "$dir/admin-open"; else rm -f "$dir/admin-open"; fi
+  : > "$dir/calls"
+  (
+    export CALLS="$dir/calls" CASE="$dir" PATH="$work/bin:$PATH"
+    for v in $4; do export "$v"; done
+    DRY_RUN=false SCRIPT_DIR="$DEPLOY" STAGING_DOMAIN=staging.test.example STAGING_PORT=8788
+    CADDY_MAIN="$dir/etc/Caddyfile" CADDY_DIR="$dir/etc/first-twenty.d" CADDY_SITE="$dir/etc/first-twenty.d/staging.caddy"
+    CADDY_LOG="$dir/staging-access.log" IMPORT_LINE="import $dir/etc/first-twenty.d/*.caddy"
+    CADDY_ADMIN_SOCKET=/var/lib/caddy/admin.sock CADDY_ADMIN_DIR="$dir/caddyhome" ADMIN_LINE="admin unix//var/lib/caddy/admin.sock"
+    STAMP=\${STAMP:-20261027-000000}
+    setup_caddy
+  ) > "$dir/out" 2>&1 || rc=$?
+  echo "--- $name\${LABEL:+-$LABEL}"
+  echo "rc=$rc"
+  sed 's/^/out: /' "$dir/out"
+  sed 's/^/call: /' "$dir/calls"
+  sed 's/^/main: /' "$dir/etc/Caddyfile"
+  cmp -s "$dir/etc/Caddyfile" "$dir/before" && echo "main=unchanged"
+  [ -f "$dir/etc/first-twenty.d/staging.caddy" ] && echo "site=written"
+  ls -a "$dir/etc" | sed -n 's/^\\(Caddyfile\\.bak-.*\\|\\.first-twenty.*\\)$/file: \\1/p'
+}
+`
+
+describe.skipIf(!BASH)("setup-auto-deploy.sh and Caddy's admin API", { timeout: LONG_MS }, () => {
+  const fns = ['run', 'info', 'warn', 'die', 'render_caddy_site', 'caddy_admin_setting', 'caddy_with_admin', 'caddy_admin_on_tcp', 'caddy_reload', 'setup_caddy']
+    .map((n) => shellFunction(setup, n))
+    .join('\n')
+
+  it('finds the admin line only in the global options block, and adds it there (or a block for it)', () => {
+    const r = bash(`${prelude}
+${['caddy_admin_setting', 'caddy_with_admin'].map((n) => shellFunction(setup, n)).join('\n')}
+ADMIN_LINE="admin unix//var/lib/caddy/admin.sock"
+printf '# comment\\n\\n{\\n\\tservers {\\n\\t}\\n}\\nsite.test {\\n\\tadmin nonsense\\n}\\n' > "$work/a"
+printf 'site.test {\\n\\trespond ok\\n}\\n' > "$work/b"
+printf '{\\n\\temail ops@example.test\\n\\tadmin localhost:2019 {\\n\\t\\torigins localhost\\n\\t}\\n}\\n' > "$work/c"
+echo "--- template"; caddy_admin_setting "$DEPLOY/Caddyfile"
+echo "--- a-setting"; caddy_admin_setting "$work/a"
+echo "--- a"; caddy_with_admin "$work/a"
+echo "--- b"; caddy_with_admin "$work/b"
+echo "--- c-setting"; caddy_admin_setting "$work/c"
+`)
+    expect(r.stderr).toBe('')
+    const out = sections(r.stdout)
+    // server/deploy/Caddyfile and setup-auto-deploy.sh write the same line.
+    expect(out.template.trim()).toBe('admin unix//var/lib/caddy/admin.sock')
+    expect(setup).toContain('CADDY_ADMIN_SOCKET=/var/lib/caddy/admin.sock\n')
+    expect(setup).toContain('ADMIN_LINE="admin unix/$CADDY_ADMIN_SOCKET"')
+    // An admin directive inside a site is not the global one.
+    expect(out['a-setting'].trim()).toBe('')
+    expect(out.a).toBe('# comment\n\n{\n\tadmin unix//var/lib/caddy/admin.sock\n\tservers {\n\t}\n}\nsite.test {\n\tadmin nonsense\n}\n')
+    expect(out.b).toBe('{\n\tadmin unix//var/lib/caddy/admin.sock\n}\n\nsite.test {\n\trespond ok\n}\n')
+    expect(out['c-setting'].trim()).toBe('admin localhost:2019 {')
+  })
+
+  let runs: Record<string, string> = {}
+  beforeAll(() => {
+    if (!BASH) return
+    const r = bash(`${prelude}${caddyHarness}
+${fns}
+sc first plain.caddyfile yes ''
+LABEL=again STAMP=20261027-000100 sc first plain.caddyfile no ''
+sc reload-fails plain.caddyfile yes 'FAKE_RELOAD=fail'
+sc stays-open plain.caddyfile yes 'FAKE_STAYS_OPEN=1'
+sc invalid plain.caddyfile yes 'FAKE_VALIDATE=1'
+sc own-admin own-admin.caddyfile yes ''
+sc no-global no-global.caddyfile yes ''
+`)
+    expect(r.stderr).toBe('')
+    runs = sections(r.stdout)
+  }, LONG_MS)
+
+  const get = (name: string) => {
+    const s = runs[name]
+    expect(s, name).toBeDefined()
+    return s
+  }
+  const mainOf = (s: string) => linesOf(s, 'main: ').join('\n')
+
+  it('moves the admin API to its socket and adds the import, then reloads through localhost:2019 the first time', () => {
+    const s = get('first')
+    expect(s).toContain('rc=0')
+    const main = mainOf(s)
+    expect(main).toMatch(/^\{\n\tadmin unix\/\/var\/lib\/caddy\/admin\.sock\n\tservers \{$/m)
+    expect(main.trimEnd().endsWith('/etc/first-twenty.d/*.caddy')).toBe(true)
+    expect(s).toContain('site=written')
+    expect(s).toContain('file: Caddyfile.bak-20261027-000000')
+    expect(s).not.toContain('file: .first-twenty')
+    const calls = callsOf(s)
+    const validate = calls.findIndex((c) => c.startsWith('caddy validate --adapter caddyfile --config '))
+    const reload = calls.indexOf('systemctl reload caddy')
+    const viaTcp = calls.findIndex((c) => /^caddy reload --config \S+\/etc\/Caddyfile --adapter caddyfile --address localhost:2019$/.test(c))
+    expect(validate).toBeGreaterThan(-1)
+    expect(reload).toBeGreaterThan(validate)
+    expect(viaTcp).toBeGreaterThan(reload)
+    const out = outOf(s)
+    expect(out).toContain("Moved Caddy's admin API to /var/lib/caddy/admin.sock")
+    expect(out).toContain('its admin API is on /var/lib/caddy/admin.sock only')
+  })
+
+  it('changes nothing on a second run, and reloads the usual way', () => {
+    const s = get('first-again')
+    expect(s).toContain('rc=0')
+    expect(outOf(s)).toContain('staging.caddy is up to date')
+    expect(callsOf(s).filter((c) => c.startsWith('caddy reload'))).toEqual([])
+    expect(callsOf(s)).toContain('systemctl reload caddy')
+    expect(s).not.toContain('file: Caddyfile.bak-20261027-000100')
+  })
+
+  it('puts every file back when Caddy does not take the new configuration or it does not validate', () => {
+    for (const name of ['reload-fails', 'invalid']) {
+      const s = get(name)
+      expect(s, name).toContain('rc=1')
+      expect(s, name).toContain('main=unchanged')
+      expect(s, name).not.toContain('site=written')
+      expect(s, name).not.toContain('file: .first-twenty')
+    }
+    expect(outOf(get('reload-fails'))).toContain('the files were put back')
+    expect(outOf(get('invalid'))).toContain('did not validate')
+    expect(callsOf(get('invalid')).filter((c) => /reload/.test(c))).toEqual([])
+  })
+
+  it('stops before staging starts while the admin API still answers on 127.0.0.1:2019, or the Caddyfile sets another address', () => {
+    expect(get('stays-open')).toContain('rc=1')
+    expect(outOf(get('stays-open'))).toContain('still answers on 127.0.0.1:2019')
+    const own = get('own-admin')
+    expect(own).toContain('rc=1')
+    expect(own).toContain('main=unchanged')
+    expect(own).not.toContain('site=written')
+    expect(outOf(own)).toContain('sets Caddy\'s admin API itself ("admin localhost:2019")')
+    // A Caddyfile without global options gets a block for the admin line at the top.
+    const noGlobal = get('no-global')
+    expect(noGlobal).toContain('rc=0')
+    expect(mainOf(noGlobal).startsWith('{\n\tadmin unix//var/lib/caddy/admin.sock\n}\n\nhr.example.test {')).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------
 // setup-auto-deploy.sh --dry-run
 // ---------------------------------------------------------------------------------------------------
 
@@ -1069,10 +1405,16 @@ cat > "$work/bin/git" <<EOF
 echo "git \\$*" >> "\\$CALLS"
 exec "$REAL_GIT" "\\$@"
 EOF
-for c in caddy visudo useradd install systemctl chown chmod; do
+for c in caddy visudo useradd install systemctl chown chmod curl; do
   printf '#!/usr/bin/env bash\\necho "%s $*" >> "$CALLS"\\n' "$c" > "$work/bin/$c"
 done
+# The caddy user's folder, for the admin socket.
+printf '#!/usr/bin/env bash\\n[ "$1 $2" = "-c %%U" ] && { echo caddy; exit 0; }\\nexec /usr/bin/stat "$@"\\n' > "$work/bin/stat"
 chmod +x "$work"/bin/*
+# The live Caddyfile as an older setup-ec2.sh wrote it: global options without the admin line, no import.
+mkdir -p "$work/caddyhome"
+printf '{\\n\\tservers {\\n\\t\\tprotocols h1 h2\\n\\t}\\n}\\n\\nhr.example.test {\\n\\treverse_proxy 127.0.0.1:8787\\n}\\n' > "$work/Caddyfile"
+cp "$work/Caddyfile" "$work/Caddyfile.before"
 # The live checkout: a real repo with one commit and the private repo's SSH origin.
 mkdir -p "$work/live"
 "$REAL_GIT" -C "$work/live" -c init.defaultBranch=main init -q
@@ -1088,12 +1430,15 @@ plan() { # plan <name> [options]
   shift
   : > "$work/calls"
   env CALLS="$work/calls" FAKE_HBA="$work/pg_hba.conf" FT_LIVE_DIR="$work/live" PATH="$work/bin:$PATH" \\
+    FT_CADDY_MAIN="$work/Caddyfile" FT_CADDY_ADMIN_DIR="$work/caddyhome" \\
     bash "$DEPLOY/setup-auto-deploy.sh" --dry-run --deploy-user ubuntu "$@" > "$work/out" 2>&1 || rc=$?
   echo "--- $name"
   echo "rc=$rc"
   echo "live-head=$LIVE_HEAD"
   echo "live-origin=$("$REAL_GIT" -C "$work/live" remote get-url origin)"
+  echo "live-remotes=$("$REAL_GIT" -C "$work/live" remote | tr '\\n' ' ')"
   cmp -s "$work/pg_hba.conf" "$work/pg_hba.before" && echo "hba=unchanged"
+  cmp -s "$work/Caddyfile" "$work/Caddyfile.before" && echo "caddyfile=unchanged"
   sed 's/^/out: /' "$work/out"
   sed 's/^/call: /' "$work/calls"
 }
@@ -1134,7 +1479,8 @@ plan dirty --live-only
       'would run: postgres-setup.sql with the staging names, as the postgres user',
       'would generate two passwords, set them on first_twenty_staging and first_twenty_staging_owner, and write them only into /etc/first-twenty-staging/env',
       'host    first_twenty_staging  first_twenty_staging,first_twenty_staging_owner  127.0.0.1/32  scram-sha-256',
-      'host    all  first_twenty_staging,first_twenty_staging_owner  ::1/128       reject',
+      'local   all  first_twenty_staging,first_twenty_staging_owner  reject',
+      'host    all  first_twenty_staging,first_twenty_staging_owner  ::/0          reject',
       'would write /etc/first-twenty-staging/env (mode 0600, root:root)',
       'would run as first-twenty-staging: git clone --quiet https://github.com/unique-name27/first-twenty-team.git /opt/first-twenty-staging',
       'would write /etc/systemd/system/first-twenty-staging.service (mode 0644, root:root)',
@@ -1145,12 +1491,14 @@ plan dirty --live-only
       'would write /etc/sudoers.d/first-twenty-staging (mode 0440, checked with visudo first):',
       'first-twenty-staging ALL=(root) NOPASSWD:',
       'would write /etc/caddy/first-twenty.d/staging.caddy for staging-77-112-161-54.sslip.io (proxy to 127.0.0.1:8788)',
-      'would back up /etc/caddy/Caddyfile to /etc/caddy/Caddyfile.bak-',
-      'and add: import /etc/caddy/first-twenty.d/*.caddy',
-      'would check the result with caddy validate, then: systemctl reload caddy',
+      'Caddyfile.bak-',
+      'add to its global options block: admin unix//var/lib/caddy/admin.sock',
+      'add: import /etc/caddy/first-twenty.d/*.caddy',
+      'would check the result with caddy validate, then reload Caddy (with --address localhost:2019 the first time) and check that nothing answers on 127.0.0.1:2019',
       'would run: systemctl enable --now --quiet first-twenty-autoupdate-staging.timer',
       'would run: systemctl start --no-block first-twenty-autoupdate-staging.service',
       'origin is git@github.com:example/first-twenty-private.git today',
+      'remote add previous-origin git@github.com:example/first-twenty-private.git',
       'remote set-url origin https://github.com/unique-name27/first-twenty-team.git',
       `would record ${head.slice(0, 7)} (checked out in`,
       'would write /etc/systemd/system/first-twenty-autoupdate-live.service (mode 0644, root:root)',
@@ -1167,10 +1515,12 @@ plan dirty --live-only
   it('changes nothing: only reads, and never shows a password', () => {
     const s = get('both')
     expect(s).toContain('hba=unchanged')
+    expect(s).toContain('caddyfile=unchanged')
     expect(s).toContain('live-origin=git@github.com:example/first-twenty-private.git')
+    expect(s).toContain('live-remotes=origin \n')
     const calls = callsOf(s)
     // Nothing that changes the instance ran.
-    expect(calls.filter((c) => /^(caddy|visudo|useradd|install|systemctl|chown|chmod) /.test(c))).toEqual([])
+    expect(calls.filter((c) => /^(caddy|visudo|useradd|install|systemctl|chown|chmod|curl) /.test(c))).toEqual([])
     expect(calls.filter((c) => /^git .*\b(clone|set-url|remote add|fetch|checkout)\b/.test(c))).toEqual([])
     // psql only read the catalog and the pg_hba.conf location.
     const psql = calls.filter((c) => c.startsWith('psql '))

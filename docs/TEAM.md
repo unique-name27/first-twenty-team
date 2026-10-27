@@ -144,8 +144,9 @@ rm -rf ~/ft-setup
 ```
 
 Read what `--dry-run` prints before the real run. The installer switches the origin of `/opt/first-twenty`
-to the team repo over HTTPS and records the commit that runs there now as deployed, so nothing changes on
-the live server until the product owner publishes a release. It also sets up staging: a copy of the app at
+to the team repo over HTTPS (keeping the old address as the remote `previous-origin`) and records the commit
+that runs there now as deployed, so nothing changes on the live server until the product owner publishes a
+release. It also moves Caddy's admin API to a Unix socket, so code on staging cannot change the live sites. It also sets up staging: a copy of the app at
 `https://staging-77-112-161-54.sslip.io` (`--staging-domain` picks another name) that follows `main`, with
 its own user, database and settings. `docs/SERVER.md`, "Automatic deploys from GitHub", explains each piece,
 the pause switch and how to roll back.

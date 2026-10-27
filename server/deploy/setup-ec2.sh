@@ -974,7 +974,14 @@ fi
 
 systemctl enable --quiet caddy
 if systemctl is-active --quiet caddy; then
-  systemctl reload caddy || die "Caddy rejected the new config. See: sudo journalctl -u caddy -n 50"
+  # systemctl reload sends the new config to the admin address written in it. The first time it has the
+  # admin line (the Unix socket), the running Caddy still listens on localhost:2019, so caddy reload is
+  # told that address instead. A failed reload leaves Caddy running the config it had.
+  if ! systemctl reload caddy 2>/dev/null; then
+    curl -s -o /dev/null --max-time 3 http://127.0.0.1:2019/config/ &&
+      runuser -u caddy -- caddy reload --config "$CADDYFILE" --adapter caddyfile --address localhost:2019 ||
+      die "Caddy rejected the new config. See: sudo journalctl -u caddy -n 50"
+  fi
   info "Caddy reloaded."
 else
   systemctl start caddy || die "Caddy did not start. See: sudo journalctl -u caddy -n 50"

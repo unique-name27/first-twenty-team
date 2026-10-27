@@ -95,7 +95,9 @@ case "$INSTANCE" in
     UNIT_FILE=first-twenty-staging.service
     MIGRATE_SERVICE=first-twenty-staging-migrate.service
     DEFAULT_PORT=8788
-    LOCK_FILE="${TMPDIR:-/tmp}/first-twenty-staging-deploy.lock"
+    # In the staging user's own folder, not /tmp: the updater's unit has a private /tmp, and a deploy
+    # started by hand must take the same lock as the updater (auto-update.sh takes it before checking out).
+    LOCK_FILE=${FT_STAGING_LOCK:-/var/lib/first-twenty-staging/deploy.lock}
     IGNORE_SCRIPTS=true
     ;;
   *) die "--instance must be live or staging, not $INSTANCE." ;;

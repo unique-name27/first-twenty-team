@@ -8,7 +8,8 @@
 #                                     check passed, to the staging copy in /opt/first-twenty-staging
 #   first-twenty-autoupdate live      as the login that owns /opt/first-twenty: the newest GitHub release,
 #                                     when the product owner published it, it is not a draft or prerelease,
-#                                     its commit is on main and that commit's "verify" check passed
+#                                     its commit is on main, was made before the release was published
+#                                     (so the tag was not moved later) and that commit's "verify" check passed
 #   first-twenty-autoupdate live --record-deployed
 #                                     records the commit checked out in /opt/first-twenty as the one that
 #                                     is live (after a deploy or rollback by hand); staging takes it too
@@ -18,7 +19,9 @@
 # commit it has not deployed, whose check passed and that has not failed 3 deploys already, checks it out
 # (detached, fetched by its exact commit) and runs deploy.sh from it: for live, the usual backup before
 # migrations, health checks and the way back on failure. A commit that fails is tried again on the next
-# runs, 3 times in all; a newer commit or release starts over.
+# runs, 3 times in all (a try counts when it starts, so a run that is stopped or killed counts too); a
+# newer commit or release starts over. Staging also refuses to deploy while Caddy's admin API answers on
+# 127.0.0.1:2019, where code from main could reach it.
 #
 # GitHub's API is called without a token, which allows 60 requests an hour from this instance's address.
 # Each run sends the ETag of the last answer (If-None-Match), so an unchanged answer is a short 304; it
@@ -28,8 +31,10 @@
 # that limit does not count. Nothing secret is read, stored or logged.
 #
 # State lives in "state" in the channel's state folder (key=value lines): the deployed commit, commits that
-# failed and how often, ETags. Deleting it is safe: live then counts the checked-out commit as deployed,
-# and staging deploys main again.
+# failed and how often, ETags. Deleting it never deploys anything unchecked: live then counts the commit
+# checked out in /opt/first-twenty as deployed (after a failed deploy that is the failed one, so record the
+# right one with --record-deployed), and staging deploys main again. To try a commit again after 3 failed
+# deploys, delete only the failed= line.
 #
 # Settings, from the environment (the systemd units set the ones that differ from these defaults):
 #   FT_REPO            owner/name of the GitHub repo (default unique-name27/first-twenty-team)
@@ -37,7 +42,8 @@
 #   FT_CHECK_NAME      the CI check that must have passed (default verify)
 #   FT_CHECK_APP       the GitHub App that must have reported it (default github-actions)
 #   FT_MAX_TRIES       deploys of one commit before giving up on it (default 3)
-#   FT_APP_DIR, FT_STATE_DIR, FT_PAUSE_FILE, FT_GIT_URL, FT_NODE   other folders and commands (for tests)
+#   FT_APP_DIR, FT_STATE_DIR, FT_PAUSE_FILE, FT_GIT_URL, FT_NODE, FT_CADDY_ADMIN_URL
+#                      other folders, commands and addresses (for tests)
 
 set -euo pipefail
 
@@ -82,7 +88,9 @@ case "$CHANNEL" in
     PAUSE_FILE=${FT_PAUSE_FILE:-/etc/first-twenty-staging/autodeploy.paused}
     OTHER_UNIT=first-twenty-autoupdate-live.service
     DEPLOY_ARGS=(--instance staging --no-pull)
-    DEPLOY_LOCK="${TMPDIR:-/tmp}/first-twenty-staging-deploy.lock"
+    # The lock deploy.sh --instance staging takes (/var/lib/first-twenty-staging/deploy.lock). Not in /tmp:
+    # this unit has a private /tmp, and a staging deploy started by hand must take the same lock.
+    DEPLOY_LOCK="$(dirname "$STATE_DIR")/deploy.lock"
     ;;
   live)
     APP_DIR=${FT_APP_DIR:-/opt/first-twenty}
@@ -330,22 +338,28 @@ else
       release=$("$NODE" -e '
 const r = JSON.parse(require("fs").readFileSync(0, "utf8"))
 const clean = (v) => String(v ?? "").replace(/[\r\n=]/g, " ").slice(0, 200)
+const published = Math.floor(Date.parse(r.published_at) / 1000)
 console.log(["id=" + clean(r.id), "tag=" + clean(r.tag_name), "draft=" + clean(r.draft),
-  "prerelease=" + clean(r.prerelease), "author=" + clean(r.author && r.author.login)].join("\n"))
+  "prerelease=" + clean(r.prerelease), "author=" + clean(r.author && r.author.login),
+  "published=" + (Number.isFinite(published) ? published : "")].join("\n"))
 ' <"$WORK/release")
       rel_id=$(printf '%s\n' "$release" | sed -n 's/^id=//p')
       rel_tag=$(printf '%s\n' "$release" | sed -n 's/^tag=//p')
       rel_draft=$(printf '%s\n' "$release" | sed -n 's/^draft=//p')
       rel_pre=$(printf '%s\n' "$release" | sed -n 's/^prerelease=//p')
       rel_author=$(printf '%s\n' "$release" | sed -n 's/^author=//p')
+      rel_published=$(printf '%s\n' "$release" | sed -n 's/^published=//p')
       STATE[release_etag]=""
       STATE[release_sha]=""
       STATE[release_id]=$rel_id
       STATE[release_tag]=$rel_tag
+      STATE[release_published]=$rel_published
       if [ "$rel_author" != "$RELEASE_AUTHOR" ]; then
         STATE[release_skip]="it was published by ${rel_author:-nobody we know}, and only $RELEASE_AUTHOR's releases go live"
       elif [ "$rel_draft" != false ] || [ "$rel_pre" != false ]; then
         STATE[release_skip]="it is a draft or a prerelease"
+      elif ! [[ $rel_published =~ ^[0-9]+$ ]]; then
+        STATE[release_skip]="GitHub gave no publication time for it"
       elif ! [[ $rel_tag =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$ ]] || ! git check-ref-format "refs/tags/$rel_tag"; then
         STATE[release_skip]="its tag name is not one this script accepts (letters, digits, dots, dashes and underscores, like v2026.11.04)"
       else
@@ -385,7 +399,9 @@ if [ "$TARGET" = "$DEPLOYED" ]; then
   exit 0
 fi
 
-if [ "${STATE[skip_sha]:-}" = "$TARGET" ]; then
+# A commit skipped for good (see below) stays skipped, for this release: a new release starts over.
+SKIP_KEY=$TARGET${TARGET_TAG:+@${STATE[release_id]:-}}
+if [ "${STATE[skip_sha]:-}" = "$SKIP_KEY" ]; then
   log "$WHAT is not deployed: ${STATE[skip_why]:-see the earlier runs}."
   save_state
   exit 0
@@ -423,8 +439,14 @@ esac
 # ------------------------------------------------------------------------------------------------
 
 # The instance has about 1 GB of memory: one build at a time. Staging waits for its next run; live waits
-# for the staging build to finish.
-other_busy() { command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet "$OTHER_UNIT" 2>/dev/null; }
+# for the staging build to finish. Both updater units are oneshot services, which stay "activating" for
+# the whole run and never become "active", so systemctl is-active would never see the other one running.
+other_busy() {
+  local state
+  command -v systemctl >/dev/null 2>&1 || return 1
+  state=$(systemctl show -p ActiveState --value "$OTHER_UNIT" 2>/dev/null || true)
+  case "$state" in activating | active | reloading | deactivating) return 0 ;; *) return 1 ;; esac
+}
 if [ "$CHANNEL" = staging ]; then
   if other_busy; then
     log "the live channel is running; deploying $WHAT on a later run."
@@ -468,15 +490,29 @@ if [ -n "$TARGET_TAG" ] && [ "$(git -C "$APP_DIR" rev-parse -q --verify "refs/ta
 fi
 # Only reviewed work goes out: every commit on main came through a pull request with CI and an approval.
 if ! git -C "$APP_DIR" merge-base --is-ancestor "$TARGET" refs/remotes/origin/main; then
-  STATE[skip_sha]=$TARGET
+  STATE[skip_sha]=$SKIP_KEY
   STATE[skip_why]="its commit is not on main"
   log "$WHAT is not deployed: ${STATE[skip_why]}."
   save_state
   exit 0
 fi
+# A release names a tag, and anyone with write access can move a tag later (or edit the release to name
+# another one). Commits on main are made by GitHub when a pull request merges, so a commit made after the
+# release was published was not the one the product owner released. A minute of slack covers clocks.
+if [ -n "$TARGET_TAG" ]; then
+  committed=$(git -C "$APP_DIR" log -1 --format=%ct "$TARGET" 2>/dev/null || true)
+  published=${STATE[release_published]:-}
+  if ! [[ $committed =~ ^[0-9]+$ && $published =~ ^[0-9]+$ ]] || [ "$committed" -gt $((published + 60)) ]; then
+    STATE[skip_sha]=$SKIP_KEY
+    STATE[skip_why]="its commit was made after the release was published, so the tag was moved or the release edited (publish a new release instead)"
+    log "$WHAT is not deployed: ${STATE[skip_why]}."
+    save_state
+    exit 0
+  fi
+fi
 # Never go backwards: a release older than what runs now (say after a newer deploy by hand) is skipped.
 if [ -n "$DEPLOYED" ] && git -C "$APP_DIR" merge-base --is-ancestor "$TARGET" "$DEPLOYED" 2>/dev/null; then
-  STATE[skip_sha]=$TARGET
+  STATE[skip_sha]=$SKIP_KEY
   STATE[skip_why]="the deployed commit $(short "$DEPLOYED") already contains it"
   log "$WHAT is not deployed: ${STATE[skip_why]}."
   save_state
@@ -484,6 +520,15 @@ if [ -n "$DEPLOYED" ] && git -C "$APP_DIR" merge-base --is-ancestor "$TARGET" "$
 fi
 if [ -n "$(git -C "$APP_DIR" status --porcelain --untracked-files=no)" ]; then
   log "$APP_DIR has changes that are not committed, so $WHAT was not checked out. See: git -C $APP_DIR status"
+  save_state
+  exit 1
+fi
+# Staging runs main's code before the product owner releases it, on the live server's instance. Caddy's
+# admin API can change every site, so it must listen where that code cannot reach it: on the Unix socket
+# that setup-auto-deploy.sh configures, never on 127.0.0.1:2019. If it answers there again (say after the
+# Caddyfile was edited by hand), no new code goes to staging until setup runs again.
+if [ "$CHANNEL" = staging ] && curl -s -o /dev/null --max-time 3 "${FT_CADDY_ADMIN_URL:-http://127.0.0.1:2019/config/}" 2>/dev/null; then
+  log "Caddy's admin API answers on 127.0.0.1:2019, where code on staging could change the live sites, so $WHAT was not deployed. Run: sudo bash server/deploy/setup-auto-deploy.sh --staging-only"
   save_state
   exit 1
 fi
@@ -496,12 +541,21 @@ if ! flock -n 9; then
 fi
 
 TRY=$((TRIES + 1))
+# The try counts from here, before anything runs: a run that systemd stops (TimeoutStartSec) or that runs
+# out of memory never gets to record a failure, and must not be retried, with a backup each time, forever.
+set_fail_count "$TARGET" "$TRY"
+save_state
 # The way back that deploy.sh prints: the deployed commit, else whatever was checked out before.
 PREVIOUS=${DEPLOYED:-$(git -C "$APP_DIR" rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null || true)}
 log "deploying $WHAT (try $TRY of $MAX_TRIES; deployed now: $(short "${DEPLOYED:-none}"))."
-git -C "$APP_DIR" -c advice.detachedHead=false checkout --quiet --detach "$TARGET"
 rc=0
-(cd "$APP_DIR" && FT_DEPLOY_LOCK_HELD=1 FT_PREVIOUS_COMMIT="$PREVIOUS" bash server/deploy/deploy.sh "${DEPLOY_ARGS[@]}") || rc=$?
+if ! git -C "$APP_DIR" -c advice.detachedHead=false checkout --quiet --detach "$TARGET"; then
+  # git checks before it changes anything, so the code in place is as it was.
+  log "git could not check out $(short "$TARGET") in $APP_DIR (see above; most likely untracked files in the way)."
+  rc=1
+else
+  (cd "$APP_DIR" && FT_DEPLOY_LOCK_HELD=1 FT_PREVIOUS_COMMIT="$PREVIOUS" bash server/deploy/deploy.sh "${DEPLOY_ARGS[@]}") || rc=$?
+fi
 exec 9>&-
 
 if [ "$rc" -eq 0 ]; then
@@ -516,8 +570,7 @@ if [ "$rc" -eq 0 ]; then
   exit 0
 fi
 
-set_fail_count "$TARGET" "$TRY"
-save_state
+# The try was counted before the checkout.
 if [ "$TRY" -ge "$MAX_TRIES" ]; then
   log "deploy of $WHAT failed (try $TRY of $MAX_TRIES, output above); giving up on it until something newer appears."
 else
