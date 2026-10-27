@@ -689,13 +689,9 @@ on the same instance as the live server, so the kit keeps it away from what coul
   roles cannot reach it.
 - **Files**: the staging user cannot read `/opt/first-twenty`, `/etc/first-twenty` or the backups.
 
-What is left: the staging server can still open connections on 127.0.0.1, so it can call the live server
-on 127.0.0.1:8787 directly, as any visitor could through Caddy, except that the live server believes the
-`X-Forwarded-For` address it is sent from there (it trusts that header from loopback, where Caddy is), so
-code on staging could get around limits counted per address, such as sign-in attempts. It can reach
-anything else that listens on 127.0.0.1 too (`sudo ss -ltnp` lists it). Every commit on `main` is reviewed,
-so this is a risk to watch rather than an open door. For a complete separation, run staging on an instance
-of its own.
+What is left: the staging server can still open connections to services that listen on 127.0.0.1, the
+live server among them (`sudo ss -ltnp` lists them). Every commit on `main` is reviewed, so this is a risk
+to watch rather than an open door. For a complete separation, run staging on an instance of its own.
 
 ## Keep it patched
 
