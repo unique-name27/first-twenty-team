@@ -62,8 +62,8 @@ submit to the project is under Apache-2.0 too, unless you explicitly say otherwi
    if you want feedback before it is finished.
 6. **CI and review.** GitHub Actions runs typecheck, tests and both builds, and one teammate reviews and
    approves. A change to a protected path (database migrations, the deploy kit, dependencies, CLAUDE.md,
-   `.claude/`, `.github/`, SECURITY.md) also waits for the product owner, who reviews those in the Wednesday session. Answer every
-   comment, by a change or a reply.
+   `.claude/`, `.github/`, SECURITY.md, `.devcontainer/`, `scripts/dev/`) also waits for the product
+   owner, who reviews those in the Wednesday session. Answer every comment, by a change or a reply.
 7. **Merge.** Use "Squash and merge" once CI is green and the approvals are in. The product owner releases
    `main` to the live server once a week, at the end of the Wednesday session.
 

@@ -12,7 +12,7 @@
   "portsAttributes": {
     "8826": {
       "label": "First Twenty (dev)",
-      "onAutoForward": "openBrowser"
+      "onAutoForward": "openBrowserOnce"
     },
     "8787": {
       "label": "API",

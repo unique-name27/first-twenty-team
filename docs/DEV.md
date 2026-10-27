@@ -13,7 +13,7 @@ up. You only need a browser and your GitHub account.
    https://codespaces.new/unique-name27/first-twenty-team. Keep the smallest machine (2 cores): it is enough.
 2. The first start takes a few minutes: GitHub builds the codespace, then runs `npm ci`, then
    `npm run stack` in a terminal. Watch that terminal: when it says **First Twenty is running**, a new
-   browser tab opens the app at `https://<your-codespace-name>-8826.app.github.dev`.
+   browser tab opens the app (the first time only; later, open it from the **Ports** panel) at `https://<your-codespace-name>-8826.app.github.dev`.
 3. The app opens signed in to the sample company as `dev@example.test`, syncing with the codespace's own
    database. Edit code in the editor; the app reloads by itself, and the API restarts when server code changes.
 
