@@ -7,6 +7,7 @@ export const API_PORT: number
 export const MAX_OFFSET: number
 export const DEV_EMAIL: string
 export const USAGE: string
+export const DEV_FS_DENY: string[]
 
 export type StackArgs = { fresh: boolean; offset: number; seed: boolean; help: boolean }
 
@@ -17,4 +18,5 @@ export function codespaceOrigin(env: Env, port: number): string | null
 export function appOrigin(env: Env, port: number): string
 export function codespaceAllowedHosts(env: Env): string[]
 export function apiPortFromEnv(env: Env): number
+export function isStackCommandLine(cmdline: string): boolean
 export function apiEnv(base: Env, stack: { apiPort: number; appPort: number; devDir: string }): Env

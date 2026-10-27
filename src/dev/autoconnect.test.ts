@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { planAutoconnect } from './autoconnect'
 
-const base = { explicit: false, connected: false, localIsSample: true, doneStackId: null, stackId: 'stack-b' }
+const base = { explicit: false, inviting: false, connected: false, localIsSample: true, doneStackId: null, stackId: 'stack-b' }
 
 describe('planAutoconnect', () => {
   it('signs a fresh browser holding the sample in', () => {
@@ -25,6 +25,11 @@ describe('planAutoconnect', () => {
 
   it('moves to the new database after --fresh deleted the one it synced with', () => {
     expect(planAutoconnect({ ...base, connected: true, doneStackId: 'stack-a' })).toBe('replace')
+  })
+
+  it('leaves an invite link alone, so it can be tried as someone new', () => {
+    expect(planAutoconnect({ ...base, inviting: true })).toBe('skip')
+    expect(planAutoconnect({ ...base, inviting: true, explicit: true })).toBe('connect')
   })
 
   it('leaves a connection made some other way alone', () => {

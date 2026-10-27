@@ -1,3 +1,6 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { isFileLoadingAllowed, normalizePath, resolveConfig } from 'vite'
 import { describe, expect, it } from 'vitest'
 import {
   apiEnv,
@@ -5,11 +8,15 @@ import {
   appOrigin,
   codespaceAllowedHosts,
   codespaceOrigin,
+  DEV_FS_DENY,
   devDirName,
+  isStackCommandLine,
   MAX_OFFSET,
   parseArgs,
   stackPorts,
 } from './stack-lib.mjs'
+
+const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
 const CODESPACE = { CODESPACES: 'true', CODESPACE_NAME: 'demo-abc', GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: 'app.github.dev' }
 
@@ -104,8 +111,37 @@ describe('apiEnv', () => {
     expect(env.NODE_ENV).toBe('development')
     expect(env.DATABASE_URL).toBe('pglite:.data/dev-10/pg')
     expect(env.PORT).toBe('8797')
-    expect(env).not.toHaveProperty('ALLOWED_ORIGIN')
-    expect(env).not.toHaveProperty('ANTHROPIC_API_KEY')
+    // Empty, not missing: the server fills missing variables from .env, and an empty one counts as set.
+    expect(env.ALLOWED_ORIGIN).toBe('')
+    expect(env.ANTHROPIC_API_KEY).toBe('')
     expect(env.LOG_LEVEL).toBe('debug')
+  })
+})
+
+describe('a stack left behind', () => {
+  it('knows a stack process by its command line, never its shell wrapper', () => {
+    expect(isStackCommandLine(['node', 'scripts/dev/stack.mjs', '--offset', '10', ''].join('\0'))).toBe(true)
+    expect(isStackCommandLine(['/usr/local/bin/node', '/workspaces/first-twenty-team/scripts/dev/stack.mjs', ''].join('\0'))).toBe(true)
+    expect(isStackCommandLine(['C:\\node.exe', 'E:\\repo\\scripts\\dev\\stack.mjs'].join('\0'))).toBe(true)
+    expect(isStackCommandLine(['sh', '-c', 'node scripts/dev/stack.mjs', ''].join('\0'))).toBe(false)
+    expect(isStackCommandLine(['node', '/usr/lib/node_modules/npm/bin/npm-cli.js', 'run', 'stack', ''].join('\0'))).toBe(false)
+    expect(isStackCommandLine('')).toBe(false)
+  })
+})
+
+describe('the dev server never serves .data/', () => {
+  it("keeps every entry of Vite's own deny list (setting the option replaces it)", async () => {
+    const defaults = await resolveConfig({ configFile: false, root: ROOT, logLevel: 'silent' }, 'serve')
+    expect(DEV_FS_DENY).toEqual(expect.arrayContaining(defaults.server.fs.deny))
+  })
+
+  it('refuses the dev login and the databases in vite.config.ts, and still serves the app', async () => {
+    const config = await resolveConfig({ root: ROOT, logLevel: 'silent' }, 'serve')
+    const served = (file: string) => isFileLoadingAllowed(config, normalizePath(path.join(ROOT, file)))
+    expect(served('.data/dev/credentials.json')).toBe(false)
+    expect(served('.data/dev-10/pg/PG_VERSION')).toBe(false)
+    expect(served('.data/pg/PG_VERSION')).toBe(false)
+    expect(served('.env')).toBe(false)
+    expect(served('src/main.tsx')).toBe(true)
   })
 })

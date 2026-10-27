@@ -79,7 +79,9 @@ It is development only, and it signs in the normal way:
 
 1. `npm run stack` makes the dev login once and writes it to `.data/dev/credentials.json`.
 2. The Vite dev server answers `GET /__dev/credentials` with that login, only to the app's own pages (it
-   refuses requests from any other site). Only the dev server has this; a build never does.
+   refuses requests from any other site). Only the dev server has this; a build never does. Vite never
+   serves the `.data` folder itself (`server.fs.deny` in `vite.config.ts`), so the file cannot be read
+   around that check.
 3. `src/dev/autoconnect.ts` runs in development builds only (`src/dev/guard.test.ts` checks that). It
    signs in with the password through `POST /api/auth/login`, then takes the server's copy of the
    workspace, the same two steps as Settings, Server. The API has no shortcut for it.
@@ -87,7 +89,9 @@ It is development only, and it signs in the normal way:
 When it runs:
 
 - On load, once per stack database, when this browser holds the sample company. After `--fresh` it signs in
-  again by itself.
+  again by itself. It leaves invite links (`#invite.` addresses) alone, so you can open one in a private
+  window and join as someone new. To try signing up in a private window, sign out once after the
+  automatic sign-in: it does not sign that window in again.
 - Always when the address ends in `#dev.signin`, for example http://127.0.0.1:8826/#dev.signin. Use it after
   signing out, or when this browser holds a workspace of its own: the automatic sign-in never replaces
   that, and says so instead.
@@ -121,8 +125,9 @@ with `npm run stack -- --offset 10`. To see what holds a port: `netstat -ano | f
 **"a stack is already running on this data folder".** PGlite lets only one process open a database
 folder, so the stack refuses to start a second time on the same one. Stop the running stack with Ctrl+C in
 its terminal. In a codespace, look through the terminal list: opening the codespace in a second window
-starts `npm run stack` there too, and that one stops with this message, which is fine. If no stack is
-running (the computer restarted), delete `.data/dev/stack.pid` and try again. Never run
+starts `npm run stack` there too, and that one stops with this message, which is fine. The stack notices
+a `.data/dev/stack.pid` left behind by a restart and removes it by itself; if it still refuses and no
+stack is running, delete that file and try again. Never run
 `npm run server:migrate` or `server:create-admin` against `.data/dev` while the stack runs.
 
 **Start over.** `npm run stack -- --fresh` deletes `.data/dev` (the database and the dev login) and makes

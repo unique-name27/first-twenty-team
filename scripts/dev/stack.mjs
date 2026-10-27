@@ -5,7 +5,8 @@
 //   2. migrations, a dev login made once (dev@example.test, random password, kept only in
 //      .data/dev/credentials.json) and, while the workspace is empty, the Ledgerlark sample company
 //      (scripts/dev/prepare.ts; it finishes before the API starts, because PGlite allows one process per folder)
-//   3. the API (tsx watch, restarts on server changes) and the Vite dev server, their logs prefixed
+//   3. the API (tsx watch, restarts on server changes), then, once it answers, the Vite dev server, their
+//      logs prefixed
 //   4. the address to open; the app signs itself in there (src/dev/autoconnect.ts)
 //
 // Ctrl+C stops both. Flags: --fresh, --offset N, --no-seed (stack-lib.mjs USAGE). The pure parts live in
@@ -17,7 +18,7 @@ import net from 'node:net'
 import path from 'node:path'
 import readline from 'node:readline'
 import { fileURLToPath } from 'node:url'
-import { apiEnv, appOrigin, DEV_EMAIL, devDirName, parseArgs, stackPorts, USAGE } from './stack-lib.mjs'
+import { apiEnv, appOrigin, DEV_EMAIL, devDirName, isStackCommandLine, parseArgs, stackPorts, USAGE } from './stack-lib.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const windows = process.platform === 'win32'
@@ -57,15 +58,40 @@ const offsetFlag = args.offset ? ` -- --offset ${args.offset}` : ''
 /** The pid file of a stack that is still running, or null (a stale file is removed). */
 function runningStack() {
   if (!existsSync(pidFile)) return null
+  let info = null
   try {
-    const info = JSON.parse(readFileSync(pidFile, 'utf8'))
-    process.kill(info.pid, 0)
-    return info
+    info = JSON.parse(readFileSync(pidFile, 'utf8'))
+  } catch {
+    /* unreadable: stale */
+  }
+  // This process and its parent (npm's shell) may hold the old pid after a restart; neither is another stack.
+  if (info && Number.isInteger(info.pid) && info.pid !== process.pid && info.pid !== process.ppid && isStackProcess(info.pid)) return info
+  rmSync(pidFile, { force: true })
+  return null
+}
+
+/**
+ * True when `pid` is alive and, as far as the system can tell, is a stack. A pid alone is not enough: a
+ * codespace or container that stopped without Ctrl+C left its pid file behind, and after a restart it
+ * hands out the same low pids again, often to unrelated processes (or to this very stack).
+ */
+function isStackProcess(pid) {
+  try {
+    process.kill(pid, 0)
   } catch (err) {
-    // EPERM: the process exists but belongs to someone else, so it is running.
-    if (err?.code === 'EPERM') return JSON.parse(readFileSync(pidFile, 'utf8'))
-    rmSync(pidFile, { force: true })
-    return null
+    // EPERM: the process exists but belongs to someone else.
+    if (err?.code !== 'EPERM') return false
+  }
+  try {
+    if (process.platform === 'linux') return isStackCommandLine(readFileSync(`/proc/${pid}/cmdline`, 'utf8'))
+    const ps = windows
+      ? spawnSync('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], { encoding: 'utf8' })
+      : spawnSync('ps', ['-p', String(pid), '-o', 'args='], { encoding: 'utf8' })
+    if (ps.status !== 0) return true
+    // Windows names only the program, so any node process counts; ps names its arguments too.
+    return windows ? /^"node(\.exe)?"/i.test(ps.stdout.trim()) : isStackCommandLine(ps.stdout.trim().split(/\s+/).join('\0'))
+  } catch {
+    return true // the system would not say: trust the pid
   }
 }
 
@@ -195,6 +221,7 @@ async function stop(code, fromCtrlC) {
   if (!windows) for (const child of children.values()) end(child, false)
   if (!windows || fromCtrlC) await Promise.race([Promise.all(exited), new Promise((resolve) => setTimeout(resolve, 5000))])
   for (const child of children.values()) end(child, true)
+  children.clear()
   rmSync(pidFile, { force: true })
   process.exit(code)
 }
@@ -202,13 +229,10 @@ async function stop(code, fromCtrlC) {
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP', ...(windows ? ['SIGBREAK'] : [])]) {
   process.on(signal, () => void stop(0, signal === 'SIGINT' || signal === 'SIGBREAK'))
 }
-
-start('api', '36', [tsx, 'watch', '--clear-screen=false', 'server/src/index.ts'], serverEnv)
-// The same command as npm run dev, on this stack's port; the proxy and the dev sign-in follow the env.
-start('app', '35', ['--max-semi-space-size=64', vite, '--port', String(ports.app), '--strictPort', '--host', '127.0.0.1', '--clearScreen', 'false'], {
-  ...process.env,
-  FIRST_TWENTY_API_PORT: String(ports.api),
-  FIRST_TWENTY_DEV_DIR: devDir,
+// However this script ends (an error included), the children end with it: a leftover API would keep the
+// database folder and the ports busy.
+process.on('exit', () => {
+  for (const child of children.values()) end(child, true)
 })
 
 /** Resolves once `url` answers with a status below 500, or false after `ms`. */
@@ -226,15 +250,27 @@ async function waitFor(url, ms) {
   return false
 }
 
-const [apiUp, appUp] = await Promise.all([
-  waitFor(`http://127.0.0.1:${ports.api}/api/health`, 90_000),
-  waitFor(`http://127.0.0.1:${ports.app}/`, 90_000),
-])
+/** Stops the stack unless `url` answers within 90 seconds. */
+async function mustStart(what, url) {
+  if (stopping || (await waitFor(url, 90_000)) || stopping) return
+  console.error(`stack: ${what} did not start within 90 seconds (see its log above).`)
+  await stop(1, false)
+}
+
+start('api', '36', [tsx, 'watch', '--clear-screen=false', 'server/src/index.ts'], serverEnv)
+// The app starts once the API answers. A codespace opens the browser tab as soon as the app's port
+// listens, and the automatic sign-in on that first load needs the API.
+await mustStart('the API', `http://127.0.0.1:${ports.api}/api/health`)
 if (!stopping) {
-  if (!apiUp || !appUp) {
-    console.error(`stack: ${!apiUp ? 'the API' : 'the app'} did not start within 90 seconds (see its log above).`)
-    await stop(1, false)
-  }
+  // The same command as npm run dev, on this stack's port; the proxy and the dev sign-in follow the env.
+  start('app', '35', ['--max-semi-space-size=64', vite, '--port', String(ports.app), '--strictPort', '--host', '127.0.0.1', '--clearScreen', 'false'], {
+    ...process.env,
+    FIRST_TWENTY_API_PORT: String(ports.api),
+    FIRST_TWENTY_DEV_DIR: devDir,
+  })
+  await mustStart('the app', `http://127.0.0.1:${ports.app}/`)
+}
+if (!stopping) {
   const url = appOrigin(process.env, ports.app)
   console.log(
     [

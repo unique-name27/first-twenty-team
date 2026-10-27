@@ -123,6 +123,26 @@ export function codespaceAllowedHosts(env) {
 }
 
 /**
+ * Files the Vite dev server must never serve (server.fs.deny). Vite serves any file under the repo root,
+ * so .data/ (the PGlite databases and the stack's dev login) is on the list: the dev login is handed out
+ * only by /__dev/credentials, with its checks (scripts/dev/credentials.ts). Setting server.fs.deny
+ * replaces Vite's own list instead of adding to it, so the first entries repeat Vite's defaults
+ * (stack-lib.test.ts checks they still match).
+ */
+export const DEV_FS_DENY = ['.env', '.env.*', '*.{crt,pem,key,p12,pfx,cer,der}', '.npmrc', '.yarnrc.yml', '**/.git/**', '**/.data/**']
+
+/**
+ * True when a process's command line (Linux /proc/<pid>/cmdline: arguments separated by NUL) runs this
+ * stack: node with scripts/dev/stack.mjs as one argument. A shell wrapper (sh -c "node scripts/dev/stack.mjs",
+ * as npm starts it) does not count, so the stack never mistakes its own parent for another stack.
+ * @param {string} cmdline
+ * @returns {boolean}
+ */
+export function isStackCommandLine(cmdline) {
+  return cmdline.split('\0').some((arg) => /(^|[\\/])scripts[\\/]dev[\\/]stack\.mjs$/.test(arg))
+}
+
+/**
  * The API port the Vite proxy sends /api to: FIRST_TWENTY_API_PORT (set by the stack for --offset), else 8787.
  * @param {Record<string, string | undefined>} env
  * @returns {number}
@@ -139,20 +159,20 @@ export function apiPortFromEnv(env) {
  * address the browser opens, so invite links point there and, in a codespace (https), the sign-in
  * cookies are Secure __Host- cookies, as on the live server.
  *
- * ALLOWED_ORIGIN is removed: the browser reaches the API through the Vite proxy, same-origin, so no
- * cross-origin access is needed. ANTHROPIC_API_KEY is removed too: a codespace may carry one for Claude
- * Code, and the stack's assistant never spends it. LOG_LEVEL defaults to warn (every request otherwise
- * logs a line); set it in the environment to see more.
+ * ALLOWED_ORIGIN is emptied: the browser reaches the API through the Vite proxy, same-origin, so no
+ * cross-origin access is needed. ANTHROPIC_API_KEY is emptied too: a codespace may carry one for Claude
+ * Code, and the stack's assistant never spends it. Both are set to '' rather than removed, because the
+ * server fills unset variables from a .env file (config.ts loadDotEnv) and an empty one counts as set.
+ * LOG_LEVEL defaults to warn (every request otherwise logs a line); set it in the environment to see more.
  * @param {Record<string, string | undefined>} base usually process.env
  * @param {{ apiPort: number, appPort: number, devDir: string }} stack devDir relative to the repo root
  * @returns {Record<string, string | undefined>}
  */
 export function apiEnv(base, stack) {
-  const env = { ...base }
-  delete env.ALLOWED_ORIGIN
-  delete env.ANTHROPIC_API_KEY
   return {
-    ...env,
+    ...base,
+    ALLOWED_ORIGIN: '',
+    ANTHROPIC_API_KEY: '',
     NODE_ENV: 'development',
     HOST: '127.0.0.1',
     PORT: String(stack.apiPort),

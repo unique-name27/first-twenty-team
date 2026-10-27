@@ -10,8 +10,10 @@
 // - on load, once per stack database (credentials.json's stackId, new after --fresh), when this browser
 //   holds the sample company and is not connected to a server, or is still connected to an earlier stack
 //   database that --fresh deleted. A workspace of your own is never replaced on load: the app says how to
-//   sign in instead.
-import { connect } from '@/sync'
+//   sign in instead. An invite link (#invite.<token>) is left alone too: a team member opening one in a
+//   private window is trying the invite as someone new.
+import { parse } from '@/app/router'
+import { connect, INVITE_ROUTE } from '@/sync'
 import { isSampleDB } from '@/sync/engine'
 import { defaultStorage, loadConnection, type StorageLike } from '@/sync/state'
 import { getDB } from '@/store/db'
@@ -36,6 +38,8 @@ export type AutoconnectPlan = 'connect' | 'replace' | 'offer' | 'skip'
 export function planAutoconnect(o: {
   /** The address ended in #dev.signin. */
   explicit: boolean
+  /** The page is an invite link (#invite.<token>). */
+  inviting: boolean
   /** This browser syncs with a server (any server, any login). */
   connected: boolean
   /** The browser's workspace is the sample company. */
@@ -45,7 +49,7 @@ export function planAutoconnect(o: {
   stackId: string
 }): AutoconnectPlan {
   if (o.explicit) return 'connect'
-  if (o.doneStackId === o.stackId) return 'skip'
+  if (o.inviting || o.doneStackId === o.stackId) return 'skip'
   if (!o.localIsSample) return 'offer'
   if (!o.connected) return 'connect'
   // Connected after an earlier automatic sign-in: that stack's database was deleted (--fresh).
@@ -120,6 +124,7 @@ async function run(): Promise<void> {
   const storage = defaultStorage()
   const plan = planAutoconnect({
     explicit,
+    inviting: parse(location.hash).view === INVITE_ROUTE,
     connected: loadConnection(storage).mode === 'server',
     localIsSample: isSampleDB(getDB()),
     doneStackId: read(storage, DONE_KEY),

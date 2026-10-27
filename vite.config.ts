@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { viteSingleFile } from 'vite-plugin-singlefile'
 import { devCredentials } from './scripts/dev/credentials.ts'
-import { apiPortFromEnv, codespaceAllowedHosts } from './scripts/dev/stack-lib.mjs'
+import { apiPortFromEnv, codespaceAllowedHosts, DEV_FS_DENY } from './scripts/dev/stack-lib.mjs'
 
 const root = fileURLToPath(new URL('.', import.meta.url))
 
@@ -27,6 +27,11 @@ export default defineConfig(({ mode }) => ({
     // `npm run server:dev` listens here (`npm run stack -- --offset N` moves it); the app calls /api
     // same-origin through this proxy.
     proxy: { '/api': { target: `http://127.0.0.1:${apiPortFromEnv(process.env)}`, changeOrigin: false } },
+    // Vite's own deny list plus .data/ (the dev databases and the stack's dev login), so no page can read
+    // those files straight from the dev server (stack-lib.mjs DEV_FS_DENY says why).
+    fs: { deny: DEV_FS_DENY },
+    // PGlite writes to its files under .data/ all the time; none of them is app code to reload.
+    watch: { ignored: ['**/.data/**'] },
   },
   build: {
     outDir: mode === 'single' ? 'dist-single' : 'dist',
