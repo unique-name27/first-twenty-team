@@ -556,6 +556,15 @@ setup_live() {
   else
     run_as "$DEPLOY_USER" git -C "$LIVE_DIR" remote add origin "$GIT_URL"
   fi
+  # Code copied over the checkout (deploy.sh --archive, rsync) shows up as changed files, and the live
+  # channel never checks a release out over changes.
+  if [ -n "$(as_user "$DEPLOY_USER" git -C "$LIVE_DIR" status --porcelain --untracked-files=no 2>/dev/null || true)" ]; then
+    warn "$LIVE_DIR has changes to tracked files that are not committed (code copied with --archive or rsync"
+    warn "leaves them), and the live channel will not check out a release over them. Look with:"
+    warn "  git -C $LIVE_DIR status"
+    warn "Once you are sure nothing there is needed (a release brings all the code), drop them with:"
+    warn "  git -C $LIVE_DIR checkout -- ."
+  fi
 
   step "Live: the updater's state in $LIVE_STATE"
   run install -d -m 0750 -o "$DEPLOY_USER" -g "$DEPLOY_GROUP" "$LIVE_STATE"

@@ -1076,7 +1076,9 @@ chmod +x "$work"/bin/*
 # The live checkout: a real repo with one commit and the private repo's SSH origin.
 mkdir -p "$work/live"
 "$REAL_GIT" -C "$work/live" -c init.defaultBranch=main init -q
-"$REAL_GIT" -C "$work/live" -c user.name=Test -c user.email=test@example.test commit -q --allow-empty -m live
+echo '{"name":"first-twenty"}' > "$work/live/package.json"
+"$REAL_GIT" -C "$work/live" -c core.autocrlf=false add package.json
+"$REAL_GIT" -C "$work/live" -c user.name=Test -c user.email=test@example.test commit -q -m live
 "$REAL_GIT" -C "$work/live" remote add origin git@github.com:example/first-twenty-private.git
 LIVE_HEAD=$("$REAL_GIT" -C "$work/live" rev-parse HEAD)
 printf 'local all postgres peer\\n' > "$work/pg_hba.conf"
@@ -1105,6 +1107,8 @@ plan both
 plan staging-only --staging-only
 plan live-only --live-only --staging-domain Staging.Example.Org
 plan not-root-domain --staging-domain 'not a domain'
+echo '{"name":"copied over"}' > "$work/live/package.json"
+plan dirty --live-only
 `)
     expect(r.stderr).toBe('')
     runs = sections(r.stdout)
@@ -1187,8 +1191,18 @@ plan not-root-domain --staging-domain 'not a domain'
     expect(live).not.toContain('Staging:')
     expect(live).not.toContain('first-twenty-staging.service')
     expect(live).toContain('would write /usr/local/bin/first-twenty-autoupdate')
+    expect(staging).not.toContain('changes to tracked files')
     expect(get('not-root-domain')).toContain('rc=1')
     expect(outOf(get('not-root-domain'))).toContain('does not look like a host name for --staging-domain')
+  })
+  it('warns about changed files in the live checkout, which the live channel will not check out over', () => {
+    const s = get('dirty')
+    expect(s).toContain('rc=0')
+    const out = outOf(s)
+    expect(out).toContain('has changes to tracked files that are not committed')
+    expect(out).toMatch(/git -C \S+live checkout -- \./)
+    expect(outOf(get('both'))).not.toContain('changes to tracked files')
+    expect(callsOf(s).filter((c) => /^git .*\b(clone|set-url|remote add|fetch|checkout)\b/.test(c))).toEqual([])
   })
 })
 
