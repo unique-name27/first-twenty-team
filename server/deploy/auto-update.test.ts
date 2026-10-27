@@ -1175,6 +1175,7 @@ cat > "$work/bin/caddy" <<'EOF'
 #!/usr/bin/env bash
 echo "caddy $*" >> "$CALLS"
 case "$1" in
+  version) echo "v\${FAKE_CADDY_VERSION:-2.11.4} h1:test=" ;;
   validate) exit "\${FAKE_VALIDATE:-0}" ;;
   reload)
     [ "\${FAKE_RELOAD:-ok}" = ok ] || exit 1
@@ -1248,7 +1249,7 @@ sc() {
 `
 
 describe.skipIf(!BASH)("setup-auto-deploy.sh and Caddy's admin API", { timeout: LONG_MS }, () => {
-  const fns = ['run', 'info', 'warn', 'die', 'render_caddy_site', 'caddy_admin_setting', 'caddy_with_admin', 'caddy_admin_on_tcp', 'caddy_reload', 'setup_caddy']
+  const fns = ['run', 'info', 'warn', 'die', 'render_caddy_site', 'caddy_admin_setting', 'caddy_with_admin', 'caddy_version_ok', 'caddy_admin_on_tcp', 'caddy_reload', 'setup_caddy']
     .map((n) => shellFunction(setup, n))
     .join('\n')
 
@@ -1290,6 +1291,7 @@ sc stays-open plain.caddyfile yes 'FAKE_STAYS_OPEN=1'
 sc invalid plain.caddyfile yes 'FAKE_VALIDATE=1'
 sc own-admin own-admin.caddyfile yes ''
 sc no-global no-global.caddyfile yes ''
+sc old-caddy plain.caddyfile yes 'FAKE_CADDY_VERSION=2.6.2'
 `)
     expect(r.stderr).toBe('')
     runs = sections(r.stdout)
@@ -1357,6 +1359,19 @@ sc no-global no-global.caddyfile yes ''
     const noGlobal = get('no-global')
     expect(noGlobal).toContain('rc=0')
     expect(mainOf(noGlobal).startsWith('{\n\tadmin unix//var/lib/caddy/admin.sock\n}\n\nhr.example.test {')).toBe(true)
+    // Caddy before 2.7 cannot be reloaded through the socket: nothing is changed.
+    const old = get('old-caddy')
+    expect(old).toContain('rc=1')
+    expect(old).toContain('main=unchanged')
+    expect(old).not.toContain('site=written')
+    expect(outOf(old)).toContain('older than 2.7')
+  })
+
+  it('setup-ec2.sh leaves the admin line out for a Caddy older than 2.7, and reloads through localhost:2019 once', () => {
+    const ec2 = read('server/deploy/setup-ec2.sh')
+    expect(ec2).toContain(`[ "$(printf '%s\\n' 2.7.0 "$CADDY_NOW" | sort -V | head -n 1)" != 2.7.0 ]`)
+    expect(ec2).toContain(`sed -i '/^[[:space:]]*admin unix\\/\\//d' "$NEW"`)
+    expect(ec2).toContain('caddy reload --config "$CADDYFILE" --adapter caddyfile --address localhost:2019')
   })
 })
 
@@ -1520,7 +1535,8 @@ plan dirty --live-only
     expect(s).toContain('live-remotes=origin \n')
     const calls = callsOf(s)
     // Nothing that changes the instance ran.
-    expect(calls.filter((c) => /^(caddy|visudo|useradd|install|systemctl|chown|chmod|curl) /.test(c))).toEqual([])
+    // (caddy version only reads.)
+    expect(calls.filter((c) => /^(caddy|visudo|useradd|install|systemctl|chown|chmod|curl) /.test(c) && c !== 'caddy version')).toEqual([])
     expect(calls.filter((c) => /^git .*\b(clone|set-url|remote add|fetch|checkout)\b/.test(c))).toEqual([])
     // psql only read the catalog and the pg_hba.conf location.
     const psql = calls.filter((c) => c.startsWith('psql '))

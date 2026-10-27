@@ -916,6 +916,14 @@ if [ "$TARGET" = "$CADDYFILE" ]; then
 else
   render_caddyfile "$CADDY_SRC" site-only >"$NEW"
 fi
+# The admin line puts Caddy's admin API on a Unix socket. Caddy before 2.7 cannot be reloaded through one
+# (its client sends a request newer Go refuses), so there the line stays out and the admin API stays on
+# localhost:2019 until Caddy is updated.
+CADDY_NOW=$(caddy_version)
+if [ -n "$CADDY_NOW" ] && [ "$(printf '%s\n' 2.7.0 "$CADDY_NOW" | sort -V | head -n 1)" != 2.7.0 ]; then
+  sed -i '/^[[:space:]]*admin unix\/\//d' "$NEW"
+  warn "Caddy $CADDY_NOW is older than 2.7, so its admin API stays on localhost:2019 (automatic deploys' staging needs 2.7 or newer)."
+fi
 chmod 0644 "$NEW"
 
 if ! runuser -u caddy -- caddy validate --adapter caddyfile --config "$NEW" >/dev/null 2>&1; then

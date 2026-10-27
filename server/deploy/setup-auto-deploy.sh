@@ -548,6 +548,14 @@ caddy_with_admin() {
   ' "$1"
 }
 
+# Whether the installed Caddy is 2.7 or newer (or cannot say). Older ones cannot be reloaded through a Unix
+# socket: their client sends a request that newer Go refuses.
+caddy_version_ok() {
+  local v
+  v=$(caddy version 2>/dev/null | awk 'NR == 1 { sub(/^v/, "", $1); print $1 }')
+  [ -z "$v" ] || [ "$(printf '%s\n' 2.7.0 "$v" | sort -V | head -n 1)" = 2.7.0 ]
+}
+
 # Whether Caddy's admin API answers on its default TCP address, where any process on the instance can
 # reach it (staging's code included).
 caddy_admin_on_tcp() {
@@ -582,6 +590,8 @@ setup_caddy() {
   [ -f "$CADDY_MAIN" ] || die "$CADDY_MAIN is missing. Run server/deploy/setup-ec2.sh first."
   [ -d "$CADDY_ADMIN_DIR" ] && [ "$(stat -c %U "$CADDY_ADMIN_DIR")" = caddy ] ||
     die "$CADDY_ADMIN_DIR (the caddy user's own folder, for the admin socket) is missing or not owned by caddy."
+  caddy_version_ok ||
+    die "This Caddy ($(caddy version 2>/dev/null | head -n 1)) is older than 2.7 and cannot be reloaded through the admin socket staging needs. Run setup-ec2.sh again (it installs Caddy 2.11.4 or newer), then run this again."
   admin=$(caddy_admin_setting "$CADDY_MAIN")
   # The line setup writes, or the same with socket permissions (|0200) added by hand.
   case "$admin" in
