@@ -16,13 +16,15 @@ Read before changing code:
 | Command | What it does |
 | --- | --- |
 | `npm install` | Install dependencies (Node 22 or newer) |
-| `npm run dev` | The app at http://127.0.0.1:8826 |
+| `npm run stack` | The app, the server on its own PGlite database with the sample company, signed in (`docs/DEV.md`); `-- --fresh` starts over, `-- --offset 10` runs a second one |
+| `npm run dev` | The app alone at http://127.0.0.1:8826 |
 | `npm run server:dev` | The optional server on PGlite (Postgres in WebAssembly, no install) |
 | `npm test` | All unit tests (Vitest); `npm test -- src/domain/payrun` runs one folder |
 | `npm run typecheck` | TypeScript for the app and the server |
 | `npm run verify` | Typecheck, all tests, the one-file build. Must pass before a pull request |
 
-Run Vite only through these scripts (they pass the memory flag it needs); never `npx vite`.
+Run Vite only through these scripts (they pass the memory flag it needs); never `npx vite`. `npm run stack`
+keeps running until stopped: start it in the background and stop it when you are done.
 
 ## How to work here
 

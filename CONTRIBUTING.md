@@ -24,16 +24,23 @@ submit to the project is under Apache-2.0 too, unless you explicitly say otherwi
 
 ## Set up (week 1)
 
-1. Install [Git](https://git-scm.com/downloads) and [Node.js](https://nodejs.org/en/download) 22 or newer.
-2. Install Claude Code and sign in (it needs a Claude Pro, Max, Team, Enterprise or Console account):
-   - macOS, Linux, WSL: `curl -fsSL https://claude.ai/install.sh | bash`
-   - Windows PowerShell: `irm https://claude.ai/install.ps1 | iex`
-   - Then run `claude` in the repo folder and follow the browser prompts.
-3. Clone the repo, then `npm install` and `npm run verify`. Every test should pass. If one fails on a clean
-   clone, open an issue: that is a bug in the repo, not in your setup.
-4. Run `npm run dev`, open http://127.0.0.1:8826 and walk the demo path with the sample company: open a job,
-   move a candidate to an offer, hire them, check the onboarding checklist, prepare a pay run. Then make a
-   demo company on the live server and try the careers page and Lark there.
+`docs/DEV.md` has the details and the troubleshooting.
+
+1. **Open a codespace** (nothing to install): on the repo page choose Code > Codespaces > Create codespace
+   on main, or open https://codespaces.new/unique-name27/first-twenty-team. It comes with Node 22, Claude
+   Code and the GitHub CLI, installs the dependencies and runs `npm run stack`, which starts the API with
+   its own database and the app, and opens the app in a new tab, signed in to the sample company.
+   **Or work on your own computer:** install [Git](https://git-scm.com/downloads), [Node.js](https://nodejs.org/en/download)
+   22 or newer and Claude Code (macOS, Linux, WSL: `curl -fsSL https://claude.ai/install.sh | bash`;
+   Windows PowerShell: `irm https://claude.ai/install.ps1 | iex`). Clone the repo, then run `npm ci` and
+   `npm run stack`, and open http://127.0.0.1:8826.
+2. Sign in to Claude Code: run `claude` in the repo folder (in a codespace, in a new terminal) and follow
+   the prompts. It needs a Claude Pro, Max, Team, Enterprise or Console account.
+3. Run `npm run verify`. Every test should pass. If one fails on a clean clone or a new codespace, open an
+   issue: that is a bug in the repo, not in your setup.
+4. Walk the demo path with the sample company in the app `npm run stack` opened: open a job, move a
+   candidate to an offer, hire them, check the onboarding checklist, prepare a pay run. Then make a demo
+   company on the live server and try the careers page and Lark there.
 5. Read `README.md`, `ARCHITECTURE.md` and `CLAUDE.md`. Then ask Claude Code for a tour of the code your
    workstream touches, and check what it tells you against the code.
 
