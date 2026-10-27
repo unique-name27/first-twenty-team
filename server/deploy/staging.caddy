@@ -1,0 +1,41 @@
+# First Twenty staging site (docs/SERVER.md, "Automatic deploys from GitHub").
+# setup-auto-deploy.sh renders this file to /etc/caddy/first-twenty.d/staging.caddy with staging.example.com
+# replaced by the staging domain. The live Caddyfile imports every file in that folder, so this site sits
+# next to the live ones without changing them. It proxies like the live app, to the staging server on
+# 127.0.0.1:8788, and asks search engines not to index anything (staging is a demo with throwaway data).
+
+http://staging.example.com {
+	redir https://{host}{uri} permanent
+}
+
+staging.example.com {
+	encode zstd gzip
+
+	request_body {
+		max_size 12MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		defer
+	}
+	header -Server
+	header X-Robots-Tag "noindex, nofollow"
+
+	reverse_proxy 127.0.0.1:8788 {
+		header_up -X-Real-IP
+	}
+
+	log {
+		output file /var/log/caddy/first-twenty-staging-access.log {
+			roll_size 20MiB
+			roll_keep 5
+		}
+		format filter {
+			wrap json
+			fields {
+				request>uri regexp "(?i)/invites/[^/?#]+" "/invites/[redacted]"
+			}
+		}
+	}
+}

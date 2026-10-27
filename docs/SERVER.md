@@ -49,6 +49,9 @@ The kit lives in `server/deploy/`, plus `.env.example` in the project root:
 | `deploy.sh` | Updates the server to the latest code: pull, install, build, back up the database when migrations are pending, migrate, restart, health check. |
 | `with-env.sh` | Runs a command (migrations, creating the admin) with the server's settings. |
 | `backup.sh`, `first-twenty-backup.service`, `first-twenty-backup.timer` | The nightly backup. |
+| `setup-auto-deploy.sh`, `auto-update.sh` | Optional automatic deploys: a staging copy that follows `main`, and the live server that follows the product owner's GitHub releases (see [Automatic deploys from GitHub](#automatic-deploys-from-github)). |
+| `first-twenty-staging.service`, `first-twenty-staging-migrate.service`, `staging.caddy` | The staging server, its migrations and its Caddy site. |
+| `first-twenty-autoupdate-staging.*`, `first-twenty-autoupdate-live.*` | The timers that run `auto-update.sh` every 5 minutes. |
 | `.env.example` (project root) | Every setting the server reads, with a one-line explanation each. |
 
 ## Before you start
@@ -434,7 +437,9 @@ the server: syncing works when the app is opened from your First Twenty server's
 
 ## Updating
 
-When there is new code, run on the instance:
+With automatic deploys set up, the server runs `deploy.sh` itself for every release the product owner
+publishes (see [Automatic deploys from GitHub](#automatic-deploys-from-github)). By hand, or without them,
+when there is new code, run on the instance:
 
 ```bash
 cd /opt/first-twenty
@@ -499,6 +504,157 @@ When an update changes `server/deploy/first-twenty.service`, `deploy.sh` warns t
 differs. Apply it by running setup again (`sudo bash server/deploy/setup-ec2.sh hr.example.com`; it only
 changes what differs and never touches your settings file or Postgres). The same goes for an update to
 `server/deploy/Caddyfile`: setup rewrites `/etc/caddy/Caddyfile` from it and reloads Caddy.
+
+## Automatic deploys from GitHub
+
+Once the code lives in the public team repo, the server can deploy itself: a **staging** copy that follows
+`main`, and the **live** server that follows the product owner's GitHub releases. Nothing reaches into the
+instance from outside. Every 5 minutes two systemd timers on the instance ask GitHub what is new, over
+HTTPS, with no token and no deploy key, so SSH stays open to the product owner's address only.
+
+| | Staging | Live |
+|---|---|---|
+| Address | `https://staging-77-112-161-54.sslip.io` (change it with `--staging-domain`) | your domain, as before |
+| What it deploys | the newest commit on `main`, once its `verify` check passed | the newest GitHub release published by `unique-name27`, once the `verify` check of its commit passed |
+| Runs as | `first-twenty-staging`, a system user with no login | the login that owns `/opt/first-twenty` (ubuntu), as `deploy.sh` always has |
+| Code and settings | `/opt/first-twenty-staging`, `/etc/first-twenty-staging/env` | `/opt/first-twenty`, `/etc/first-twenty/env` |
+| Server | `first-twenty-staging` on 127.0.0.1:8788 | `first-twenty` on 127.0.0.1:8787 |
+| Database | `first_twenty_staging`: demo data only, no backups | `first_twenty`: backed up before every migration, and every night |
+| Pause it | `sudo touch /etc/first-twenty-staging/autodeploy.paused` | `sudo touch /etc/first-twenty/autodeploy.paused` |
+| Logs | `sudo journalctl -u first-twenty-autoupdate-staging` | `sudo journalctl -u first-twenty-autoupdate-live` |
+
+### Set it up (once)
+
+On the instance, from a fresh copy of `main` (the live checkout may still hold older code):
+
+```bash
+git clone --depth 1 https://github.com/unique-name27/first-twenty-team.git ~/ft-setup
+sudo bash ~/ft-setup/server/deploy/setup-auto-deploy.sh --dry-run
+sudo bash ~/ft-setup/server/deploy/setup-auto-deploy.sh
+rm -rf ~/ft-setup
+```
+
+`--dry-run` prints every step and changes nothing; read it first. Without it, setup:
+
+- installs the updater, `server/deploy/auto-update.sh`, as `/usr/local/bin/first-twenty-autoupdate`;
+- for staging: creates the `first-twenty-staging` user, the `first_twenty_staging` database and its two
+  roles (with `postgres-setup.sql` and the staging names, so the same limits and grants as live), generates
+  their passwords and writes them only into `/etc/first-twenty-staging/env` (root only), adds `pg_hba.conf`
+  lines that keep the staging roles in their own database (after a backup of the file), clones the repo into
+  `/opt/first-twenty-staging`, installs the staging units and the sudo rule, and adds the staging site to
+  Caddy (`/etc/caddy/first-twenty.d/staging.caddy`, imported by one line it adds to `/etc/caddy/Caddyfile`
+  after a backup; it checks the result with `caddy validate` before Caddy reloads, and puts everything back
+  if it does not validate). Then it starts the first staging deploy;
+- for live: switches the origin of `/opt/first-twenty` to `https://github.com/unique-name27/first-twenty-team.git`,
+  records the commit checked out there now as deployed (so nothing happens until a newer release exists), and
+  turns on the live timer.
+
+`--staging-only` or `--live-only` sets up one of the two. `--release-author` names another GitHub login
+whose releases go live, and `--deploy-user` another login for the live channel. It never touches the live
+database, its roles, `/etc/first-twenty/env` or the live Caddy sites. Run it again (from a fresh copy of
+`main`) when an update changes the updater, the units or `staging.caddy`; the updater's log says when.
+
+### Staging: main after CI
+
+Every merge to `main` runs CI. Within 5 minutes of its `verify` check passing (only a check reported by
+GitHub Actions counts), staging fetches that exact commit, builds it (a few minutes on a t3.micro), applies
+its migrations, restarts and checks `/api/health`. It is a public demo: open sign-up with demo limits (50
+demo companies, deleted after 7 days without activity, 256 MB of records in all), no assistant and no
+careers pages. Use demo data only.
+
+It runs `deploy.sh --instance staging` as `first-twenty-staging`, which owns the staging code and nothing
+else: it cannot read the live code, settings or backups, and its database roles cannot reach any database
+but `first_twenty_staging` (nor can the live roles reach it). It may run exactly two commands with sudo,
+written in `/etc/sudoers.d/first-twenty-staging`: starting `first-twenty-staging-migrate` (migrations as the
+schema owner, whose password only root can read) and restarting `first-twenty-staging`. The install is
+`npm ci --ignore-scripts`: the only install script in `package-lock.json` is esbuild's, which tsx uses in
+development, and the build needs none (Vite, Tailwind and Lightning CSS load their native builds without
+one). The staging server runs with the live server's sandbox, a smaller share of CPU and a memory cap, so
+the live server wins when the instance is busy, and the two channels never build at the same time.
+
+### Live: the product owner's releases
+
+To release, publish a GitHub release (the product owner, `unique-name27`):
+
+1. On GitHub, open the repo, then **Releases** > **Draft a new release**.
+2. **Choose a tag**: type a new one, such as `v2026.11.04`, with **Target** `main`. Tags use letters,
+   digits, dots, dashes and underscores.
+3. Give it a title, and **Generate release notes** for the list of merged pull requests.
+4. Leave **Set as a pre-release** off, keep **Set as the latest release** on, and click **Publish release**.
+
+Within 5 minutes of that, once the `verify` check of the tagged commit has passed, the live channel fetches
+that exact commit, checks it out detached and runs `deploy.sh`: the backup before pending migrations, the
+migrations, the restart, the health checks, and the way back printed if the new server is not healthy. It
+deploys a release only when all of these hold:
+
+- it was published by `unique-name27` (a release by anyone else is logged and skipped);
+- it is not a draft or a prerelease;
+- the tagged commit is on `main`, so it went through a reviewed pull request;
+- the `verify` check of that commit passed;
+- it is newer than what runs now (an older release never rolls the server back by itself).
+
+Team members have write access, so they could publish a release too; the author check stops it from going
+live. A tag ruleset on GitHub that lets only the product owner create or move `v*` tags makes that tighter.
+
+### Pauses, retries and GitHub's limits
+
+Pause a channel by creating its pause file (the commands are in the table above); remove the file to resume.
+A paused channel asks GitHub nothing. A commit or release that fails to deploy is tried again on the next
+runs, 3 times in all; after that the channel waits for a newer commit or release. Each failed run leaves its
+unit marked failed (`systemctl --failed` lists it).
+
+GitHub allows 60 requests an hour from one address without a token, shared by both channels. Each run sends
+the ETag of the last answer, so an unchanged answer is a short 304. A normal run sends one request, and
+asks for check runs only while a new commit's check is unknown (and, after a failed check, at most every 30
+minutes, in case CI was re-run): 24 requests an hour when nothing changes, a few more while CI runs.
+When GitHub says the limit is used up, the channel waits for the reset. `git fetch` does not count.
+
+Each channel keeps a small state file: `/var/lib/first-twenty-autoupdate/state` (live) and
+`/var/lib/first-twenty-staging/autoupdate/state` (staging), with the deployed commit, the commits that
+failed and how often, and the ETags.
+
+### Logs
+
+```bash
+sudo journalctl -u first-twenty-autoupdate-live -n 100        # what the live channel did, deploy.sh output included
+sudo journalctl -u first-twenty-autoupdate-staging -n 100     # the same for staging
+systemctl list-timers 'first-twenty-autoupdate-*'             # when each runs next
+sudo systemctl start first-twenty-autoupdate-live             # check now instead of waiting
+sudo journalctl -u first-twenty-staging -n 100                # the staging server itself
+```
+
+### Roll back
+
+**Live.** When the new server is not healthy, `deploy.sh` prints the way back in the live channel's log,
+with the previous commit and, when migrations ran, the backup it took just before.
+
+1. Pause the channel, so it stops retrying: `sudo touch /etc/first-twenty/autodeploy.paused`.
+2. Follow the steps from the log (`sudo journalctl -u first-twenty-autoupdate-live -n 200`). With no
+   migration: `cd /opt/first-twenty && git checkout --detach <previous commit> && bash server/deploy/deploy.sh --no-pull`.
+   With migrations, add the restore from [Restore a backup](#restore-a-backup) with the dump it names.
+3. Record what runs now: `first-twenty-autoupdate live --record-deployed` (as the deploy login).
+4. Delete the bad release on GitHub (its page > **Delete**), or publish a fixed one, then remove the pause
+   file. While the bad release is the latest one, the channel would deploy it again.
+
+To go back later, after a release that seemed fine, do the same: pause, check out the commit you want, run
+`deploy.sh --no-pull`, record it, and delete the releases after it.
+
+**Staging** holds demo data only. The simplest way back is a pull request that reverts the change; staging
+follows `main` once CI passes. To pin staging to an older commit meanwhile, pause it, then:
+
+```bash
+sudo -u first-twenty-staging -H bash -c 'cd /opt/first-twenty-staging && git checkout --detach <commit> && bash server/deploy/deploy.sh --instance staging --no-pull'
+sudo -u first-twenty-staging first-twenty-autoupdate staging --record-deployed
+```
+
+### What staging shares with the live server
+
+The instance, its memory and its disk. Staging runs code from `main` before the product owner releases it,
+on the same instance as the live server. Like the live server, the staging server (and its build) can reach
+whatever listens on 127.0.0.1, which includes Caddy's admin endpoint (127.0.0.1:2019), and Caddy's admin
+API can change the live sites. Every commit on `main` is reviewed, so this is a risk to watch rather than an
+open door. A follow-up worth making is moving Caddy's admin endpoint to a Unix socket that only root and
+Caddy can open (the `admin` global option); this kit does not change that.
 
 ## Keep it patched
 

@@ -1,0 +1,37 @@
+# First Twenty staging: deploy the newest commit on main once its "verify" check passed (systemd oneshot).
+# Started every 5 minutes by first-twenty-autoupdate-staging.timer. Installed by setup-auto-deploy.sh,
+# which puts the staging domain in FT_PUBLIC_ORIGIN below (docs/SERVER.md, "Automatic deploys from GitHub").
+#
+#   sudo journalctl -u first-twenty-autoupdate-staging -n 50     what the last runs did
+#   sudo systemctl start first-twenty-autoupdate-staging         check now instead of waiting
+#   sudo touch /etc/first-twenty-staging/autodeploy.paused       pause it (rm the file to resume)
+#
+# It runs as first-twenty-staging, which owns /opt/first-twenty-staging and may run exactly two commands
+# with sudo (the sudoers file setup-auto-deploy.sh writes): starting first-twenty-staging-migrate and
+# restarting first-twenty-staging. Because it calls sudo, systemd's no-new-privileges sandboxing (and every
+# option that implies it) cannot be used here; the build gets a private /tmp, a read-only /usr and /etc,
+# no access to /home, and less CPU, I/O and memory priority than the live server.
+
+[Unit]
+Description=First Twenty staging: deploy main after CI passes
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=first-twenty-staging
+Group=first-twenty-staging
+ExecStart=/usr/local/bin/first-twenty-autoupdate staging
+Environment=HOME=/var/lib/first-twenty-staging
+Environment=FT_PORT=8788
+Environment=FT_PUBLIC_ORIGIN=https://staging.example.com
+TimeoutStartSec=45min
+UMask=0027
+Nice=10
+CPUWeight=20
+IOWeight=20
+OOMScoreAdjust=500
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectControlGroups=true

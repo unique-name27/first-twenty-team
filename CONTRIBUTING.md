@@ -4,9 +4,9 @@ This repo is built by a small product team over eight weeks. The work is split i
 and the three team members rotate through them every two weeks, so by week 6 each has led all three.
 Weeks 7 and 8 finish the work. An advisor joins the release reviews, 30 minutes every second week. The
 product owner gives the project one hour a week, the Wednesday session: setting priorities, reviewing the
-protected paths in `.github/CODEOWNERS` and releasing to the live server. Everyone writes code with
-[Claude Code](https://code.claude.com/docs/en/setup), and every change reaches `main` through a pull
-request that passes CI and a review.
+protected paths in `.github/CODEOWNERS` and releasing to the live server by publishing a GitHub release.
+Everyone writes code with [Claude Code](https://code.claude.com/docs/en/setup), and every change reaches
+`main` through a pull request that passes CI and a review.
 
 ## This repo is public
 
@@ -40,7 +40,9 @@ submit to the project is under Apache-2.0 too, unless you explicitly say otherwi
    issue: that is a bug in the repo, not in your setup.
 4. Walk the demo path with the sample company in the app `npm run stack` opened: open a job, move a
    candidate to an offer, hire them, check the onboarding checklist, prepare a pay run. Then make a demo
-   company on the live server and try the careers page and Lark there.
+   company on the live server and try the careers page and Lark there. Staging,
+   https://staging-77-112-161-54.sslip.io, runs the newest `main` with open sign-up for demo companies
+   (no Lark and no careers pages there).
 5. Read `README.md`, `ARCHITECTURE.md` and `CLAUDE.md`. Then ask Claude Code for a tour of the code your
    workstream touches, and check what it tells you against the code.
 
@@ -64,8 +66,11 @@ submit to the project is under Apache-2.0 too, unless you explicitly say otherwi
    approves. A change to a protected path (database migrations, the deploy kit, dependencies, CLAUDE.md,
    `.claude/`, `.github/`, SECURITY.md, `.devcontainer/`, `scripts/dev/`) also waits for the product
    owner, who reviews those in the Wednesday session. Answer every comment, by a change or a reply.
-7. **Merge.** Use "Squash and merge" once CI is green and the approvals are in. The product owner releases
-   `main` to the live server once a week, at the end of the Wednesday session.
+7. **Merge.** Use "Squash and merge" once CI is green and the approvals are in. Merged work appears on
+   staging at https://staging-77-112-161-54.sslip.io within minutes, once CI passes on `main`: check it
+   there. The product owner releases to the live server by publishing a GitHub release, once a week at the
+   end of the Wednesday session, and the server deploys it on its own (`docs/SERVER.md`, "Automatic deploys
+   from GitHub").
 
 ## Rotations
 
@@ -119,7 +124,7 @@ Approve when you would be comfortable owning the code yourself. "Request changes
 - **Every legal rule has an official source** in `docs/LAW.md`, with the date it was checked.
 - **Every change has tests**, and `npm run verify` passes before review.
 - **No secrets** in code, issues, chat or Claude sessions.
-- **Nobody pushes to `main`**, and only the product owner deploys.
+- **Nobody pushes to `main`**, and only the product owner releases (by publishing a GitHub release).
 - **You own what you merge.** Using Claude is expected; not understanding your own pull request is not.
   At each release review, each team member walks through two of their merged pull requests.
 

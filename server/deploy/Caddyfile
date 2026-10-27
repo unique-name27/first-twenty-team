@@ -80,6 +80,11 @@ hr.example.com {
 	}
 }
 
+# Sites kept in files of their own, such as the staging site that setup-auto-deploy.sh writes to
+# /etc/caddy/first-twenty.d/staging.caddy (docs/SERVER.md, "Automatic deploys from GitHub"). When no file
+# matches, Caddy logs a warning and carries on.
+import /etc/caddy/first-twenty.d/*.caddy
+
 # Careers pages (CAREERS_HOSTS in /etc/first-twenty/env; docs/SERVER.md, "Careers pages"). setup-ec2.sh
 # writes the template between the BEGIN and END lines once per --careers-domain, with careers.example.com
 # replaced, and leaves it out when there is none. Each careers host proxies to the same server, which

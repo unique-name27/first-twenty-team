@@ -132,25 +132,31 @@ rotation 3 workstream (see `CONTRIBUTING.md`). Each workstream's handover notes 
 
 ## 7. Point the live server at the team repo
 
-A deploy key works for one repo only, so the server gets a second, read-only key under its own SSH host
-name. On the server (SSH access stays with the product owner):
+The repo is public, so the server pulls from it over HTTPS with no deploy key, and SSH stays open to the
+product owner's address only. On the server (SSH access stays with the product owner), from a fresh copy of
+`main`:
 
 ```bash
-ssh-keygen -t ed25519 -f ~/.ssh/first_twenty_team_deploy -N "" -C "first-twenty team deploy key"
-cat ~/.ssh/first_twenty_team_deploy.pub
+git clone --depth 1 https://github.com/ORG/first-twenty.git ~/ft-setup
+sudo bash ~/ft-setup/server/deploy/setup-auto-deploy.sh --dry-run --repo ORG/first-twenty
+sudo bash ~/ft-setup/server/deploy/setup-auto-deploy.sh --repo ORG/first-twenty
+rm -rf ~/ft-setup
 ```
 
-Add the printed line on GitHub: the team repo > Settings > Deploy keys > Add deploy key, with write access
-off. Then:
+Read what `--dry-run` prints before the real run. The installer switches the origin of `/opt/first-twenty`
+to the team repo over HTTPS and records the commit that runs there now as deployed, so nothing changes on
+the live server until the product owner publishes a release. It also sets up staging: a copy of the app at
+`https://staging-77-112-161-54.sslip.io` (`--staging-domain` picks another name) that follows `main`, with
+its own user, database and settings. `docs/SERVER.md`, "Automatic deploys from GitHub", explains each piece,
+the pause switch and how to roll back.
 
-```bash
-printf 'Host github-team\n  HostName github.com\n  User git\n  IdentityFile ~/.ssh/first_twenty_team_deploy\n  IdentitiesOnly yes\n' >> ~/.ssh/config
-cd /opt/first-twenty
-git status --short
-git remote set-url origin github-team:ORG/first-twenty.git
-git fetch origin && git checkout -B main origin/main
-```
+From then on:
 
-`git status --short` must print nothing before the switch. The snapshot has a new history, so the
-checkout moves to `main` instead of pulling. From then on the usual deploy (`deploy.sh`) pulls from the
-team repo. Archive the old private repo once the server has deployed from the new one.
+- **Merged work** appears on staging within minutes, once CI passes on `main`.
+- **The product owner releases** by publishing a GitHub release (Releases > Draft a new release, a new tag
+  on `main`, Publish release). The live server deploys it within 5 minutes of its commit passing CI, with a
+  database backup first when migrations are pending.
+
+The snapshot has a new history, so the server fetches each release by its exact commit and checks it out
+detached; it never runs `git pull`. Archive the old private repo once the server has deployed a release from
+the new one.
