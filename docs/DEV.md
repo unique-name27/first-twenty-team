@@ -432,7 +432,9 @@ so you can try the app on a company of 8, 15 or 20 people instead of the sample.
 | `npm run sim -- saves` | Lists the copies |
 
 Add `--offset 10` to work on the stack started with `npm run stack -- --offset 10` (its files are then in
-`.data/dev-10`). `stress` is for the server only: `run` writes it, `reset` refuses it.
+`.data/dev-10`). `stress` is for the server only: `run` writes it, `reset` refuses it. `npm run sim` runs in
+California time on every computer (`scripts/dev/sim-zone.ts`): simulated people act at California times of
+day, and "today" is California's date, wherever you are.
 
 **How it reaches the stack.** While the stack runs, its API holds the database, so reset, advance, save and
 restore ask the API: `GET` and `POST /__dev/workspace`, development-only routes beside the one `npm run sql`

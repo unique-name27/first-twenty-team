@@ -18,6 +18,9 @@
 // of the source files generation runs on. The company's date between commands is kept in <data folder>/
 // sim-date.json, for the copy the server holds. It never reads DATABASE_URL or a .env file, and never
 // connects anywhere but this computer's dev stack. The pure parts are in sim-lib.ts.
+//
+// It runs in California time on every computer (sim-zone.ts, imported first, before any date code).
+import './sim-zone'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'

@@ -1,9 +1,11 @@
 // The pure parts of npm run sim: the command line, durations, the week shift to today, the company's date
-// between commands, the cache key and save names; and that npm run sim only ever talks to this computer.
+// between commands, the cache key and save names; that it runs in California time on every computer; and
+// that npm run sim only ever talks to this computer.
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { parseBackup } from '@/features/settings/logic'
+import { today } from '@/lib/dates'
 import { generateCompany } from '@/sim/generate'
 import {
   advanceTarget,
@@ -192,14 +194,42 @@ describe('saves and output', () => {
   })
 })
 
+describe('the time zone', () => {
+  it("is California, so a computer east of UTC builds the same company and reset uses California's today", async () => {
+    const zone = process.env.TZ
+    try {
+      const inUtc = JSON.stringify(generateCompany({ scenario: 'payroll-edge' }).db)
+      // Tokyo: 9:30 AM in California is already the next day there, so a run refuses it.
+      process.env.TZ = 'Asia/Tokyo'
+      expect(() => generateCompany({ scenario: 'payroll-edge' })).toThrow(/in this computer's time zone/)
+      const { SIM_TIME_ZONE } = await import('./sim-zone')
+      expect(process.env.TZ).toBe(SIM_TIME_ZONE)
+      expect(JSON.stringify(generateCompany({ scenario: 'payroll-edge' }).db)).toBe(inUtc)
+      // 8 PM on Oct 28 in California is Oct 29 in UTC and in Tokyo.
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-10-29T03:00:00Z'))
+      expect(today()).toBe('2026-10-28')
+    } finally {
+      vi.useRealTimers()
+      process.env.TZ = zone
+    }
+  })
+
+  it('is set by sim.ts before anything else is imported', () => {
+    const imports = [...readFileSync('scripts/dev/sim.ts', 'utf8').matchAll(/^import\b.*$/gm)].map((m) => m[0])
+    expect(imports[0]).toBe("import './sim-zone'")
+  })
+})
+
 describe('npm run sim stays on this computer', () => {
-  const sources = ['scripts/dev/sim.ts', 'scripts/dev/sim-lib.ts', 'scripts/dev/stack-api.ts'].map((file) => [file, readFileSync(file, 'utf8')] as const)
+  const sources = ['scripts/dev/sim.ts', 'scripts/dev/sim-lib.ts', 'scripts/dev/sim-zone.ts', 'scripts/dev/stack-api.ts'].map((file) => [file, readFileSync(file, 'utf8')] as const)
 
   it('never reads DATABASE_URL, a .env file or the server settings', () => {
     for (const [file, code] of sources) {
-      // The header comment says so in words; the code itself must not touch them.
+      // The header comment says so in words; the code itself must not touch them. Setting its own time zone
+      // (sim-zone.ts) is the one use of the environment.
       const body = code.replace(/^\/\/.*$/gm, '')
-      expect(body, file).not.toMatch(/DATABASE_URL|loadConfig|loadDotEnv|process\.env/)
+      expect(body, file).not.toMatch(/DATABASE_URL|loadConfig|loadDotEnv|process\.env(?!\.TZ = SIM_TIME_ZONE$)/m)
     }
   })
 
