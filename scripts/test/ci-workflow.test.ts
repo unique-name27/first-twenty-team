@@ -106,8 +106,10 @@ describe('CI', () => {
   it('typechecks, builds the app and the server, and checks no development-only code reached them', () => {
     const builds = all.find((j) => j.id === 'builds')!
     expect(builds.runs.slice(0, 4)).toEqual(['npm ci', 'npm run typecheck', 'npm run build', 'npm run server:build'])
-    expect(builds.text).toContain(`grep -n -e '__dev/credentials' -e 'autoconnect' first-twenty.html`)
-    expect(builds.text).toContain(`grep -rn -F '/api/dev/' dist-server`)
+    // A missing build must fail the check, not pass it: grep on a missing file is false in an if.
+    expect(builds.text).toContain('for built in first-twenty.html dist-server; do')
+    expect(builds.text).toContain(`grep -q -e '__dev/credentials' -e 'autoconnect' first-twenty.html`)
+    expect(builds.text).toContain(`grep -rq -F '/api/dev/' dist-server`)
   })
 
   it('runs every test tier in some job', () => {

@@ -45,14 +45,23 @@ jobs:
         run: npm run server:build
 
       # The dev auto sign-in (src/dev, docs/DEV.md) and any development-only API route must never reach a
-      # build.
+      # build. A missing build fails here too, so the check never passes by looking at nothing. A match
+      # prints only the text around it: the one-file build has lines hundreds of kilobytes long.
       - name: No development-only code in the builds
         run: |
-          if grep -n -e '__dev/credentials' -e 'autoconnect' first-twenty.html; then
+          for built in first-twenty.html dist-server; do
+            if [ ! -e "$built" ]; then
+              echo "::error::$built is missing, so this check cannot look at it."
+              exit 1
+            fi
+          done
+          if grep -q -e '__dev/credentials' -e 'autoconnect' first-twenty.html; then
+            grep -o -E '.{0,60}(__dev/credentials|autoconnect).{0,60}' first-twenty.html | head -n 5 || true
             echo "::error::Development-only code (the dev auto sign-in) reached first-twenty.html."
             exit 1
           fi
-          if grep -rn -F '/api/dev/' dist-server; then
+          if grep -rq -F '/api/dev/' dist-server; then
+            grep -rl -F '/api/dev/' dist-server || true
             echo "::error::A development-only route (/api/dev/) reached dist-server."
             exit 1
           fi
@@ -117,6 +126,7 @@ jobs:
 
   # The required check. A job that only "needs" the others would be skipped when one of them fails, and
   # branch protection counts a skipped check as passed. So it always runs and checks every result itself.
+  # In a run that was cancelled (a newer push), it runs too and fails, as a cancelled job is not a pass.
   verify:
     name: verify
     needs: [builds, unit, server, deploy]
