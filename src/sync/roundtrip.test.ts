@@ -7,21 +7,17 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { DB } from '@/domain/types'
 import { setClockOverride } from '@/lib/dates'
 import { logActivity } from '@/store/draft'
-import { createApi, type FetchLike, type SyncApi } from './api'
+import { createApi, type SyncApi } from './api'
 import { diffDB } from './diff'
 import { createSyncEngine, type EngineOptions } from './engine'
 import { applyLoadChanges } from './index'
+import { type InjectApp, injectFetch, type Wire } from './testing/inject'
 import { createStatusStore, createTestStore, makeDB, makePerson, memoryStorage, testEnv } from './testing/kit'
 
 const helpersPath = fileURLToPath(new URL('../../server/src/test/helpers.ts', import.meta.url))
 const appPath = fileURLToPath(new URL('../../server/src/app.ts', import.meta.url))
 const available = existsSync(appPath) && existsSync(helpersPath)
 
-type InjectResponse = { statusCode: number; body: string; headers: Record<string, unknown>; cookies: Array<{ name: string; value: string }> }
-type InjectApp = {
-  inject(opts: { method: string; url: string; headers: Record<string, string>; payload?: string }): Promise<InjectResponse>
-  close(): Promise<void>
-}
 type TestDb = { close(): Promise<void>; query(sql: string, params?: unknown[]): Promise<unknown> }
 type ServerHelpers = {
   makeTestDb(): Promise<TestDb>
@@ -29,32 +25,6 @@ type ServerHelpers = {
   makeApp(db: TestDb): Promise<InjectApp>
   createAdmin(db: TestDb): Promise<string>
   ADMIN: { email: string; password: string }
-}
-
-/**
- * What a test can do to one browser's network: lose the answers to POST /api/changes after the server
- * committed, or cut it off (down: every request fails as if offline).
- */
-type Wire = { losePushAnswers: number; down?: boolean }
-
-/** fetch() over app.inject(), with one cookie jar per browser. */
-function injectFetch(app: () => InjectApp, wire: Wire = { losePushAnswers: 0 }): FetchLike {
-  let cookie: string | null = null
-  return async (url, init = {}) => {
-    if (wire.down) throw new TypeError('Failed to fetch')
-    const headers: Record<string, string> = { ...(init.headers as Record<string, string>) }
-    if (cookie) headers.cookie = cookie
-    const res = await app().inject({ method: init.method ?? 'GET', url, headers, payload: init.body as string | undefined })
-    if (init.method === 'POST' && url === '/api/changes' && wire.losePushAnswers > 0) {
-      // The transaction committed; the answer never arrives (timeout, dropped connection).
-      wire.losePushAnswers -= 1
-      throw new TypeError('Failed to fetch')
-    }
-    const session = res.cookies.find((c) => c.name === 'ft_session')
-    if (session) cookie = session.value ? `ft_session=${session.value}` : null
-    const noBody = res.statusCode === 204 || res.statusCode === 304
-    return new Response(noBody ? null : res.body, { status: res.statusCode, headers: { 'Content-Type': String(res.headers['content-type'] ?? '') } })
-  }
 }
 
 describe.skipIf(!available)('round trip against the real server', () => {
