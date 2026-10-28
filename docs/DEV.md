@@ -309,6 +309,66 @@ change_log, the last 25 writes (user: who pushed it; none for the careers form):
 - **change_log**: the newest writes the server took, newest first, with the login that sent each. A change
   that is not there never reached the server: the error then says which browser refused it or is not synced.
 
+## Generated companies
+
+`src/sim` builds whole companies the way people build them in the app, for tests and tools. The app never
+imports it (`src/sim/guard.test.ts` checks that). `generateCompany({ scenario, seed, asOf })` starts from a
+blank workspace on the founding date and changes it only through actions (`src/sim/actions.ts`): each one is
+the domain function a screen calls, with what that screen passes, applied the way the store's `mutate` applies
+a change. The whole company is built in one run (`src/lib/runContext.ts`), so ids and timestamps come out the
+same every time.
+
+- The founder sets up the org (departments, offices, levels and bands, as Settings and Comp and plan do) and
+  their own pay.
+- Every later employee arrives through the hiring pipeline: a headcount plan line, a job from it, candidates
+  added with Quick add, interviews at the times the schedule sheet proposes, scorecards, an offer (Admin
+  approves it when a manager drafted it), the acceptance and Hire. So each one has a candidate, an
+  application, an offer, a starting pay row, a grant when the offer has options, an onboarding checklist,
+  documents and activity.
+- Every morning the app's load-time changes run, each pay run is marked submitted on its run-payroll-by day,
+  and checklist tasks are marked done on their due dates.
+- Nothing after the as-of date happens: a job whose person would start later is open on that date, with its
+  candidates part way through.
+
+It returns `{ db, trace, summary }`: the workspace; the trace, one JSON line per action (`traceToJsonLines`)
+with its day, time, actor, Viewing-as, action, args and the ids of the records it created; and a short summary.
+
+| Scenario | What it is |
+| --- | --- |
+| `ledgerlark` | The sample exactly as `buildSampleDB` builds it, for parity with the app |
+| `blank` | Start fresh: a solo founder on the as-of date |
+| `seed-8` | 8 people, one job open |
+| `cross-15` | 15 employees reached a week before the as-of date; managers draft offers and Admin approves them |
+| `full-20` | 20 people, every one hired through the pipeline, no job open |
+| `payroll-edge` | Part-time and full-time hourly staff, a hire mid pay period, a leave, a termination inside a pay period |
+| `pipeline-heavy` | About 300 candidates, three jobs open |
+| `stress` | Thousands of candidates, past the demo limits: for the server only, never loaded into a browser |
+
+Each scenario has its own seed and the as-of date 2026-10-09. Another seed gives another company of the same
+shape. The built-in rules cover 2025 to 2026 (the 2026 law tables and the holiday list), so a company founded
+before them or an as-of date after them is refused unless you pass `allowStaleLaw`.
+
+```ts
+import { traceToJsonLines } from '@/sim/actions'
+import { generateCompany } from '@/sim/generate'
+
+const { db, trace, summary } = generateCompany({ scenario: 'seed-8' })   // its own seed and as-of date
+const another = generateCompany({ scenario: 'seed-8', seed: 42 })         // another company of the same shape
+```
+
+`src/sim/generate.test.ts` (unit tier) generates every scenario but `stress` twice and compares the JSON byte for
+byte, runs the integrity checks on each (`src/domain/integrity.ts`: no failures, and a generated company not
+even a note), checks the size against a browser and the demo limits, and compares each summary with
+`src/sim/summaries/<scenario>.txt`. When a change to the app changes a generated company on purpose, write the
+new summaries, read their diff and commit them with the change:
+
+```bash
+SIM_WRITE_SUMMARIES=1 npx vitest run src/sim/generate.test.ts
+```
+
+Generated ids are stable but mean nothing: find records by what they are (the person hired from an
+application, the open job), never by id.
+
 ## Claude Code in a codespace
 
 Claude Code is installed in every codespace. Open a new terminal (the stack keeps the first one busy) and

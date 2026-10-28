@@ -43,6 +43,8 @@ src/
               the server's live pages), application.ts (the live apply form), careers.css
   dev/        development only, never in a build: the npm run stack auto sign-in (autoconnect.ts), imported
               by main.tsx behind import.meta.env.DEV (guard.test.ts checks it). Guide: docs/DEV.md
+  sim/        tests and tools only, never the app (guard.test.ts checks it): generated companies, built
+              through the same steps the screens take (generate.ts, actions.ts, scenarios.ts). Guide: docs/DEV.md
 scripts/dev/  npm run stack: the dev stack runner, its database setup and the Vite dev sign-in endpoint;
               npm run sql: read-only SQL on the stack's database
 server/       optional API server (Fastify + Postgres, PGlite in development and tests), SQL migrations,
