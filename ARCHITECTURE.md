@@ -37,7 +37,7 @@ src/
   sync/       optional server sync engine (no UI): collections.ts (shared with the server), diff, outbox,
               API client, status store, the assistant's client (assistant.ts, sse.ts). Public API in index.ts.
               sync/testing holds helpers for tests only (testing/guard.test.ts keeps the app from importing
-              them). Contract: docs/SYNC.md
+              them, server/src/dev/structure.test.ts the server). Contract: docs/SYNC.md
   careers/    careers pages (no React): render.ts (the HTML for the static demo site, scripts/careers, and
               the server's live pages), application.ts (the live apply form), careers.css
   dev/        development only, never in a build: the npm run stack auto sign-in (autoconnect.ts), imported
