@@ -65,9 +65,10 @@ submit to the project is under Apache-2.0 too, unless you explicitly say otherwi
    if you want feedback before it is finished.
 6. **CI and review.** GitHub Actions runs four jobs side by side (typecheck and both builds, the unit tests,
    the server tests and journeys, the deploy kit's tests), and its `verify` check passes only when all four
-   did. One teammate reviews and approves. A change to a protected path (database migrations, the deploy kit, dependencies, CLAUDE.md,
-   `.claude/`, `.github/`, SECURITY.md, `.devcontainer/`, `scripts/dev/`) also waits for the product
-   owner, who reviews those in the Wednesday session. Answer every comment, by a change or a reply.
+   did. One teammate reviews and approves. A change to a protected path (database migrations, the deploy
+   kit, dependencies, CLAUDE.md, `.claude/`, `.github/`, SECURITY.md, `.devcontainer/`, `scripts/dev/`)
+   also waits for the product owner, who reviews those in the Wednesday session. Answer every comment, by a
+   change or a reply.
 7. **Merge.** Use "Squash and merge" once CI is green and the approvals are in. Merged work appears on
    staging at https://staging-77-112-161-54.sslip.io within minutes, once CI passes on `main`: check it
    there. The product owner releases to the live server by publishing a GitHub release, once a week at the
@@ -91,6 +92,10 @@ The tests come in four tiers, one npm script each. `npm test` runs all four.
 `npm run verify` runs typecheck, the unit, server and journey tests and the app build. It leaves out the deploy
 kit's tests: CI runs them in a job of their own, and `npm run test:deploy` runs them on your computer. Run that
 too when you change anything in `server/deploy/`.
+
+`test:changed` and `test:watch` pick the tests that import what you changed, so they miss a file the tests
+only read from disk. After changing a SQL migration in `server/sql/`, run `npm run test:server` and
+`npm run test:e2e`; after changing `.github/workflows/ci.yml`, run `npm run test:unit`.
 
 A new test file goes next to the code it tests, and its folder decides its tier. A file that fits no tier fails
 `scripts/test/tiers.test.ts`, so no test can quietly stop running. Every test run is in UTC, as on CI.

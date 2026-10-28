@@ -85,3 +85,5 @@ keeps running until stopped: start it in the background and stop it when you are
 - Every test file belongs to exactly one tier (`scripts/test/tiers.ts`); a file outside the tier folders
   fails `scripts/test/tiers.test.ts`. A test under `src/` that starts the real server belongs in the e2e tier.
 - Every test run is in UTC (`vite.config.ts`), as on CI.
+- `npm run check` picks tests by their imports, so it misses files read from disk: after a change to
+  `server/sql/`, run `npm run test:server` and `npm run test:e2e` too.
