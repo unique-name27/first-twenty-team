@@ -51,9 +51,16 @@ codespace uses (`.devcontainer/devcontainer.json`).
 | `npm run stack -- --no-seed` | A new database without the sample company (an empty server, as a new founder sees it) |
 | `npm run dev` | The app alone, keeping its data in the browser only (no server) |
 | `npm run server:dev` | The API alone, on its own database in `.data/pg` (docs/SERVER.md, "Develop locally") |
-| `npm test -- src/sync` | The unit tests in one folder |
+| `npm test` | Every test, all four tiers; `npm test -- src/sync` runs the tests in one folder |
+| `npm run test:unit` | The unit tests: no database, no server (`src/`, `scripts/`) |
+| `npm run test:server` | The server tests: the API on in-memory PGlite (`server/src/`) |
+| `npm run test:e2e` | The journeys through the real API (`server/src/e2e/`, the `src/sync` round trips) |
+| `npm run test:deploy` | The deploy kit's tests (`server/deploy/`): seconds on Linux, about 13 minutes on Windows |
+| `npm run test:changed` | Only the tests your changes since `origin/main` touch |
+| `npm run test:watch` | Reruns the tests each save touches (every tier but the deploy kit); Ctrl+C stops it |
+| `npm run check` | Typecheck and `test:changed`: a quick check while you work |
 | `npm run typecheck` | TypeScript for the app and the server |
-| `npm run verify` | Typecheck, all tests, the one-file build. Must pass before a pull request |
+| `npm run verify` | Typecheck, the unit, server and journey tests, the one-file build. Must pass before a pull request |
 
 ## What runs where
 

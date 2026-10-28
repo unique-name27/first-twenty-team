@@ -59,11 +59,13 @@ submit to the project is under Apache-2.0 too, unless you explicitly say otherwi
 3. **Plan with Claude Code first.** Describe the issue and ask for a plan before any code (plan mode:
    Shift+Tab). Push back on the plan until you agree with it.
 4. **Build and check locally.** Let Claude write the code and its tests, read every change it makes, then run
-   `npm run verify`. For UI, try it in the browser at 375px wide and by keyboard only.
+   `npm run verify` (while you work, `npm run check` is quicker: see "Tests" below). For UI, try it in the
+   browser at 375px wide and by keyboard only.
 5. **Open a pull request** and fill in the template. Link the issue (`Closes #12`). Open it as a draft early
    if you want feedback before it is finished.
-6. **CI and review.** GitHub Actions runs typecheck, tests and both builds, and one teammate reviews and
-   approves. A change to a protected path (database migrations, the deploy kit, dependencies, CLAUDE.md,
+6. **CI and review.** GitHub Actions runs four jobs side by side (typecheck and both builds, the unit tests,
+   the server tests and journeys, the deploy kit's tests), and its `verify` check passes only when all four
+   did. One teammate reviews and approves. A change to a protected path (database migrations, the deploy kit, dependencies, CLAUDE.md,
    `.claude/`, `.github/`, SECURITY.md, `.devcontainer/`, `scripts/dev/`) also waits for the product
    owner, who reviews those in the Wednesday session. Answer every comment, by a change or a reply.
 7. **Merge.** Use "Squash and merge" once CI is green and the approvals are in. Merged work appears on
@@ -71,6 +73,27 @@ submit to the project is under Apache-2.0 too, unless you explicitly say otherwi
    there. The product owner releases to the live server by publishing a GitHub release, once a week at the
    end of the Wednesday session, and the server deploys it on its own (`docs/SERVER.md`, "Automatic deploys
    from GitHub").
+
+## Tests
+
+The tests come in four tiers, one npm script each. `npm test` runs all four.
+
+| Command | What it runs |
+| --- | --- |
+| `npm run test:unit` | The unit tests: no database, no server (`src/`, `scripts/`). Most tests are here |
+| `npm run test:server` | The server tests: the API on in-memory PGlite (`server/src/`) |
+| `npm run test:e2e` | The journeys through the real API (`server/src/e2e/`, the `src/sync` round trips) |
+| `npm run test:deploy` | The deploy kit's tests (`server/deploy/`): seconds on Linux, about 13 minutes on Windows |
+| `npm run test:changed` | Only the tests your changes since `origin/main` touch (a change to `package.json` or `vite.config.ts` runs them all) |
+| `npm run test:watch` | Reruns the tests each save touches, every tier but the deploy kit |
+| `npm run check` | Typecheck and `test:changed` |
+
+`npm run verify` runs typecheck, the unit, server and journey tests and the app build. It leaves out the deploy
+kit's tests: CI runs them in a job of their own, and `npm run test:deploy` runs them on your computer. Run that
+too when you change anything in `server/deploy/`.
+
+A new test file goes next to the code it tests, and its folder decides its tier. A file that fits no tier fails
+`scripts/test/tiers.test.ts`, so no test can quietly stop running. Every test run is in UTC, as on CI.
 
 ## Rotations
 
