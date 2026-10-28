@@ -1,0 +1,17 @@
+Scenario seed-8: A seed-stage company of 8, with one job open.
+Seed 8008, as of 2026-10-09. 955 actions.
+Company: Quillpine, founded 2025-03-10; Gabriel Acheampong, Founder and CEO.
+Headcount on 2026-10-09: 8 employed, 0 starting later, 0 former.
+Departments: Engineering 4, Executive 1, Finance and operations 1, Go to market 1, Product and design 1.
+Non-exempt: 0. Part time: 0. Managers: 2.
+Starts by month: 2025-07 1, 2025-12 1, 2026-02 1, 2026-04 1, 2026-06 1, 2026-07 1, 2026-09 1.
+Separations: none.
+Open leave cases: none.
+Jobs: filled 7, open 1.
+Open role: Customer success manager (9 active: New 4, Intro call 2, Technical 3).
+Candidates: 133. Applications: rejected 108, active 9, withdrawn 9, hired 7.
+Interviews: completed 139, cancelled 10, scheduled 4. Scorecards: 139 submitted, 4 owed.
+Offers: accepted 7. Grants: promised 7.
+Pay runs submitted: 38, periods 2025-03-01 to 2026-09-30; first payroll 2025-03-14.
+Checklists: 8 (onboarding 7, change 1); open tasks 10, due by 2026-10-09: 0.
+Records: 1,962, activity rows 1,184.

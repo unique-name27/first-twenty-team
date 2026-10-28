@@ -1,0 +1,16 @@
+Scenario full-20: A full company of 20, every hire through the hiring pipeline, no job open.
+Seed 2020, as of 2026-10-09. 2,089 actions.
+Company: Tidebeam, founded 2025-01-09; Yasmin Hansen, Founder and CEO.
+Headcount on 2026-10-09: 20 employed, 0 starting later, 0 former.
+Departments: Engineering 8, Go to market 4, Product and design 3, Customer success 2, Finance and operations 2, Executive 1.
+Non-exempt: 0. Part time: 0. Managers: 6.
+Starts by month: 2025-04 1, 2025-07 1, 2025-09 1, 2025-10 1, 2025-11 1, 2025-12 1, 2026-01 1, 2026-02 1, 2026-03 2, 2026-04 1, 2026-05 2, 2026-06 1, 2026-07 2, 2026-08 2, 2026-09 1.
+Separations: none.
+Open leave cases: none.
+Jobs: filled 19.
+Candidates: 253. Applications: rejected 218, hired 19, withdrawn 16.
+Interviews: completed 286, cancelled 18. Scorecards: 286 submitted, 0 owed.
+Offers: accepted 19. Grants: promised 19.
+Pay runs submitted: 42, periods 2025-01-01 to 2026-09-30; first payroll 2025-01-15.
+Checklists: 20 (onboarding 19, change 1); open tasks 18, due by 2026-10-09: 0.
+Records: 3,970, activity rows 2,488.

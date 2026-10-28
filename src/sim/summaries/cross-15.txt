@@ -1,0 +1,17 @@
+Scenario cross-15: Fifteen employees reached about a week before the as-of date: the rules that start at 15 just began.
+Seed 1515, as of 2026-10-09. 1,464 actions.
+Company: Harborwren, founded 2025-01-09; Diego Rojas, Founder and CEO.
+Headcount on 2026-10-09: 15 employed, 0 starting later, 0 former.
+Departments: Engineering 6, Go to market 4, Finance and operations 2, Product and design 2, Executive 1.
+Non-exempt: 0. Part time: 0. Managers: 5.
+Starts by month: 2025-05 1, 2025-08 1, 2025-10 1, 2025-12 1, 2026-01 1, 2026-02 1, 2026-03 1, 2026-04 1, 2026-05 1, 2026-06 1, 2026-07 1, 2026-08 1, 2026-09 1, 2026-10 1.
+Separations: none.
+Open leave cases: none.
+Jobs: filled 14, open 1.
+Open role: Account executive (6 active: Intro call 4, Mock discovery call 2).
+Candidates: 190. Applications: rejected 158, hired 14, withdrawn 12, active 6.
+Interviews: completed 175, cancelled 18, scheduled 6. Scorecards: 175 submitted, 6 owed.
+Offers: accepted 14. Grants: promised 14.
+Pay runs submitted: 42, periods 2025-01-01 to 2026-09-30; first payroll 2025-01-15.
+Checklists: 15 (onboarding 14, change 1); open tasks 17, due by 2026-10-09: 0.
+Records: 2,875, activity rows 1,796.
