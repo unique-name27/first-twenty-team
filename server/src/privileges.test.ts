@@ -154,6 +154,30 @@ describe('the read model (007) under least privilege', () => {
     })
   })
 
+  it('gets its privileges back from after-restore, after a restore made the views anew', async () => {
+    // pg_restore --no-acl as the owner (docs/SERVER.md): the default privileges give the server's role write
+    // rights on each new view, and the read-only login's grant from the dump is skipped.
+    const list = views.join(', ')
+    await pg.exec(`RESET ROLE; SET ROLE ft_owner; GRANT INSERT, UPDATE, DELETE ON ${list} TO ft_app; REVOKE SELECT ON ${list} FROM first_twenty_viewer`)
+    const rights = async () =>
+      (
+        await db.query<{ view: string; writes: boolean; viewer: boolean }>(
+          `SELECT v AS view, has_table_privilege('ft_app', v, 'INSERT') OR has_table_privilege('ft_app', v, 'DELETE') AS writes,
+                  has_table_privilege('first_twenty_viewer', v, 'SELECT') AS viewer
+             FROM unnest($1::text[]) AS v`,
+          [views],
+        )
+      ).rows
+    expect((await rights()).every((r) => r.writes && !r.viewer)).toBe(true)
+    try {
+      await afterRestore(db)
+    } finally {
+      await pg.exec('RESET ROLE; SET ROLE ft_app')
+    }
+    expect((await rights()).filter((r) => r.writes || !r.viewer)).toEqual([])
+    await expect(db.query('SELECT count(*) FROM v_people')).resolves.toBeDefined()
+  })
+
   it('refuses a login that may read a view but not the tables under it', async () => {
     await pg.exec('RESET ROLE; GRANT SELECT ON v_people TO ft_views_only; SET ROLE ft_app')
     await as('ft_views_only', async () => {

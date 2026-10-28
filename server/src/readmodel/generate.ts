@@ -5,6 +5,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { type Column, lit, table } from './columns'
+import { VIEW_PRIVILEGES_SQL } from './privileges'
 import { READ_MODEL, RETIRED_VIEWS } from './spec'
 import type { View } from './views'
 
@@ -198,29 +199,12 @@ export function readModelSql(): string {
 ${viewBody(view)};
 COMMENT ON VIEW ${view.name} IS ${lit(view.comment)};`,
   )
-  const list = names.join(', ')
   const grant = `-- The views only read. Every new relation gets the server role's write rights from its default
 -- privileges (server/deploy/postgres-setup.sql), and a simple view would pass writes on to its table, so
 -- those rights are taken back here: every role keeps SELECT only. The optional read-only login
--- (server/deploy/viewer-role.sql) gets SELECT when it exists here.
-DO $$
-DECLARE
-  role_name text;
-BEGIN
-  FOR role_name IN
-    SELECT DISTINCT a.grantee::regrole::text
-      FROM pg_class c
-     CROSS JOIN LATERAL aclexplode(c.relacl) AS a
-     WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'v' AND c.relname IN (${names.map(lit).join(', ')})
-       AND a.privilege_type <> 'SELECT' AND a.grantee <> c.relowner AND a.grantee <> 0
-  LOOP
-    EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON ${list} FROM %s', role_name);
-  END LOOP;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'first_twenty_viewer') THEN
-    GRANT SELECT ON ${list} TO first_twenty_viewer;
-  END IF;
-END
-$$;`
+-- (server/deploy/viewer-role.sql) gets SELECT when it exists here. npm run server:after-restore runs this
+-- again after a restore (server/src/readmodel/privileges.ts).
+${VIEW_PRIVILEGES_SQL}`
   return [
     HEADER,
     VERSION_GUARD,

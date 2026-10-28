@@ -1420,22 +1420,29 @@ COMMENT ON VIEW v_integrity_problems IS 'What should never be true of the data, 
 -- The views only read. Every new relation gets the server role's write rights from its default
 -- privileges (server/deploy/postgres-setup.sql), and a simple view would pass writes on to its table, so
 -- those rights are taken back here: every role keeps SELECT only. The optional read-only login
--- (server/deploy/viewer-role.sql) gets SELECT when it exists here.
+-- (server/deploy/viewer-role.sql) gets SELECT when it exists here. npm run server:after-restore runs this
+-- again after a restore (server/src/readmodel/privileges.ts).
 DO $$
 DECLARE
-  role_name text;
+  v record;
+  grantee text;
 BEGIN
-  FOR role_name IN
-    SELECT DISTINCT a.grantee::regrole::text
+  FOR v IN
+    SELECT format('public.%I', c.relname) AS name, c.relacl, c.relowner
       FROM pg_class c
-     CROSS JOIN LATERAL aclexplode(c.relacl) AS a
-     WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'v' AND c.relname IN ('v_people', 'v_comp', 'v_jobs', 'v_candidates', 'v_applications', 'v_offers', 'v_checklists', 'v_grants', 'v_time_off_requests', 'v_documents', 'v_activity', 'v_checklist_tasks', 'v_application_stages', 'v_pay_runs', 'v_current_job', 'v_hire_journey', 'v_pipeline_funnel', 'v_headcount_by_month', 'v_integrity_problems')
-       AND a.privilege_type <> 'SELECT' AND a.grantee <> c.relowner AND a.grantee <> 0
+     WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'v'
+       AND EXISTS (SELECT 1 FROM unnest(c.reloptions) AS o WHERE lower(o) IN ('security_invoker=true', 'security_invoker=on', 'security_invoker=1', 'security_invoker=yes'))
   LOOP
-    EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON v_people, v_comp, v_jobs, v_candidates, v_applications, v_offers, v_checklists, v_grants, v_time_off_requests, v_documents, v_activity, v_checklist_tasks, v_application_stages, v_pay_runs, v_current_job, v_hire_journey, v_pipeline_funnel, v_headcount_by_month, v_integrity_problems FROM %s', role_name);
+    FOR grantee IN
+      SELECT DISTINCT CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END
+        FROM aclexplode(v.relacl) AS a
+       WHERE a.privilege_type <> 'SELECT' AND a.grantee <> v.relowner
+    LOOP
+      EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON %s FROM %s', v.name, grantee);
+    END LOOP;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'first_twenty_viewer') THEN
+      EXECUTE format('GRANT SELECT ON %s TO first_twenty_viewer', v.name);
+    END IF;
   END LOOP;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'first_twenty_viewer') THEN
-    GRANT SELECT ON v_people, v_comp, v_jobs, v_candidates, v_applications, v_offers, v_checklists, v_grants, v_time_off_requests, v_documents, v_activity, v_checklist_tasks, v_application_stages, v_pay_runs, v_current_job, v_hire_journey, v_pipeline_funnel, v_headcount_by_month, v_integrity_problems TO first_twenty_viewer;
-  END IF;
 END
 $$;

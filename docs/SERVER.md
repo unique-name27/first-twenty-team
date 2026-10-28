@@ -932,8 +932,11 @@ Do not skip `server:after-restore`. The restored database reuses change numbers 
 after the backup was taken; without this step a browser that synced in between would skip the restored
 server's new changes and could later overwrite them. The step makes every browser reload the server's
 copy, and it signs everyone out and forgets every trusted device (the backup may hold sign-ins and
-devices that had already ended). The admin password
+devices that had already ended). It also sets the read model's view rights again (the restore made the
+views anew, and the server's role reads them only). The admin password
 is the one in use when the backup was taken; run `server:create-admin` again if you had changed it since.
+If you use the read-only login (`first_twenty_viewer`, for DBeaver), run `server/deploy/viewer-role.sql`
+again too: `--no-acl` leaves out its grants on the tables.
 
 Both step 6 commands run as `first_twenty_owner` through `with-env.sh`, like every maintenance command
 that rewrites the whole database.
@@ -1051,7 +1054,7 @@ queries in `server/deploy/browse.sql` already read only `default`.
    The second command asks for the new password twice without showing it. Optionally pin the login to its
    database: add `first_twenty_viewer` to the user column of the `first_twenty` and `reject` lines from
    step 1 in `pg_hba.conf`, then `sudo systemctl reload postgresql`. Run `viewer-role.sql` again after a
-   migration adds a table. A migration that adds or recreates the read model's views needs nothing:
+   migration adds a table, and after restoring a backup. A migration that adds or recreates the read model's views needs nothing:
    it grants them to `first_twenty_viewer` itself when the login exists (and `viewer-role.sql` grants
    every view when you make the login later).
 

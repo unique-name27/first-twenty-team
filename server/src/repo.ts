@@ -33,6 +33,7 @@
 import { DOC_COLLECTION, DOC_KEYS, RECORD_COLLECTIONS, tableName } from '../../src/sync/collections'
 import type { Db, Queryable } from './db'
 import { HttpError } from './errors'
+import { VIEW_PRIVILEGES_SQL } from './readmodel/privileges'
 import { WORKSPACE_ID } from './sqlgen'
 import { jsonBytes, LIMITS, type ValidChange, type ValidWorkspace } from './validate'
 import { slugFromFirstUpload } from './workspaces'
@@ -645,7 +646,9 @@ export type AfterRestoreResult = { seq: number; historyId: string; sessionsEnded
  *   every new version is larger than any version a browser could still hold;
  * - starts a new history id, so browsers that send theirs are told to resync before anything applies;
  * - ends every session and forgets every trusted device: the backup may hold sessions that were signed
- *   out, and devices that were forgotten (server:create-admin), after it was taken.
+ *   out, and devices that were forgotten (server:create-admin), after it was taken;
+ * - sets the read model's privileges again (readmodel/privileges.ts): the restore made its views anew and
+ *   the default privileges gave the server's role write rights on them.
  * A backup holds every workspace on the server, so all of them get the new numbering (one number for all:
  * it says nothing about any one company) and a history id of their own; the result names `workspaceId`'s
  * (the server's own workspace by default).
@@ -667,6 +670,7 @@ export async function afterRestore(db: Db, workspaceId = WORKSPACE_ID): Promise<
     const updated = await q.query<{ history_id: string }>('SELECT history_id::text AS history_id FROM workspaces WHERE id = $1', [workspaceId])
     const sessions = await q.query('DELETE FROM sessions')
     await q.query('DELETE FROM trusted_devices')
+    await q.exec(VIEW_PRIVILEGES_SQL)
     return { seq, historyId: updated.rows[0].history_id, sessionsEnded: sessions.rowCount }
   })
 }
