@@ -5,24 +5,29 @@ import { viewerPerson } from '@/domain/people'
 import type { Activity, CollectionKey, DB, EntityType, ID } from '@/domain/types'
 import { nowISO } from '@/lib/dates'
 import { newId } from '@/lib/id'
+import { activeRun } from '@/lib/runContext'
 import { usePrefs } from './prefs'
 
 /**
  * The person the app is acting as (Viewing as). Used as the actor on activity rows. Pass the db (or
- * draft) so a mode with no saved person resolves to the same default person useViewer shows.
+ * draft) so a mode with no saved person resolves to the same default person useViewer shows. Inside a run
+ * (src/lib/runContext.ts), the run's actor.
  */
 export function currentActorId(db?: DB | Draft<DB>): ID | null {
+  const run = activeRun()
+  if (run) return run.actorId
   const { viewAs } = usePrefs.getState()
   if (viewAs.personId || !db) return viewAs.personId
   return viewerPerson(db as DB, viewAs.role, null)?.id ?? null
 }
 
+/** Adds an activity row: who (currentActorId), when (nowISO) and in which Viewing-as mode (a run's, inside one). */
 export function logActivity(
   draft: Draft<DB>,
   a: { entityType: EntityType; entityId: ID; kind: string; text: string; relatedId?: ID },
 ): void {
-  const { viewAs } = usePrefs.getState()
-  const row: Activity = { id: newId('act'), at: nowISO(), actorId: currentActorId(draft), viewingAs: viewAs.role, ...a }
+  const viewingAs = activeRun()?.viewingAs ?? usePrefs.getState().viewAs.role
+  const row: Activity = { id: newId('act'), at: nowISO(), actorId: currentActorId(draft), viewingAs, ...a }
   draft.activity.push(row)
 }
 

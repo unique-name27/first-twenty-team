@@ -11,6 +11,7 @@ import {
   isWeekend,
   parseISO,
 } from 'date-fns'
+import { type ActiveRun, activeRun } from './runContext'
 
 export type ISODate = string // 'YYYY-MM-DD'
 export type ISODateTime = string // full ISO timestamp
@@ -62,13 +63,36 @@ export function today(): ISODate {
   return clockOverride ?? toISODate(new Date())
 }
 
-/** Now as a timestamp; when the clock is overridden, keeps the real time of day on the pretend date. */
+/**
+ * Now as a timestamp; when the clock is overridden, keeps the real time of day on the pretend date. Inside
+ * a run (src/lib/runContext.ts): the pretend date at the run's time of day, Pacific.
+ */
 export function nowISO(): ISODateTime {
+  const run = activeRun()
+  if (run) return runNowISO(run.time)
   const real = new Date()
   if (!clockOverride) return real.toISOString()
   const d = parseDate(clockOverride)
   d.setHours(real.getHours(), real.getMinutes(), real.getSeconds(), 0)
   return d.toISOString()
+}
+
+/**
+ * A run's now: the pretend date at its Pacific time of day, the same on every computer. Throws without a
+ * pretend date (a run's dates must not follow the real clock), and when this computer's time zone puts the
+ * moment on another date, since today() and localDateOf would then disagree about the day.
+ */
+function runNowISO(time: ActiveRun['time']): ISODateTime {
+  const date = clockOverride
+  if (!date) throw new Error('A run needs a pretend date: call setClockOverride before nowISO inside withRunContext.')
+  const [y, m, d] = date.split('-').map(Number)
+  const at = new Date(Date.UTC(y, m - 1, d, time.hours, time.minutes, time.seconds) - pacificOffsetHours(date) * 3_600_000).toISOString()
+  const local = localDateOf(at)
+  if (local !== date) {
+    const hhmm = `${String(time.hours).padStart(2, '0')}:${String(time.minutes).padStart(2, '0')}`
+    throw new Error(`The run's time of day, ${hhmm} on ${date} in California (${at}), is on ${local} in this computer's time zone. Choose a time of day on the same date in both.`)
+  }
+  return at
 }
 
 export function addDays(d: ISODate, n: number): ISODate {
