@@ -441,9 +441,8 @@ restore ask the API: `GET` and `POST /__dev/workspace`, development-only routes 
 uses, with the same per-run secret and the same checks, for the stack's own company only. advance reads the
 company, lives the days in the `npm run sim` process and sends the result back with the history and change
 number it read; if the app synced an edit in that second or two, the stack refuses and nothing is replaced,
-so run advance again. A replace goes through the
-same server function as the app's Import, so the app takes it the way it takes a company another computer
-sent: on its next sync (within 30 seconds, or when its tab gets focus) it shows the new company with a notice
+so run advance again. A replace goes through the same server function as the app's Import, so the app takes
+it the way it takes a company another computer sent: on its next sync (within 30 seconds, or when its tab gets focus) it shows the new company with a notice
 that the server's workspace was replaced. After an advance or a restore of the same company, the notice says
 it was replaced with another copy of it. With no stack running, `npm run sim` takes the stack's lock
 (`.data/dev/stack.pid`: `npm run stack` refuses to start meanwhile and says why) and works on a copy of the
