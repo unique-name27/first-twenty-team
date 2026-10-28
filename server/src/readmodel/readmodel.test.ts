@@ -24,7 +24,7 @@ import { migrationsDir } from '../migrate'
 import { replaceWorkspace } from '../repo'
 import { makeTestDb } from '../test/helpers'
 import { parseWorkspace } from '../validate'
-import { isCurrent, newestReadModelFile, READ_MODEL_COMMAND, readModelViews } from './generate'
+import { isCurrent, newestReadModelFile, READ_MODEL_COMMAND, readModelSql, readModelViews } from './generate'
 import { READ_MODEL } from './spec'
 
 const ANCHOR = '2026-10-09'
@@ -49,7 +49,42 @@ const malformedDb = produce(sample, (d) => {
   checklist.tasks = 42
   d.company.payRuns = [{ periodStart: 'junk', periodEnd: '', payday: '2026-13-01' } as never]
   ;(d as unknown as Record<string, unknown>).complianceStatus = { 'workers-comp': 'not an object' }
+  // An offset past 15:59, which Postgres refuses to read as a time.
+  d.activity[0].at = '2026-10-09T10:00:00+18:00'
 })
+/**
+ * Pay run records of every kind: Sep 1 to 15 neither submitted nor with totals (not a pay run), Oct 16 to 31
+ * with totals only (payroll ran; it was not marked submitted in the app). An offer with changes requested.
+ */
+const variantsDb = produce(sample, (d) => {
+  const runs = d.company.payRuns!
+  const sep = runs.find((r) => r.periodStart === '2026-09-01')!
+  delete sep.submittedOn
+  delete sep.submittedById
+  delete sep.totals
+  runs.push({ periodStart: '2026-10-16', periodEnd: '2026-10-31', payday: '2026-10-30', totals: { gross: 98000, employerTaxes: 7500, enteredOn: '2026-10-30' } })
+  d.offers.find((o) => o.id === 'o-hire-aisha')!.approvals = [
+    { approverId: 'p-founder', decision: 'changes_requested', at: '2026-08-20T17:00:00.000Z' },
+    { approverId: 'p-founder', decision: 'approved', at: '2026-08-21T17:00:00.000Z' },
+  ]
+})
+
+/** The sample with `copies` more of every hire: application, person, offers, pay rows and checklists. */
+function withHireCopies(base: DB, copies: number): DB {
+  return produce(base, (d) => {
+    for (const a of base.applications.filter((x) => x.status === 'hired')) {
+      const p = base.people.find((x) => x.fromApplicationId === a.id)!
+      for (let i = 1; i <= copies; i++) {
+        const s = `-copy${i}`
+        d.applications.push({ ...a, id: a.id + s })
+        d.people.push({ ...p, id: p.id + s, fromApplicationId: a.id + s, hireNumber: p.hireNumber + 1000 * i })
+        for (const o of base.offers.filter((x) => x.applicationId === a.id)) d.offers.push({ ...o, id: o.id + s, applicationId: a.id + s, personId: p.id + s })
+        for (const c of base.comp.filter((x) => x.personId === p.id)) d.comp.push({ ...c, id: c.id + s, personId: p.id + s })
+        for (const c of base.checklists.filter((x) => x.personId === p.id)) d.checklists.push({ ...c, id: c.id + s, personId: p.id + s })
+      }
+    }
+  })
+}
 
 let db: Db
 
@@ -70,6 +105,9 @@ beforeAll(async () => {
   await load('w-planted', plantedDb)
   await load('w-malformed', malformedDb)
   await load('w-flows', flowsDb)
+  await load('w-variants', variantsDb)
+  await load('w-hires-x4', withHireCopies(sample, 4))
+  await load('w-hires-x8', withHireCopies(sample, 8))
   await load('w-blank', blankDB({ companyName: 'Blankco', founderFirstName: 'Bo', founderLastName: 'Lank', foundedOn: '2026-03-02' }))
   await db.exec(`SET first_twenty.today = '${ANCHOR}'`)
 })
@@ -86,6 +124,15 @@ describe('the read-model migration', () => {
       isCurrent(dir, newest!),
       `server/sql/${newest} differs from what server/src/readmodel/spec.ts and src/domain/integrity.ts generate. Run: ${READ_MODEL_COMMAND} (or --replace when that file is your own and not on main yet)`,
     ).toBe(true)
+  })
+
+  it('stops on Postgres older than 15 before it changes anything', async () => {
+    const sql = readModelSql()
+    const guard = /DO \$\$\nBEGIN\n {2}IF current_setting\('server_version_num'\)::int < 150000 THEN[\s\S]*?\n\$\$;/.exec(sql)?.[0]
+    expect(guard).toBeDefined()
+    expect(sql.indexOf(guard!)).toBeLessThan(sql.indexOf('DROP VIEW'))
+    await db.exec(guard!)
+    await expect(db.exec(guard!.replace("current_setting('server_version_num')::int", '140011'))).rejects.toThrow(/needs Postgres 15 or newer/)
   })
 
   it('creates every view, each with workspace_id first, security_invoker on and no triggers', async () => {
@@ -150,9 +197,12 @@ describe('guarded casts', () => {
              ft_as_timestamptz('2026-10-09T10:30:00-07:00') = '2026-10-09 17:30:00+00'::timestamptz AS t2,
              ft_as_timestamptz('2026-02-30T00:00:00Z') AS bad13, ft_as_timestamptz('2026-10-09') AS bad14,
              ft_as_timestamptz('2026-10-09T25:00:00Z') AS bad15, ft_as_timestamptz('2026-10-09T10:00:00') AS bad16,
+             ft_as_timestamptz('2026-10-09T10:00:00+16:00') AS bad17, ft_as_timestamptz('2026-10-09T10:00:00-23:59') AS bad18,
+             ft_as_timestamptz('2026-10-09T10:00:00+1600') AS bad19,
+             ft_as_timestamptz('2026-10-09T15:59:00+15:59') = '2026-10-09 00:00:00+00'::timestamptz AS t3,
              ft_array('{"a": 1}'::jsonb)::text AS a1, ft_array('[1]'::jsonb)::text AS a2, ft_array(NULL)::text AS a3,
              ft_object('[1]'::jsonb)::text AS o1`)
-    expect(r).toMatchObject({ n1: '185000', n2: '0.005', n3: '-3', n4: '0.0000001', i1: 24, i2: 24, b1: true, b2: false, t1: true, t2: true, a1: '[]', a2: '[1]', a3: '[]', o1: '{}' })
+    expect(r).toMatchObject({ n1: '185000', n2: '0.005', n3: '-3', n4: '0.0000001', i1: 24, i2: 24, b1: true, b2: false, t1: true, t2: true, t3: true, a1: '[]', a2: '[1]', a3: '[]', o1: '{}' })
     for (const [k, v] of Object.entries(r)) if (k.startsWith('bad')) expect(v, k).toBeNull()
   })
 
@@ -173,8 +223,30 @@ describe('guarded casts', () => {
   it('let a session read the views as of another day', async () => {
     expect((await rows<{ d: string }>(`SELECT ft_today()::text AS d`))[0].d).toBe(ANCHOR)
     await db.exec(`SET first_twenty.today = 'not a date'`)
-    expect((await rows<{ same: boolean }>(`SELECT ft_today() = current_date AS same`))[0].same).toBe(true)
+    expect((await rows<{ same: boolean }>(`SELECT ft_today() = (now() AT TIME ZONE 'America/Los_Angeles')::date AS same`))[0].same).toBe(true)
     await db.exec(`SET first_twenty.today = '${ANCHOR}'`)
+  })
+
+  it("use today's date in Pacific time when no day is set, whatever the session's time zone (the app's own day)", async () => {
+    await db.exec(`RESET first_twenty.today; SET TimeZone = 'Pacific/Kiritimati'`)
+    try {
+      const [r] = await rows<{ d: string; n: Date }>(`SELECT ft_today()::text AS d, now() AS n`)
+      const pacific = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(r.n))
+      expect(r.d).toBe(pacific)
+    } finally {
+      await db.exec(`RESET TimeZone; SET first_twenty.today = '${ANCHOR}'`)
+    }
+  })
+
+  it('read the same whatever the session search_path (the functions name their schema)', async () => {
+    await db.exec(`SET search_path = pg_catalog`)
+    try {
+      for (const view of readModelViews()) {
+        await expect(db.query(`SELECT * FROM public.${view} WHERE workspace_id = 'default'`), view).resolves.toBeDefined()
+      }
+    } finally {
+      await db.exec(`RESET search_path`)
+    }
   })
 
   it('keep every view readable over records that are not the shape the types say', async () => {
@@ -186,6 +258,9 @@ describe('guarded casts', () => {
       [malformedDb.people[2].id],
     )
     expect(p).toEqual({ start_date: null, hire_number: null, separation_type: null })
+    const [a] = await rows<{ happened_at: unknown }>(`SELECT happened_at FROM v_activity WHERE workspace_id = 'w-malformed' AND id = $1`, [malformedDb.activity[0].id])
+    expect(a.happened_at).toBeNull()
+    await expect(db.query(`SELECT * FROM v_activity`)).resolves.toBeDefined()
   })
 })
 
@@ -237,12 +312,12 @@ describe('the sample, loaded through replaceWorkspace', () => {
     )
     const hired = sample.applications.filter((a) => a.status === 'hired').sort((a, b) => (a.id < b.id ? -1 : 1))
     expect(journeys.map((j) => j.application_id)).toEqual(hired.map((a) => a.id))
-    const runs = [...(sample.company.payRuns ?? [])].sort((a, b) => a.periodStart.localeCompare(b.periodStart))
     for (const j of journeys) {
       const app = hired.find((a) => a.id === j.application_id)!
       const person = sample.people.find((p) => p.fromApplicationId === app.id)!
       const checklist = sample.checklists.find((c) => c.personId === person.id && c.kind === 'onboarding')!
-      const firstRun = runs.find((r) => r.periodEnd >= person.startDate && (!person.endDate || r.periodStart <= person.endDate))
+      // The pay run whose period holds the start date, when that period is on record.
+      const firstRun = (sample.company.payRuns ?? []).find((r) => r.periodStart <= person.startDate && r.periodEnd >= person.startDate)
       expect(j).toEqual({
         application_id: app.id,
         job_id: app.jobId,
@@ -256,6 +331,52 @@ describe('the sample, loaded through replaceWorkspace', () => {
         onboarding_tasks_done: checklist.tasks.filter((t) => t.status === 'done').length,
       })
     }
+  })
+
+  it("gives a hire's first payday only from the pay run that holds their start date", async () => {
+    const first = async (ws: string) =>
+      Object.fromEntries(
+        (await rows<{ person_id: string; d: string | null }>(`SELECT person_id, first_payday::text AS d FROM v_hire_journey WHERE workspace_id = $1`, [ws])).map((r) => [r.person_id, r.d]),
+      )
+    // The sample's pay runs on record start on Jul 1, 2026: earlier hires were paid before the app kept them.
+    expect(await first(ws)).toMatchObject({ 'p-tomas': null, 'p-jasmine': null, 'p-chris': '2026-07-15', 'p-luis': '2026-07-31', 'p-aisha': '2026-09-15', 'p-lucas': null })
+    // A period with totals only counts (payroll ran), one with neither does not; a hire who never started has none.
+    expect(await first('w-variants')).toMatchObject({ 'p-aisha': null, 'p-lucas': '2026-10-30' })
+    const flows = await rows<{ start_date: string; end_date: string | null; first_payday: unknown }>(
+      `SELECT j.start_date::text AS start_date, p.end_date::text AS end_date, j.first_payday FROM v_hire_journey j JOIN v_people p USING (workspace_id) WHERE j.workspace_id = 'w-flows' AND j.person_id = 'p-lucas' AND p.id = j.person_id`,
+    )
+    expect(flows).toEqual([{ start_date: '2026-10-19', end_date: '2026-10-12', first_payday: null }])
+  })
+
+  it('counts stage moves and approvals as their names say', async () => {
+    const apps = await rows<{ id: string; stage_moves: number }>(`SELECT id, stage_moves FROM v_applications WHERE workspace_id = $1`, [ws])
+    for (const a of apps) expect(a.stage_moves, a.id).toBe(Math.max(0, sample.applications.find((x) => x.id === a.id)!.history.length - 1))
+    expect(apps.some((a) => a.stage_moves === 0)).toBe(true)
+    const [aisha] = await rows<{ approval_count: number; changes_requested_count: number }>(
+      `SELECT approval_count, changes_requested_count FROM v_offers WHERE workspace_id = 'w-variants' AND id = 'o-hire-aisha'`,
+    )
+    expect(aisha).toEqual({ approval_count: 1, changes_requested_count: 1 })
+  })
+
+  it('do work in step with the number of hires, not its square (the journeys stay quick as a company grows)', async () => {
+    // The work: every row each step of the plan produced, times the times it ran. Twice the hires should
+    // take about twice the work; a step that reads a table once per hire would take about four times.
+    const work = async (view: string, ws: string) => {
+      const [r] = await rows<{ 'QUERY PLAN': Array<{ Plan: Record<string, unknown> }> }>(`EXPLAIN (ANALYZE, FORMAT JSON) SELECT * FROM ${view} WHERE workspace_id = '${ws}'`)
+      let total = 0
+      const walk = (node: Record<string, unknown>) => {
+        total += Number(node['Actual Rows']) * Number(node['Actual Loops'])
+        for (const child of (node.Plans as Array<Record<string, unknown>> | undefined) ?? []) walk(child)
+      }
+      walk(r['QUERY PLAN'][0].Plan)
+      return total
+    }
+    for (const view of ['v_current_job', 'v_hire_journey']) {
+      const [small, large] = [await work(view, 'w-hires-x4'), await work(view, 'w-hires-x8')]
+      expect(large / small, `${view}: ${small} then ${large}`).toBeLessThan(2.5)
+    }
+    const [n] = await rows<{ n: number }>(`SELECT count(*)::int AS n FROM v_hire_journey WHERE workspace_id = 'w-hires-x8'`)
+    expect(n.n).toBe(9 * sample.applications.filter((a) => a.status === 'hired').length)
   })
 
   it("gives each person's job, pay and state today as the domain does", async () => {

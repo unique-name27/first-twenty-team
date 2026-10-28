@@ -1064,12 +1064,12 @@ queries in `server/deploy/browse.sql` already read only `default`.
 
 3. Records are JSON in each table's `data` column; the `v_` views show them as typed columns.
    `server/deploy/browse.sql` has ready-made queries (people with today's job and pay, headcount by month,
-   hires from job to first pay run, jobs, the hiring funnel, candidates and applications, offers, pay
+   hires from job to first payday, jobs, the hiring funnel, candidates and applications, offers, pay
    history, pay runs, equity, time off, open checklists, integrity problems, settings, recent changes, the
    assistant's daily use): open it with **File > Open File**, choose the connection, put the cursor in a
    query and press **Ctrl+Enter**. Double-click a `data` cell to see the whole record. The views that
-   depend on today use the database's date; `SET first_twenty.today = '2026-12-31'` first reads them as of
-   another day.
+   depend on today use today's date in Pacific time, the app's own day; `SET first_twenty.today =
+   '2026-12-31'` first reads them as of another day.
 
 The app is the source of truth: edits belong in the app, which syncs them. The viewer cannot write, so
 nothing done in DBeaver can drift from what the app shows.
@@ -1142,7 +1142,7 @@ The server log shows `password authentication failed for user "first_twenty"` or
   ```
 - `MIGRATION_DATABASE_URL ... still has the CHANGE_ME placeholder`: put the `first_twenty_owner`
   password in it (step 3).
-- `unrecognized parameter "security_invoker"` in `007_read_model.sql`: the database is older than
+- `First Twenty needs Postgres 15 or newer` in `007_read_model.sql`: the database is older than
   Postgres 15 (see [Before you start](#before-you-start)). Nothing was applied; upgrade Postgres, then run
   `server:migrate` again.
 - `cannot drop view ... because other objects depend on it` in a later `NNN_read_model.sql`: someone made

@@ -162,7 +162,8 @@ export const READ_MODEL: readonly View[] = [
     f.text('status'),
     f.date('appliedOn'),
     f.date('stageEnteredOn'),
-    f.count('history', 'stage_moves'),
+    // History starts with the stage the application entered first, so the moves are one fewer.
+    f.sql('stage_moves', 'integer', `greatest(${f.count('history', 'stage_moves').sql} - 1, 0)`),
     f.date('nextStep.dueOn', 'next_step_due_on'),
     f.text('nextStep.ownerId', 'next_step_owner_id'),
     f.date('snoozedUntil'),
@@ -204,7 +205,8 @@ export const READ_MODEL: readonly View[] = [
     f.joined('contingencies'),
     f.date('createdOn'),
     f.text('draftedById'),
-    f.count('approvals', 'approval_count'),
+    f.countWhere('approvals', { decision: 'approved' }, 'approval_count'),
+    f.countWhere('approvals', { decision: 'changes_requested' }, 'changes_requested_count'),
     f.date('sentOn'),
     f.date('decidedOn'),
     f.text('backgroundCheck.status', 'background_check_status'),
@@ -318,131 +320,172 @@ export const READ_MODEL: readonly View[] = [
     (f) => [f.text('stageId'), f.date('at', 'entered_on'), f.text('byId', 'moved_by_id')],
   ),
 
-  docListView('v_pay_runs', 'company', 'payRuns', 'Pay periods marked submitted to the payroll provider, with the totals entered from its register.', (f) => {
-    const p = new Fields<Person>('p.data', 'p')
-    return [
-      f.date('periodStart'),
-      f.date('periodEnd'),
-      f.date('payday'),
-      f.date('submittedOn'),
-      f.text('submittedById'),
-      f.num('totals.gross', 'gross'),
-      f.num('totals.employerTaxes', 'employer_taxes'),
-      f.date('totals.enteredOn', 'totals_entered_on'),
-      f.sql(
-        'people_in_period',
-        'integer',
-        `(SELECT count(*)::int FROM people p WHERE p.workspace_id = d.workspace_id AND ${p.date('startDate').sql} <= ${f.date('periodEnd').sql}
+  docListView(
+    'v_pay_runs',
+    'company',
+    'payRuns',
+    'Pay runs on record, one row per pay period: marked submitted to the payroll provider, or with the totals entered from its register (payroll ran without the submitted mark).',
+    (f) => {
+      const p = new Fields<Person>('p.data', 'p')
+      return [
+        f.date('periodStart'),
+        f.date('periodEnd'),
+        f.date('payday'),
+        f.date('submittedOn'),
+        f.text('submittedById'),
+        f.num('totals.gross', 'gross'),
+        f.num('totals.employerTaxes', 'employer_taxes'),
+        f.date('totals.enteredOn', 'totals_entered_on'),
+        f.sql(
+          'people_in_period',
+          'integer',
+          `(SELECT count(*)::int FROM people p WHERE p.workspace_id = d.workspace_id AND ${p.date('startDate').sql} <= ${f.date('periodEnd').sql}
             AND (${p.date('endDate').sql} IS NULL OR ${p.date('endDate').sql} >= ${f.date('periodStart').sql}))`,
-      ),
-    ]
-  }),
+        ),
+      ]
+    },
+  ),
 
+  // The journeys put every step of a person or hire into one list (UNION ALL) and group it by that person
+  // or application, keeping one row per step with array_agg(... ORDER BY ...)[1]. A join on a JSON field
+  // would leave the join method to the planner, which has no statistics on those fields: it guesses one
+  // row and loops over one side per row of the other, so the time grows with the square of the records.
+  // Grouping reads each table once; the only joins left look a record up by its key. Filter on
+  // workspace_id: it is the grouping column, so the filter reaches every table.
   sqlView(
     'v_current_job',
-    "Each person's job and pay today: the newest comp row effective on or before ft_today(), else nothing yet (an incoming hire). Title and department fall back to the person record.",
-    `SELECT p.workspace_id,
-       p.id,
-       p.hire_number,
-       p.full_name,
-       CASE WHEN p.start_date > ft_today() THEN 'incoming'
-            WHEN p.end_date < ft_today() THEN 'former'
-            WHEN EXISTS (SELECT 1 FROM leave_cases l
-                          WHERE l.workspace_id = p.workspace_id AND l.data ->> ${L('personId')} = p.id
-                            AND ft_as_date(l.data ->> ${L('startDate')}) <= ft_today()
-                            AND NULLIF(l.data ->> ${L('returnedOn')}, '') IS NULL
-                            AND (NULLIF(l.data ->> ${L('expectedReturn')}, '') IS NULL OR ft_as_date(l.data ->> ${L('expectedReturn')}) > ft_today()))
-              THEN 'on_leave'
+    "Each person's job and pay today: the newest comp row effective on or before ft_today() (today in Pacific time, or the day in first_twenty.today), else nothing yet (an incoming hire). Title and department fall back to the person record.",
+    `SELECT k.workspace_id,
+       k.person_id AS id,
+       (k.p).hire_number,
+       (k.p).full_name,
+       CASE WHEN (k.p).start_date > ft_today() THEN 'incoming'
+            WHEN (k.p).end_date < ft_today() THEN 'former'
+            WHEN k.on_leave THEN 'on_leave'
             ELSE 'active' END AS employment_state,
-       coalesce(c.title, p.title) AS title,
-       coalesce(c.department_id, p.department_id) AS department_id,
-       (SELECT NULLIF(d.data ->> ${D('name')}, '') FROM departments d WHERE d.workspace_id = p.workspace_id AND d.id = coalesce(c.department_id, p.department_id)) AS department_name,
-       coalesce(c.level_id, p.level_id) AS level_id,
-       coalesce(c.manager_id, p.manager_id) AS manager_id,
-       c.pay_type,
-       c.salary,
-       c.hourly_rate,
-       c.variable_pct,
-       c.id AS comp_id,
-       c.effective_on AS comp_effective_on,
-       c.reason AS comp_reason,
-       p.start_date,
-       p.end_date
-  FROM v_people p
-  LEFT JOIN LATERAL (
-        SELECT c.*
-          FROM v_comp c
-          JOIN comp r ON r.workspace_id = c.workspace_id AND r.id = c.id
-         WHERE c.workspace_id = p.workspace_id AND c.person_id = p.id AND c.effective_on <= ft_today()
-         ORDER BY c.effective_on DESC, r.pos DESC
-         LIMIT 1) c ON true`,
+       coalesce((k.c).title, (k.p).title) AS title,
+       coalesce((k.c).department_id, (k.p).department_id) AS department_id,
+       (SELECT NULLIF(d.data ->> ${D('name')}, '') FROM departments d WHERE d.workspace_id = k.workspace_id AND d.id = coalesce((k.c).department_id, (k.p).department_id)) AS department_name,
+       coalesce((k.c).level_id, (k.p).level_id) AS level_id,
+       coalesce((k.c).manager_id, (k.p).manager_id) AS manager_id,
+       (k.c).pay_type,
+       (k.c).salary,
+       (k.c).hourly_rate,
+       (k.c).variable_pct,
+       (k.c).id AS comp_id,
+       (k.c).effective_on AS comp_effective_on,
+       (k.c).reason AS comp_reason,
+       (k.p).start_date,
+       (k.p).end_date
+  FROM (SELECT u.workspace_id,
+               u.person_id,
+               bool_or(u.step = 'person') AS is_person,
+               (array_agg(u.p) FILTER (WHERE u.step = 'person'))[1] AS p,
+               (array_agg(u.c ORDER BY (u.c).effective_on DESC, u.pos DESC) FILTER (WHERE u.step = 'comp'))[1] AS c,
+               bool_or(u.step = 'leave') AS on_leave
+          FROM (SELECT p.workspace_id, p.id AS person_id, 'person' AS step, p, NULL::v_comp AS c, NULL::integer AS pos
+                  FROM v_people p
+                UNION ALL
+                SELECT c.workspace_id, c.person_id, 'comp', NULL, c, r.pos
+                  FROM v_comp c
+                  JOIN comp r ON r.workspace_id = c.workspace_id AND r.id = c.id
+                 WHERE c.effective_on <= ft_today()
+                UNION ALL
+                SELECT l.workspace_id, NULLIF(l.data ->> ${L('personId')}, ''), 'leave', NULL, NULL, NULL
+                  FROM leave_cases l
+                 WHERE ft_as_date(l.data ->> ${L('startDate')}) <= ft_today()
+                   AND NULLIF(l.data ->> ${L('returnedOn')}, '') IS NULL
+                   AND (NULLIF(l.data ->> ${L('expectedReturn')}, '') IS NULL OR ft_as_date(l.data ->> ${L('expectedReturn')}) > ft_today())) u
+         GROUP BY u.workspace_id, u.person_id) k
+ WHERE k.is_person`,
   ),
 
   sqlView(
     'v_hire_journey',
-    'One row per hire (an application marked hired): job, application, accepted offer, person, starting pay row, onboarding checklist and the first pay run that covers the person. A missing step shows as nulls; v_integrity_problems says which.',
-    `SELECT a.workspace_id,
-       a.id AS application_id,
-       a.job_id,
+    'One row per hire (an application marked hired): job, application, accepted offer, person, starting pay row, onboarding checklist and the pay run whose period holds the start date (null when that period is not on record, as for people paid before the company kept pay runs in the app, or a hire who never started). A missing step shows as nulls; v_integrity_problems says which.',
+    `SELECT h.workspace_id,
+       h.application_id,
+       (h.a).job_id,
        j.title AS job_title,
-       a.candidate_id,
+       (h.a).candidate_id,
        concat_ws(' ', cand.first_name, cand.last_name) AS candidate_name,
        cand.source,
-       a.applied_on,
-       a.closed_on AS hired_on,
-       a.closed_on - a.applied_on AS days_to_hire,
-       o.id AS offer_id,
-       o.sent_on AS offer_sent_on,
-       o.decided_on AS offer_accepted_on,
-       o.pay_type AS offer_pay_type,
-       o.salary AS offer_salary,
-       o.hourly_rate AS offer_hourly_rate,
-       o.equity_shares AS offer_shares,
-       p.id AS person_id,
-       p.hire_number,
-       p.full_name AS person_name,
-       p.start_date,
-       hc.id AS hire_comp_id,
-       hc.effective_on AS hire_comp_effective_on,
-       hc.salary AS hire_salary,
-       hc.hourly_rate AS hire_hourly_rate,
-       ob.id AS onboarding_checklist_id,
-       ob.tasks_total AS onboarding_tasks_total,
-       ob.tasks_done AS onboarding_tasks_done,
-       ob.tasks_open AS onboarding_tasks_open,
-       ob.completed_on AS onboarding_completed_on,
+       (h.a).applied_on,
+       (h.a).closed_on AS hired_on,
+       (h.a).closed_on - (h.a).applied_on AS days_to_hire,
+       (h.o).id AS offer_id,
+       (h.o).sent_on AS offer_sent_on,
+       (h.o).decided_on AS offer_accepted_on,
+       (h.o).pay_type AS offer_pay_type,
+       (h.o).salary AS offer_salary,
+       (h.o).hourly_rate AS offer_hourly_rate,
+       (h.o).equity_shares AS offer_shares,
+       (h.p).id AS person_id,
+       (h.p).hire_number,
+       (h.p).full_name AS person_name,
+       (h.p).start_date,
+       (h.hc).id AS hire_comp_id,
+       (h.hc).effective_on AS hire_comp_effective_on,
+       (h.hc).salary AS hire_salary,
+       (h.hc).hourly_rate AS hire_hourly_rate,
+       (h.ob).id AS onboarding_checklist_id,
+       (h.ob).tasks_total AS onboarding_tasks_total,
+       (h.ob).tasks_done AS onboarding_tasks_done,
+       (h.ob).tasks_open AS onboarding_tasks_open,
+       (h.ob).completed_on AS onboarding_completed_on,
        pr.period_start AS first_pay_period_start,
        pr.period_end AS first_pay_period_end,
        pr.payday AS first_payday
-  FROM v_applications a
-  LEFT JOIN v_jobs j ON j.workspace_id = a.workspace_id AND j.id = a.job_id
-  LEFT JOIN v_candidates cand ON cand.workspace_id = a.workspace_id AND cand.id = a.candidate_id
+  FROM (SELECT u.workspace_id,
+               u.application_id,
+               bool_or(u.step = 'application') AS is_hire,
+               (array_agg(u.a) FILTER (WHERE u.step = 'application'))[1] AS a,
+               (array_agg(u.o ORDER BY (u.o).decided_on DESC NULLS LAST, (u.o).id) FILTER (WHERE u.step = 'offer'))[1] AS o,
+               (array_agg(u.p ORDER BY (u.p).id COLLATE "C") FILTER (WHERE u.step = 'person'))[1] AS p,
+               (array_agg(u.hc ORDER BY (u.p).id COLLATE "C") FILTER (WHERE u.step = 'person'))[1] AS hc,
+               (array_agg(u.ob ORDER BY (u.p).id COLLATE "C") FILTER (WHERE u.step = 'person'))[1] AS ob
+          FROM (SELECT a.workspace_id, a.id AS application_id, 'application' AS step, a, NULL::v_offers AS o, NULL::v_people AS p, NULL::v_comp AS hc, NULL::v_checklists AS ob
+                  FROM v_applications a
+                 WHERE a.status = 'hired'
+                UNION ALL
+                SELECT o.workspace_id, o.application_id, 'offer', NULL, o, NULL, NULL, NULL
+                  FROM v_offers o
+                 WHERE o.status = 'accepted'
+                UNION ALL
+                -- Each hired person with their starting pay row and onboarding checklist, grouped the same way.
+                SELECT s.workspace_id, (s.p).from_application_id, 'person', NULL, NULL, s.p, s.hc, s.ob
+                  FROM (SELECT v.workspace_id,
+                               v.person_id,
+                               bool_or(v.step = 'person') AS is_person,
+                               (array_agg(v.p) FILTER (WHERE v.step = 'person'))[1] AS p,
+                               (array_agg(v.hc ORDER BY (v.hc).effective_on, (v.hc).id) FILTER (WHERE v.step = 'comp'))[1] AS hc,
+                               (array_agg(v.ob ORDER BY (v.ob).created_on, (v.ob).id) FILTER (WHERE v.step = 'checklist'))[1] AS ob
+                          FROM (SELECT p.workspace_id, p.id AS person_id, 'person' AS step, p, NULL::v_comp AS hc, NULL::v_checklists AS ob
+                                  FROM v_people p
+                                 WHERE p.from_application_id IS NOT NULL
+                                UNION ALL
+                                SELECT c.workspace_id, c.person_id, 'comp', NULL, c, NULL
+                                  FROM v_comp c
+                                 WHERE c.reason = 'hire'
+                                UNION ALL
+                                SELECT k.workspace_id, k.person_id, 'checklist', NULL, NULL, k
+                                  FROM v_checklists k
+                                 WHERE k.kind = 'onboarding') v
+                         GROUP BY v.workspace_id, v.person_id) s
+                 WHERE s.is_person) u
+         GROUP BY u.workspace_id, u.application_id) h
+  LEFT JOIN v_jobs j ON j.workspace_id = h.workspace_id AND j.id = (h.a).job_id
+  LEFT JOIN v_candidates cand ON cand.workspace_id = h.workspace_id AND cand.id = (h.a).candidate_id
   LEFT JOIN LATERAL (
-        SELECT o.* FROM v_offers o
-         WHERE o.workspace_id = a.workspace_id AND o.application_id = a.id AND o.status = 'accepted'
-         ORDER BY o.decided_on DESC NULLS LAST, o.id
-         LIMIT 1) o ON true
-  LEFT JOIN LATERAL (
-        SELECT p.* FROM v_people p
-         WHERE p.workspace_id = a.workspace_id AND p.from_application_id = a.id
-         ORDER BY p.id COLLATE "C"
-         LIMIT 1) p ON true
-  LEFT JOIN LATERAL (
-        SELECT c.* FROM v_comp c
-         WHERE c.workspace_id = p.workspace_id AND c.person_id = p.id AND c.reason = 'hire'
-         ORDER BY c.effective_on, c.id
-         LIMIT 1) hc ON true
-  LEFT JOIN LATERAL (
-        SELECT k.* FROM v_checklists k
-         WHERE k.workspace_id = p.workspace_id AND k.person_id = p.id AND k.kind = 'onboarding'
-         ORDER BY k.created_on, k.id
-         LIMIT 1) ob ON true
-  LEFT JOIN LATERAL (
-        SELECT r.* FROM v_pay_runs r
-         WHERE r.workspace_id = p.workspace_id AND r.period_end >= p.start_date AND (p.end_date IS NULL OR r.period_start <= p.end_date)
+        SELECT r.period_start, r.period_end, r.payday
+          FROM v_pay_runs r
+         WHERE r.workspace_id = h.workspace_id
+           AND r.period_start <= (h.p).start_date AND r.period_end >= (h.p).start_date
+           AND ((h.p).end_date IS NULL OR r.period_start <= (h.p).end_date)
+           AND (r.submitted_on IS NOT NULL OR r.totals_entered_on IS NOT NULL)
          ORDER BY r.period_start
          LIMIT 1) pr ON true
- WHERE a.status = 'hired'`,
+ WHERE h.is_hire`,
   ),
 
   sqlView(

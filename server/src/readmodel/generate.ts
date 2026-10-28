@@ -34,9 +34,24 @@ const HEADER = `-- The read model (docs/DEV.md, "Query the data with SQL"; ready
 -- reads them through its default privileges (server/deploy/postgres-setup.sql); the read-only login gets
 -- them at the end of this file when it exists, and from server/deploy/viewer-role.sql.`
 
+/** The oldest Postgres the read model runs on (security_invoker views), as server_version_num counts it. */
+const MIN_SERVER_VERSION_NUM = 150000
+
+const VERSION_GUARD = `-- Postgres 15 or newer first: the views read with the reader's own rights (security_invoker), which older
+-- versions refuse. Stopping here leaves the database as it was.
+DO $$
+BEGIN
+  IF current_setting('server_version_num')::int < ${MIN_SERVER_VERSION_NUM} THEN
+    RAISE EXCEPTION 'First Twenty needs Postgres 15 or newer (this server runs %). docs/SERVER.md, "Before you start", says how to get it.', current_setting('server_version');
+  END IF;
+END
+$$;`
+
+// The function bodies name ft_as_date with its schema: Postgres reads a SQL function's body with the
+// session's search_path when it runs it, and a SQL client may have set one without public.
 const FUNCTIONS = `-- Guarded casts: text that is not a value of the type gives NULL instead of failing the whole query
--- (an empty string, junk, a day such as Feb 30). Dates must be 'YYYY-MM-DD' (src/domain/paths.ts asDate
--- agrees), timestamps full ISO with a zone, numbers JSON numbers.
+-- (an empty string, junk, a day such as Feb 30, a time zone offset past 15:59). Dates must be 'YYYY-MM-DD'
+-- (src/domain/paths.ts asDate agrees), timestamps full ISO with a zone, numbers JSON numbers.
 CREATE OR REPLACE FUNCTION ft_as_date(v text) RETURNS date
   LANGUAGE sql IMMUTABLE PARALLEL SAFE
 AS $$
@@ -56,8 +71,8 @@ $$;
 CREATE OR REPLACE FUNCTION ft_as_timestamptz(v text) RETURNS timestamptz
   LANGUAGE sql STABLE PARALLEL SAFE
 AS $$
-  SELECT CASE WHEN v ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9]([.][0-9]{1,6})?)?(Z|[+-]([01][0-9]|2[0-3]):?[0-5][0-9])$'
-               AND ft_as_date(substr(v, 1, 10)) IS NOT NULL
+  SELECT CASE WHEN v ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9]([.][0-9]{1,6})?)?(Z|[+-](0[0-9]|1[0-5]):?[0-5][0-9])$'
+               AND public.ft_as_date(substr(v, 1, 10)) IS NOT NULL
     THEN v::timestamptz END
 $$;
 
@@ -95,11 +110,11 @@ $$;
 
 -- Today for the views that depend on it (v_current_job, v_headcount_by_month): the date in the setting
 -- first_twenty.today when the session sets one (SET first_twenty.today = '2026-12-31' reads them as of
--- that day), else the database's current date in the session's time zone.
+-- that day), else today in Pacific time, the app's own day, whatever time zone the server or session uses.
 CREATE OR REPLACE FUNCTION ft_today() RETURNS date
   LANGUAGE sql STABLE PARALLEL SAFE
 AS $$
-  SELECT coalesce(ft_as_date(current_setting('first_twenty.today', true)), current_date)
+  SELECT coalesce(public.ft_as_date(current_setting('first_twenty.today', true)), (now() AT TIME ZONE 'America/Los_Angeles')::date)
 $$;`
 
 /** Words a view column must not be named, so every column reads without quotes. */
@@ -208,6 +223,7 @@ END
 $$;`
   return [
     HEADER,
+    VERSION_GUARD,
     `-- Views of an earlier read model go first (one statement, so views that read other views go together).\nDROP VIEW IF EXISTS ${dropped.join(', ')};`,
     FUNCTIONS,
     ...views,

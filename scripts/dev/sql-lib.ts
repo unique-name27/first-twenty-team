@@ -32,7 +32,7 @@ WHERE h.workspace_id = $1
 ORDER BY h.month`,
   },
   hires: {
-    about: 'one row per hire, from the job to the first pay run',
+    about: 'one row per hire, from the job to the first payday',
     sql: `SELECT j.hire_number AS employee_no, j.person_name, j.job_title, j.source, j.applied_on, j.offer_accepted_on,
        j.start_date, j.days_to_hire, j.onboarding_tasks_done AS tasks_done, j.onboarding_tasks_total AS tasks, j.first_payday
 FROM v_hire_journey j
@@ -48,7 +48,7 @@ WHERE f.workspace_id = $1
 ORDER BY f.job_title, f.stage_position`,
   },
   payruns: {
-    about: 'pay periods marked submitted, with the totals entered afterwards',
+    about: 'pay periods marked submitted or with totals entered, and the totals',
     sql: `SELECT r.period_start, r.period_end, r.payday, r.submitted_on, r.gross, r.employer_taxes, r.people_in_period
 FROM v_pay_runs r
 WHERE r.workspace_id = $1

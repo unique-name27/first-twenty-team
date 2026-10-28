@@ -10,8 +10,9 @@
 --
 -- A server can hold more than one company (a public demo server, SIGNUP_MODE=open), so every query below
 -- reads one company: yours, the workspace 'default'. To read another, replace 'default' with its id from
--- the first query. The views that depend on today (v_current_job, v_headcount_by_month) use the database's
--- date; to read them as of another day, run SET first_twenty.today = '2026-12-31' first.
+-- the first query. The views that depend on today (v_current_job, v_headcount_by_month) use today's date in
+-- Pacific time, the app's own day; to read them as of another day, run SET first_twenty.today = '2026-12-31'
+-- first.
 
 -- Companies on this server: yours is 'default' (kept); demo companies are deleted after DEMO_EXPIRE_DAYS idle.
 SELECT w.id, w.slug, w.name, w.keep, w.created_at, w.last_active_at
@@ -33,9 +34,11 @@ FROM v_headcount_by_month h
 WHERE h.workspace_id = 'default'
 ORDER BY h.month;
 
--- Hires: one row per application marked hired, from the job to the first pay run. The Hire step writes the
+-- Hires: one row per application marked hired, from the job to the first payday. The Hire step writes the
 -- person, the starting pay record, the equity grant and the onboarding checklist, marks the application
 -- hired and the job filled. An empty column means that step is missing (the integrity query says more).
+-- first_payday is the payday of the pay run whose period holds the start date: empty when that period is
+-- not on record (people paid before the company kept pay runs in the app, or a hire who never started).
 -- People added by hand (the founder, imports) have no hire row; they are in the people query.
 SELECT j.hire_number AS employee_no, j.person_name, j.job_title, j.source, j.applied_on, j.offer_accepted_on,
        j.start_date, j.days_to_hire, j.offer_pay_type, j.offer_salary, j.offer_hourly_rate, j.offer_shares,
@@ -83,8 +86,8 @@ LEFT JOIN v_people p ON p.workspace_id = r.workspace_id AND p.id = r.person_id
 WHERE r.workspace_id = 'default'
 ORDER BY person, r.effective_on;
 
--- Pay runs: the pay periods marked submitted to the payroll provider, with the totals entered from its
--- register afterwards (empty until entered) and how many people were employed in the period.
+-- Pay runs: the pay periods marked submitted to the payroll provider, or with the totals entered from its
+-- register (empty until entered), and how many people were employed in the period.
 SELECT r.period_start, r.period_end, r.payday, r.submitted_on, r.gross, r.employer_taxes, r.people_in_period
 FROM v_pay_runs r
 WHERE r.workspace_id = 'default'

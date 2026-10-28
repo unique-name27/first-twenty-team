@@ -111,24 +111,24 @@ plain SQL reads them:
 | `v_people`, `v_comp`, `v_jobs`, `v_candidates`, `v_applications`, `v_offers`, `v_checklists`, `v_grants`, `v_time_off_requests`, `v_documents`, `v_activity` | record of that collection |
 | `v_checklist_tasks` | checklist task |
 | `v_application_stages` | stage move of an application |
-| `v_pay_runs` | pay period marked submitted (from the company document) |
+| `v_pay_runs` | pay period on record: marked submitted, or with the provider's totals (from the company document) |
 | `v_current_job` | person: today's title, department, pay and state (incoming, active, on leave, former) |
-| `v_hire_journey` | hire: job, application, accepted offer, person, starting pay, onboarding checklist, first pay run |
+| `v_hire_journey` | hire: job, application, accepted offer, person, starting pay, onboarding checklist, the pay run that holds the start date |
 | `v_pipeline_funnel` | job and stage: applications there now, and every one that ever entered it |
 | `v_headcount_by_month` | month: headcount on its last day, starts and last days |
 | `v_integrity_problems` | problem found by the checks in `src/domain/integrity.ts` (empty when the data is consistent) |
 
 Every view starts with `workspace_id`; the stack's sample company is `default`. Ready-made queries are in
-`server/deploy/browse.sql`. The views that depend on today use the database's date: in a SQL client, run
-`SET first_twenty.today = '2026-10-09'` first to read them as of the sample's anchor day (with
-`npm run sql`, add `--today 2026-10-09`).
+`server/deploy/browse.sql`. The views that depend on today use today's date in Pacific time, the app's own
+day, whatever time zone the database runs in: in a SQL client, run `SET first_twenty.today = '2026-10-09'`
+first to read them as of the sample's anchor day (with `npm run sql`, add `--today 2026-10-09`).
 
 ### npm run sql
 
 `npm run sql` reads the stack's database from the terminal and prints a table. It never changes anything.
 
 ```bash
-npm run sql -- hires                       # one row per hire, from the job to the first pay run
+npm run sql -- hires                       # one row per hire, from the job to the first payday
 npm run sql -- integrity                   # the integrity problems (empty is good)
 npm run sql -- "SELECT full_name, title, salary FROM v_current_job WHERE workspace_id = 'default'"
 npm run sql -- 'SELECT full_name FROM v_people WHERE workspace_id = $1'   # $1 is the company
