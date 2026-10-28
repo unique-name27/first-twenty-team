@@ -14,8 +14,8 @@
 // history that names a record which no longer exists).
 //
 // Most checks are data (the rule lists below), not code: the server's read model turns the same lists into
-// the SQL view v_integrity_problems (server/src/readmodel/generate.ts), and the few checks written as code
-// (CUSTOM_CHECKS) have their SQL next to that generator. readmodel.test.ts plants every kind of problem and
+// the SQL view v_integrity_problems (server/src/readmodel/integritySql.ts), and the few checks written as
+// code (CUSTOM_CHECKS) have their SQL written there too. readmodel.test.ts plants every kind of problem and
 // compares this file's answer with the view's, so SQL and TypeScript stay in step. Changing a rule changes
 // the generated SQL: run `npm run server:gen-sql -- --read-model --write` (server/src/readmodel/spec.ts).
 import { asDate, type IdPath, type PathTo, textOf, valueAt, valuesAt } from '@/domain/paths'

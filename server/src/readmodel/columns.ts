@@ -103,7 +103,7 @@ export class Fields<T> {
     return {
       name,
       type: 'integer',
-      sql: `(SELECT count(*)::int FROM jsonb_array_elements(ft_array(${jsonAt(this.base, path)})) AS x(el) WHERE ${whereSql('x.el', where)})`,
+      sql: `(SELECT count(*)::int FROM jsonb_array_elements(ft_array(${jsonAt(this.base, path)})) AS i(el) WHERE ${whereSql('i.el', where)})`,
     }
   }
 
@@ -112,7 +112,7 @@ export class Fields<T> {
     return {
       name,
       type: 'date',
-      sql: `(SELECT min(ft_as_date(${textAt('x.el', date)})) FROM jsonb_array_elements(ft_array(${jsonAt(this.base, path)})) AS x(el) WHERE ${whereSql('x.el', where)})`,
+      sql: `(SELECT min(ft_as_date(${textAt('i.el', date)})) FROM jsonb_array_elements(ft_array(${jsonAt(this.base, path)})) AS i(el) WHERE ${whereSql('i.el', where)})`,
     }
   }
 

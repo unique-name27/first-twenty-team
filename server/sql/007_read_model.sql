@@ -14,9 +14,9 @@
 -- Every view: workspace_id first (filter on it to read one company); security_invoker, so a login reads
 -- through a view only what it may read in the tables (needs Postgres 15 or newer); reads only the record
 -- tables, workspace_docs and workspaces, never users, sessions, trusted_devices or invites; plain views,
--- no triggers, nothing on the write path. The server's own role reads them through its default
--- privileges (server/deploy/postgres-setup.sql); the read-only login gets them at the end of this file
--- when it exists, and from server/deploy/viewer-role.sql.
+-- no triggers, nothing on the write path (no role keeps a write right on them). The server's own role
+-- reads them through its default privileges (server/deploy/postgres-setup.sql); the read-only login gets
+-- them at the end of this file when it exists, and from server/deploy/viewer-role.sql.
 
 -- Views of an earlier read model go first (one statement, so views that read other views go together).
 DROP VIEW IF EXISTS v_integrity_problems, v_headcount_by_month, v_pipeline_funnel, v_hire_journey, v_current_job, v_pay_runs, v_application_stages, v_checklist_tasks, v_activity, v_documents, v_time_off_requests, v_grants, v_checklists, v_offers, v_applications, v_candidates, v_jobs, v_comp, v_people;
@@ -305,11 +305,11 @@ SELECT r.workspace_id,
        ft_as_date(r.data ->> 'createdOn') AS created_on,
        ft_as_date(r.data ->> 'completedOn') AS completed_on,
        jsonb_array_length(ft_array(r.data -> 'tasks')) AS tasks_total,
-       (SELECT count(*)::int FROM jsonb_array_elements(ft_array(r.data -> 'tasks')) AS x(el) WHERE x.el ->> 'status' = 'done') AS tasks_done,
-       (SELECT count(*)::int FROM jsonb_array_elements(ft_array(r.data -> 'tasks')) AS x(el) WHERE x.el ->> 'status' = 'open') AS tasks_open,
-       (SELECT count(*)::int FROM jsonb_array_elements(ft_array(r.data -> 'tasks')) AS x(el) WHERE x.el ->> 'status' = 'not_applicable') AS tasks_not_applicable,
-       (SELECT count(*)::int FROM jsonb_array_elements(ft_array(r.data -> 'tasks')) AS x(el) WHERE x.el ->> 'status' = 'open' AND x.el ->> 'statutory' = 'true') AS statutory_open,
-       (SELECT min(ft_as_date(x.el ->> 'dueOn')) FROM jsonb_array_elements(ft_array(r.data -> 'tasks')) AS x(el) WHERE x.el ->> 'status' = 'open') AS next_due_on,
+       (SELECT count(*)::int FROM jsonb_array_elements(ft_array(r.data -> 'tasks')) AS i(el) WHERE i.el ->> 'status' = 'done') AS tasks_done,
+       (SELECT count(*)::int FROM jsonb_array_elements(ft_array(r.data -> 'tasks')) AS i(el) WHERE i.el ->> 'status' = 'open') AS tasks_open,
+       (SELECT count(*)::int FROM jsonb_array_elements(ft_array(r.data -> 'tasks')) AS i(el) WHERE i.el ->> 'status' = 'not_applicable') AS tasks_not_applicable,
+       (SELECT count(*)::int FROM jsonb_array_elements(ft_array(r.data -> 'tasks')) AS i(el) WHERE i.el ->> 'status' = 'open' AND i.el ->> 'statutory' = 'true') AS statutory_open,
+       (SELECT min(ft_as_date(i.el ->> 'dueOn')) FROM jsonb_array_elements(ft_array(r.data -> 'tasks')) AS i(el) WHERE i.el ->> 'status' = 'open') AS next_due_on,
        r.version,
        r.updated_at
   FROM checklists r;
@@ -1375,9 +1375,23 @@ SELECT p.workspace_id, p.code, p.severity, p.collection, p.record_id, p.field, p
   ) AS p (workspace_id, code, severity, collection, record_id, field, other_id);
 COMMENT ON VIEW v_integrity_problems IS 'What should never be true of the data, as rows: the checks of src/domain/integrity.ts (code, severity failure or note, the record and field, the other record involved). Empty when the data is consistent.';
 
--- The optional read-only login (server/deploy/viewer-role.sql) reads the views too, when it exists here.
+-- The views only read. Every new relation gets the server role's write rights from its default
+-- privileges (server/deploy/postgres-setup.sql), and a simple view would pass writes on to its table, so
+-- those rights are taken back here: every role keeps SELECT only. The optional read-only login
+-- (server/deploy/viewer-role.sql) gets SELECT when it exists here.
 DO $$
+DECLARE
+  role_name text;
 BEGIN
+  FOR role_name IN
+    SELECT DISTINCT a.grantee::regrole::text
+      FROM pg_class c
+     CROSS JOIN LATERAL aclexplode(c.relacl) AS a
+     WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'v' AND c.relname IN ('v_people', 'v_comp', 'v_jobs', 'v_candidates', 'v_applications', 'v_offers', 'v_checklists', 'v_grants', 'v_time_off_requests', 'v_documents', 'v_activity', 'v_checklist_tasks', 'v_application_stages', 'v_pay_runs', 'v_current_job', 'v_hire_journey', 'v_pipeline_funnel', 'v_headcount_by_month', 'v_integrity_problems')
+       AND a.privilege_type <> 'SELECT' AND a.grantee <> c.relowner AND a.grantee <> 0
+  LOOP
+    EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON v_people, v_comp, v_jobs, v_candidates, v_applications, v_offers, v_checklists, v_grants, v_time_off_requests, v_documents, v_activity, v_checklist_tasks, v_application_stages, v_pay_runs, v_current_job, v_hire_journey, v_pipeline_funnel, v_headcount_by_month, v_integrity_problems FROM %s', role_name);
+  END LOOP;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'first_twenty_viewer') THEN
     GRANT SELECT ON v_people, v_comp, v_jobs, v_candidates, v_applications, v_offers, v_checklists, v_grants, v_time_off_requests, v_documents, v_activity, v_checklist_tasks, v_application_stages, v_pay_runs, v_current_job, v_hire_journey, v_pipeline_funnel, v_headcount_by_month, v_integrity_problems TO first_twenty_viewer;
   END IF;

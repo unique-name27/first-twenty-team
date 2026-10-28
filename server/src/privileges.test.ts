@@ -115,9 +115,18 @@ describe('the read model (007) under least privilege', () => {
     expect(owners.rows.every((r) => r.viewowner === 'ft_owner')).toBe(true)
   })
 
-  it("lets the server's role read every view through the default privileges", async () => {
+  it("lets the server's role read every view through the default privileges, and never write through one", async () => {
     for (const view of views) await expect(db.query(`SELECT * FROM ${view} LIMIT 5`), view).resolves.toBeDefined()
     expect((await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM v_people`)).rows[0].n).toBeGreaterThan(0)
+    // The default privileges hand out write rights too; 007 takes them back, so a simple view cannot pass a write on.
+    const writable = await db.query<{ view: string }>(
+      `SELECT v AS view FROM unnest($1::text[]) AS v
+        WHERE has_table_privilege('ft_app', v, 'INSERT') OR has_table_privilege('ft_app', v, 'UPDATE') OR has_table_privilege('ft_app', v, 'DELETE')`,
+      [views],
+    )
+    expect(writable.rows).toEqual([])
+    await expect(db.query('DELETE FROM v_people')).rejects.toThrow(/permission denied for view v_people/)
+    await expect(db.query('UPDATE v_comp SET version = 1')).rejects.toThrow(/permission denied for view v_comp/)
   })
 
   it('gives the read-only login every view, which it reads only as far as its table rights go', async () => {

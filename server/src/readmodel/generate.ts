@@ -30,9 +30,9 @@ const HEADER = `-- The read model (docs/DEV.md, "Query the data with SQL"; ready
 -- Every view: workspace_id first (filter on it to read one company); security_invoker, so a login reads
 -- through a view only what it may read in the tables (needs Postgres 15 or newer); reads only the record
 -- tables, workspace_docs and workspaces, never users, sessions, trusted_devices or invites; plain views,
--- no triggers, nothing on the write path. The server's own role reads them through its default
--- privileges (server/deploy/postgres-setup.sql); the read-only login gets them at the end of this file
--- when it exists, and from server/deploy/viewer-role.sql.`
+-- no triggers, nothing on the write path (no role keeps a write right on them). The server's own role
+-- reads them through its default privileges (server/deploy/postgres-setup.sql); the read-only login gets
+-- them at the end of this file when it exists, and from server/deploy/viewer-role.sql.`
 
 const FUNCTIONS = `-- Guarded casts: text that is not a value of the type gives NULL instead of failing the whole query
 -- (an empty string, junk, a day such as Feb 30). Dates must be 'YYYY-MM-DD' (src/domain/paths.ts asDate
@@ -183,11 +183,26 @@ export function readModelSql(): string {
 ${viewBody(view)};
 COMMENT ON VIEW ${view.name} IS ${lit(view.comment)};`,
   )
-  const grant = `-- The optional read-only login (server/deploy/viewer-role.sql) reads the views too, when it exists here.
+  const list = names.join(', ')
+  const grant = `-- The views only read. Every new relation gets the server role's write rights from its default
+-- privileges (server/deploy/postgres-setup.sql), and a simple view would pass writes on to its table, so
+-- those rights are taken back here: every role keeps SELECT only. The optional read-only login
+-- (server/deploy/viewer-role.sql) gets SELECT when it exists here.
 DO $$
+DECLARE
+  role_name text;
 BEGIN
+  FOR role_name IN
+    SELECT DISTINCT a.grantee::regrole::text
+      FROM pg_class c
+     CROSS JOIN LATERAL aclexplode(c.relacl) AS a
+     WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'v' AND c.relname IN (${names.map(lit).join(', ')})
+       AND a.privilege_type <> 'SELECT' AND a.grantee <> c.relowner AND a.grantee <> 0
+  LOOP
+    EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON ${list} FROM %s', role_name);
+  END LOOP;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'first_twenty_viewer') THEN
-    GRANT SELECT ON ${names.join(', ')} TO first_twenty_viewer;
+    GRANT SELECT ON ${list} TO first_twenty_viewer;
   END IF;
 END
 $$;`
