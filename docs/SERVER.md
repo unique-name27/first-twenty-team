@@ -58,8 +58,10 @@ The kit lives in `server/deploy/`, plus `.env.example` in the project root:
 
 You need:
 
-1. **An EC2 instance running Postgres 13 or newer**, on Amazon Linux 2023 or Ubuntu 22.04 / 24.04.
-   Check the version on the instance with `sudo -u postgres psql -tAc 'SHOW server_version'`.
+1. **An EC2 instance running Postgres 15 or newer**, on Amazon Linux 2023 or Ubuntu 22.04 / 24.04.
+   Check the version on the instance with `sudo -u postgres psql -tAc 'SHOW server_version'`. (Migration
+   007, the read model's views, needs 15: its views read with the reader's own rights. Ubuntu 22.04's own
+   package is Postgres 14, so there install a newer one from apt.postgresql.org, or use Ubuntu 24.04.)
    An instance with 2 GB of memory or more builds comfortably. On a smaller one, such as a t3.micro
    (about 900 MB), setup adds a 2 GB swap file so the build fits (see step 2).
 2. **An Elastic IP attached to the instance**, so its address never changes. In the EC2 console:
@@ -1030,12 +1032,14 @@ the line) when you are done.
 ## Look at the data in DBeaver
 
 Browse the live data with a read-only login, never the server's or the owner's: `first_twenty_viewer`
-can read the companies (`workspaces`), every record table, the documents, the change log and the
-assistant's daily counts (`assistant_usage`), cannot read
+can read the companies (`workspaces`), every record table, the documents, the change log, the
+assistant's daily counts (`assistant_usage`) and the read model's views (`v_people`, `v_hire_journey`,
+`v_integrity_problems` and the rest: docs/DEV.md, "Query the data with SQL"), cannot read
 `users`, `sessions`, `trusted_devices` or `invites` (password and token hashes), and cannot change
-anything. On a server that holds more than one company, filter by `workspace_id` (`SELECT id, slug, name
-FROM workspaces` lists them; yours is `default`). The ready-made queries in `server/deploy/browse.sql`
-already read only `default`.
+anything. The views run with the reader's own rights (`security_invoker`), so through them the viewer
+sees only what its table grants allow. On a server that holds more than one company, filter by
+`workspace_id` (`SELECT id, slug, name FROM workspaces` lists them; yours is `default`). The ready-made
+queries in `server/deploy/browse.sql` already read only `default`.
 
 1. Once, on the instance, from `/opt/first-twenty`:
 
@@ -1047,7 +1051,9 @@ already read only `default`.
    The second command asks for the new password twice without showing it. Optionally pin the login to its
    database: add `first_twenty_viewer` to the user column of the `first_twenty` and `reject` lines from
    step 1 in `pg_hba.conf`, then `sudo systemctl reload postgresql`. Run `viewer-role.sql` again after a
-   migration adds a table.
+   migration adds a table. A migration that adds or recreates the read model's views needs nothing:
+   it grants them to `first_twenty_viewer` itself when the login exists (and `viewer-role.sql` grants
+   every view when you make the login later).
 
 2. In DBeaver: **Database > New Database Connection > PostgreSQL**.
    - **Main:** Host `localhost`, Port `5432`, Database `first_twenty`, Username `first_twenty_viewer`,
@@ -1056,10 +1062,14 @@ already read only `default`.
      `ubuntu` (`ec2-user` on Amazon Linux), Authentication **Public Key**, Private key your `.pem` file.
    - **Test Connection**, then **Finish**.
 
-3. Records are JSON in each table's `data` column. `server/deploy/browse.sql` has ready-made queries
-   (people, jobs, candidates and applications, offers, pay history, equity, time off, checklists, settings,
-   recent changes, the assistant's daily use): open it with **File > Open File**, choose the connection, put
-   the cursor in a query and press **Ctrl+Enter**. Double-click a `data` cell to see the whole record.
+3. Records are JSON in each table's `data` column; the `v_` views show them as typed columns.
+   `server/deploy/browse.sql` has ready-made queries (people with today's job and pay, headcount by month,
+   hires from job to first pay run, jobs, the hiring funnel, candidates and applications, offers, pay
+   history, pay runs, equity, time off, open checklists, integrity problems, settings, recent changes, the
+   assistant's daily use): open it with **File > Open File**, choose the connection, put the cursor in a
+   query and press **Ctrl+Enter**. Double-click a `data` cell to see the whole record. The views that
+   depend on today use the database's date; `SET first_twenty.today = '2026-12-31'` first reads them as of
+   another day.
 
 The app is the source of truth: edits belong in the app, which syncs them. The viewer cannot write, so
 nothing done in DBeaver can drift from what the app shows.
@@ -1132,6 +1142,12 @@ The server log shows `password authentication failed for user "first_twenty"` or
   ```
 - `MIGRATION_DATABASE_URL ... still has the CHANGE_ME placeholder`: put the `first_twenty_owner`
   password in it (step 3).
+- `unrecognized parameter "security_invoker"` in `007_read_model.sql`: the database is older than
+  Postgres 15 (see [Before you start](#before-you-start)). Nothing was applied; upgrade Postgres, then run
+  `server:migrate` again.
+- `cannot drop view ... because other objects depend on it` in a later `NNN_read_model.sql`: someone made
+  a view of their own on top of a read-model view. A read-model migration drops and recreates every
+  read-model view; drop the other view first (or move it off), then migrate again.
 
 ### The server cannot reach a database on another host
 

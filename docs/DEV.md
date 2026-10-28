@@ -98,6 +98,35 @@ When it runs:
 
 To sign in by hand (Settings, Server), the password is in `.data/dev/credentials.json`.
 
+## Query the data with SQL
+
+The server keeps each record whole, as JSON, in one table per collection (docs/SYNC.md). The read model
+(migration 007) adds views over those tables with one typed column per field, named in snake_case, so
+plain SQL reads them:
+
+| View | One row per |
+| --- | --- |
+| `v_people`, `v_comp`, `v_jobs`, `v_candidates`, `v_applications`, `v_offers`, `v_checklists`, `v_grants`, `v_time_off_requests`, `v_documents`, `v_activity` | record of that collection |
+| `v_checklist_tasks` | checklist task |
+| `v_application_stages` | stage move of an application |
+| `v_pay_runs` | pay period marked submitted (from the company document) |
+| `v_current_job` | person: today's title, department, pay and state (incoming, active, on leave, former) |
+| `v_hire_journey` | hire: job, application, accepted offer, person, starting pay, onboarding checklist, first pay run |
+| `v_pipeline_funnel` | job and stage: applications there now, and every one that ever entered it |
+| `v_headcount_by_month` | month: headcount on its last day, starts and last days |
+| `v_integrity_problems` | problem found by the checks in `src/domain/integrity.ts` (empty when the data is consistent) |
+
+Every view starts with `workspace_id`; the stack's sample company is `default`. Ready-made queries are in
+`server/deploy/browse.sql`. The views that depend on today use the database's date: run
+`SET first_twenty.today = '2026-10-09'` first to read them as of the sample's anchor day.
+
+To change the read model, edit `server/src/readmodel/spec.ts` (every field is a typed path into
+`src/domain/types.ts`, so a typo fails `npm run typecheck`), then run
+`npm run server:gen-sql -- --read-model --write`. It saves the whole read model as the next migration,
+`server/sql/NNN_read_model.sql`, which drops the views and creates them again, so no applied migration
+changes. `server/src/readmodel/readmodel.test.ts` fails until the newest one matches. Changing a check in
+`src/domain/integrity.ts` changes `v_integrity_problems` the same way.
+
 ## Claude Code in a codespace
 
 Claude Code is installed in every codespace. Open a new terminal (the stack keeps the first one busy) and

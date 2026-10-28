@@ -89,6 +89,10 @@ Decisions (from the user, October 2026):
   (input at full price, written to the prompt cache, read from it, and output with the thinking in it),
   counted for every turn, a turn that failed part way included. Nothing of what was asked or answered.
   Deleting a workspace deletes its rows (the foreign key cascades, and the expiry deletes them by name).
+- **Read model** (migration 007, `server/src/readmodel`): views with typed columns over the record tables
+  and `workspace_docs` (`v_people`, `v_hire_journey`, `v_integrity_problems`, ...) for reading with plain
+  SQL (docs/DEV.md, "Query the data with SQL"). Read-only and outside sync: no triggers, nothing on the
+  write path, and the app never reads them.
 
 ## Protocol (`/api`, JSON)
 
