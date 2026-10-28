@@ -558,13 +558,14 @@ rm -rf ~/ft-setup
   everything back if Caddy does not take it. Then it starts the first staging deploy, and only once nothing
   answers on 127.0.0.1:2019;
 - also for staging: gives the live server and Postgres a memory reserve (`MemoryLow=` drop-ins for
-  `first-twenty.service`, the Postgres cluster's unit and `system.slice`), so a staging build gives up its
-  memory first; it changes neither unit file;
+  `first-twenty.service`, the Postgres cluster's unit, `system-postgresql.slice` that the cluster runs in,
+  and `system.slice`), so a staging build gives up its memory first; it changes neither unit file;
 - for live: switches the origin of `/opt/first-twenty` to `https://github.com/unique-name27/first-twenty-team.git`
-  (the old address stays as the remote `previous-origin`, which no branch follows), moves HEAD off its branch
-  without changing a file (the branch is kept as `previous-origin-main`, with no upstream, so `git switch
-  main` cannot bring the old code back), records the commit checked out there now as deployed (so nothing
-  happens until a newer release exists), and turns on the live timer.
+  (the old address stays as the remote `previous-origin`, which no branch follows, and the old repo's
+  `origin/main` goes), moves HEAD off its branch without changing a file (the branch is kept as
+  `previous-origin-main`, with no upstream, so `git switch main` cannot bring the old code back), records
+  the commit checked out there now as deployed (so nothing happens until a newer release exists), and turns
+  on the live timer.
 
 `--staging-only` or `--live-only` sets up one of the two. `--release-author` names another GitHub login
 whose releases go live, and `--deploy-user` another login for the live channel. It never touches the live
@@ -738,7 +739,9 @@ on the same instance as the live server, so the kit keeps it away from what coul
 - **Files**: the staging user cannot read `/opt/first-twenty`, `/etc/first-twenty` or the backups.
 
 Memory: setup gives the live server (150 MB) and Postgres (200 MB) a reserve with `MemoryLow=` drop-ins,
-so while staging builds, the kernel takes memory from the build and the rest first. The build has no
+so while staging builds, the kernel takes memory from the build and the rest first. A reserve counts only
+as far as the slice above it has one too, so the drop-ins also go on `system-postgresql.slice` (where
+systemd runs the Postgres cluster) and on `system.slice` (exactly the sum of the two). The build has no
 memory limit of its own (a limit below what it needs would only make it thrash). After the first staging
 deploy, see how much it took with `sudo journalctl -u first-twenty-autoupdate-staging | grep 'memory peak'`
 (systemd logs it when each run ends), or with `systemctl show -p MemoryPeak first-twenty-autoupdate-staging`

@@ -13,13 +13,14 @@
 #   - the first_twenty_staging database and its two roles, made by postgres-setup.sql with the staging
 #     names; pg_hba.conf lines keep the staging roles in that database, from this instance only (backed up
 #     first), and only then it generates their passwords and writes them only to
-#     /etc/first-twenty-staging/env (root only), restarting a staging server that is running
+#     /etc/first-twenty-staging/env (root only), restarting a staging server that is installed and running
 #   - /etc/first-twenty-staging/env: port 8788, open sign-up with demo limits, no assistant, no careers
 #   - /opt/first-twenty-staging: a clone of the team repo, owned by first-twenty-staging
 #   - first-twenty-staging.service, first-twenty-staging-migrate.service, and
 #     first-twenty-autoupdate-staging.service and .timer (every 5 minutes)
-#   - memory reserves (MemoryLow= drop-ins) for first-twenty.service, the Postgres cluster's unit and
-#     system.slice, so a staging build gives up its memory before the live server and Postgres do
+#   - memory reserves (MemoryLow= drop-ins) for first-twenty.service, the Postgres cluster's unit, the slice
+#     that unit runs in (system-postgresql.slice) and system.slice, so a staging build gives up its memory
+#     before the live server and Postgres do
 #   - /etc/sudoers.d/first-twenty-staging: first-twenty-staging may start first-twenty-staging-migrate and
 #     restart first-twenty-staging, nothing else (checked with visudo first)
 #   - /etc/caddy/first-twenty.d/staging.caddy for the staging domain, and the line that imports it in
@@ -30,8 +31,9 @@
 #
 # Live (skipped with --staging-only):
 #   - switches the origin of /opt/first-twenty to the public team repo over HTTPS, keeping the old address
-#     as the remote previous-origin; HEAD stays on the same commit but leaves its branch, which is renamed
-#     previous-origin-main and loses its upstream, so no git switch or git pull brings the old code back
+#     as the remote previous-origin and dropping the old repo's origin/main; HEAD stays on the same commit
+#     but leaves its branch, which is renamed previous-origin-main and loses its upstream, so no git switch
+#     or git pull brings the old code back
 #   - records the commit /opt/first-twenty has checked out as deployed, so nothing happens until the
 #     product owner publishes a newer release
 #   - first-twenty-autoupdate-live.service and .timer (every 5 minutes), run as the login that owns
@@ -450,8 +452,10 @@ staging_hba() {
 }
 
 # The staging settings file. New passwords (when the file is missing, or a role is missing or has no
-# password, as $1 from staging_objects says) are set on the roles and written to the file in one go, so the two never disagree, and a staging
-# server already running is restarted to read them (systemd reads the file only when a service starts).
+# password, as $1 from staging_objects says) are set on the roles and written to the file in one go, so the
+# two never disagree, and a staging server already running is restarted to read them (systemd reads the
+# file only when a service starts). On the first run its unit is not installed yet (that comes later), and
+# systemctl try-restart fails for a unit it cannot find, so it is asked only for an installed one.
 staging_settings() {
   local need_passwords=false app_pw="" owner_pw=""
   [ -f "$STAGING_ENV" ] || need_passwords=true
@@ -479,8 +483,10 @@ staging_settings() {
   staging_env "${app_pw:-}" "${owner_pw:-}" | put "$STAGING_ENV" 0600 root:root
   [ "$DRY_RUN" = true ] || info "Wrote $STAGING_ENV (root only): port $STAGING_PORT, https://$STAGING_DOMAIN, open sign-up with demo limits, no assistant, no careers pages."
   unset app_pw owner_pw
-  run systemctl try-restart first-twenty-staging.service
-  [ "$DRY_RUN" = true ] || info "Restarted first-twenty-staging, if it was running, so it uses the new passwords."
+  if [ "$(systemctl show -p LoadState --value first-twenty-staging.service 2>/dev/null || true)" = loaded ]; then
+    run systemctl try-restart first-twenty-staging.service
+    [ "$DRY_RUN" = true ] || info "Restarted first-twenty-staging, if it was running, so it uses the new passwords."
+  fi
 }
 
 # A MemoryLow= drop-in: the memory the kernel leaves to unit $1 when memory runs short, so a staging build
@@ -495,20 +501,32 @@ MemoryLow=$3
 EOF
 }
 
-# MemoryLow= for the live server and Postgres (PG_UNIT, from staging_hba), and for system.slice, which
-# holds them. A unit's protection counts only up to its parent's, and system.slice has none by default;
-# the slice gets exactly their sum, since protection the slice has left over would spread to the build too.
-# The build itself gets no memory limit: a limit below what it needs would make it thrash, longer and
-# harder on the disk than now.
+# MemoryLow= for the live server and Postgres (PG_UNIT, from staging_hba), and for the slices above them. A
+# unit's protection counts only up to its parent's, and slices have none by default. first-twenty.service
+# sits in system.slice. The cluster's unit sits one level lower: systemd puts every instance of a template
+# in a slice named after it (system-postgresql.slice for postgresql@16-main.service), so that slice gets the
+# Postgres reserve too. system.slice gets exactly the sum, since protection a slice has left over would
+# spread to the build as well. The build itself gets no memory limit: a limit below what it needs would
+# make it thrash, longer and harder on the disk than now.
 staging_memory() {
-  local live=150 pg=200 total
+  local live=150 pg=200 total pg_slice
   total=$live
   run install -d -m 0755 "$UNIT_DIR/first-twenty.service.d" "$UNIT_DIR/system.slice.d"
   memory_dropin first-twenty.service Service "${live}M" | put_if_changed "$UNIT_DIR/first-twenty.service.d/memory.conf" 0644 root:root
   if [ -n "${PG_UNIT:-}" ]; then
     run install -d -m 0755 "$UNIT_DIR/$PG_UNIT.d"
+    # Kept as well: on its own it still works where the kernel does not pass slice protection down.
     memory_dropin "$PG_UNIT" Service "${pg}M" | put_if_changed "$UNIT_DIR/$PG_UNIT.d/memory.conf" 0644 root:root
-    total=$((live + pg))
+    # The slice systemd reports (reading it changes nothing), else the one its rule gives. The unit is not
+    # moved to system.slice instead: that would need a restart of Postgres, which serves other databases.
+    pg_slice=$(systemctl show -p Slice --value "$PG_UNIT" 2>/dev/null || true)
+    [[ $pg_slice =~ ^[A-Za-z0-9_.@-]+\.slice$ ]] && [ "$pg_slice" != -.slice ] || pg_slice="system-${PG_UNIT%%@*}.slice"
+    if [ "$pg_slice" != system.slice ]; then
+      run install -d -m 0755 "$UNIT_DIR/$pg_slice.d"
+      memory_dropin "$pg_slice" Slice "${pg}M" | put_if_changed "$UNIT_DIR/$pg_slice.d/memory.conf" 0644 root:root
+    fi
+    # Only a slice inside system.slice draws on its reserve.
+    case "$pg_slice" in system.slice | system-*.slice) total=$((live + pg)) ;; esac
   else
     warn "Could not tell this Postgres cluster's systemd unit from the pg_hba.conf path, so only the live server gets a memory reserve."
   fi
@@ -797,13 +815,14 @@ setup_caddy() {
 # ------------------------------------------------------------------------------------------------
 
 setup_live() {
-  local origin head keep branch kept upstream
+  local origin head keep branch kept upstream switched=false refs ref
 
   step "Live: $LIVE_DIR fetches from $GIT_URL"
   origin=$(as_user "$DEPLOY_USER" git -C "$LIVE_DIR" remote get-url origin 2>/dev/null || true)
   if [ "$origin" = "$GIT_URL" ]; then
     info "origin is already $GIT_URL."
   else
+    switched=true
     if [ -n "$origin" ]; then
       info "origin is $origin today; the team repo has its own history, so releases are fetched by exact commit and checked out detached."
       # The old address stays as a remote of its own, which no branch follows.
@@ -815,20 +834,33 @@ setup_live() {
     else
       run_as "$DEPLOY_USER" git -C "$LIVE_DIR" remote add origin "$GIT_URL"
     fi
-    # The branch checked out now (main, usually) holds the old repo's code. HEAD leaves it for the same
-    # commit, which changes no file, and the branch is renamed and loses its upstream, so no git switch main
-    # or git pull (from a hint, a habit or an old guide) can bring that code back. Releases are checked out
-    # detached from now on.
-    branch=$(as_user "$DEPLOY_USER" git -C "$LIVE_DIR" symbolic-ref -q --short HEAD 2>/dev/null || true)
-    if [ -n "$branch" ]; then
-      kept=previous-origin-main
-      if as_user "$DEPLOY_USER" git -C "$LIVE_DIR" rev-parse -q --verify "refs/heads/$kept" >/dev/null 2>&1; then kept=previous-origin-main-$STAMP; fi
-      upstream=$(as_user "$DEPLOY_USER" git -C "$LIVE_DIR" config --get "branch.$branch.merge" 2>/dev/null || true)
-      run_as "$DEPLOY_USER" git -C "$LIVE_DIR" checkout --quiet --detach
-      run_as "$DEPLOY_USER" git -C "$LIVE_DIR" branch -m "$branch" "$kept"
-      [ -z "$upstream" ] || run_as "$DEPLOY_USER" git -C "$LIVE_DIR" branch --unset-upstream "$kept"
-      [ "$DRY_RUN" = true ] || info "HEAD now points at the same commit without a branch; the old branch $branch is kept as $kept, with no upstream."
-    fi
+  fi
+  # The branch checked out now (main, usually) holds the old repo's code. HEAD leaves it for the same commit,
+  # which changes no file, and the branch is renamed and loses its upstream, so no git switch main or git
+  # pull (from a hint, a habit or an old guide) can bring that code back. Releases are checked out detached
+  # from now on. This runs whenever HEAD is still on a branch, so a run after an earlier setup that only
+  # switched origin finishes the job; once HEAD is detached it does nothing.
+  branch=$(as_user "$DEPLOY_USER" git -C "$LIVE_DIR" symbolic-ref -q --short HEAD 2>/dev/null || true)
+  # The old repo's remote-tracking refs (origin/main, origin/HEAD) also name its commits until the first
+  # release is fetched, and git switch main would make a new main from them. They go when origin changes or
+  # HEAD is still on a branch (the old repo, the remote previous-origin, still has those commits), and the
+  # updater fetches origin/main from the team repo before every deploy.
+  if [ "$switched" = true ] || [ -n "$branch" ]; then
+    refs=$(as_user "$DEPLOY_USER" git -C "$LIVE_DIR" for-each-ref --format='%(refname)' refs/remotes/origin/ 2>/dev/null || true)
+    for ref in $refs; do
+      # --no-deref: origin/HEAD goes itself, not the branch it points at.
+      run_as "$DEPLOY_USER" git -C "$LIVE_DIR" update-ref --no-deref -d "$ref"
+    done
+    [ -z "$refs" ] || [ "$DRY_RUN" = true ] || info "Removed the old repo's origin/main (and origin/HEAD); the first release fetches origin/main from $GIT_URL."
+  fi
+  if [ -n "$branch" ]; then
+    kept=previous-origin-main
+    if as_user "$DEPLOY_USER" git -C "$LIVE_DIR" rev-parse -q --verify "refs/heads/$kept" >/dev/null 2>&1; then kept=previous-origin-main-$STAMP; fi
+    upstream=$(as_user "$DEPLOY_USER" git -C "$LIVE_DIR" config --get "branch.$branch.merge" 2>/dev/null || true)
+    run_as "$DEPLOY_USER" git -C "$LIVE_DIR" checkout --quiet --detach
+    run_as "$DEPLOY_USER" git -C "$LIVE_DIR" branch -m "$branch" "$kept"
+    [ -z "$upstream" ] || run_as "$DEPLOY_USER" git -C "$LIVE_DIR" branch --unset-upstream "$kept"
+    [ "$DRY_RUN" = true ] || info "HEAD now points at the same commit without a branch; the old branch $branch is kept as $kept, with no upstream."
   fi
   # Code copied over the checkout (deploy.sh --archive, rsync) shows up as changed files, and the live
   # channel never checks a release out over changes.

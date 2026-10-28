@@ -12,9 +12,10 @@
 # option that implies it) cannot be used here; the build gets a private /tmp, a read-only /usr and /etc,
 # no access to /home or to the EC2 metadata service, a smaller share of the CPU than the live server, and
 # it is the first process the kernel stops when memory runs out. Memory itself is protected on the live
-# side instead: setup-auto-deploy.sh gives first-twenty and Postgres a MemoryLow= reserve, so the kernel
-# reclaims the build's memory before theirs. IOWeight= is kept for disks that honor it, but has no effect
-# on this instance's NVMe disk (its I/O scheduler is "none").
+# side instead: setup-auto-deploy.sh gives first-twenty and Postgres (its unit and the slice it runs in) a
+# MemoryLow= reserve, so the kernel reclaims the build's memory before theirs.
+# IOWeight= is kept for disks that honor it, but has no effect on this instance's NVMe disk (its I/O
+# scheduler is "none").
 
 [Unit]
 Description=First Twenty staging: deploy main after CI passes

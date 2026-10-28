@@ -607,15 +607,31 @@ cat > "$work/bin/psql" <<'EOF'
 echo "psql $*" >> "$CALLS"
 sed -n "s/^ALTER ROLE \\([a-z_]*\\) PASSWORD '\\([0-9a-f]*\\)';$/\\1 \\2/p" >> "$SET"
 EOF
+# Like systemd 255: try-restart (or restart) of a unit that is not installed fails with "not found" (exit 5);
+# show answers LoadState. $UNITF stands for the installed unit file.
 cat > "$work/bin/systemctl" <<'EOF'
 #!/usr/bin/env bash
+if [ "$1 $2 $3 $4" = "show -p LoadState --value" ]; then
+  if [ -f "$UNITF" ]; then echo loaded; else echo not-found; fi
+  exit 0
+fi
+case "$1" in
+  try-restart | restart) [ -f "$UNITF" ] || { echo "Failed to $1 $2: Unit $2 not found." >&2; exit 5; } ;;
+esac
 echo "systemctl $* env-password=$(sed -n 's#^DATABASE_URL=postgres://[^:]*:\\([^@]*\\)@.*#\\1#p' "$ENVF" 2>/dev/null)" >> "$CALLS"
 EOF
 printf '#!/usr/bin/env bash\\nexit 0\\n' > "$work/bin/chown"
 chmod +x "$work"/bin/*
-export PATH="$work/bin:$PATH" CALLS="$work/calls" SET="$work/set" ENVF="$work/env"
+export PATH="$work/bin:$PATH" CALLS="$work/calls" SET="$work/set" ENVF="$work/env" UNITF="$work/first-twenty-staging.service"
 DRY_RUN=false STAMP=20261027-000000 STAGING_ENV="$work/env" STAGING_PORT=8788 STAGING_DOMAIN=staging.test.example
 STAGING_DB=first_twenty_staging STAGING_ROLE=first_twenty_staging STAGING_OWNER=first_twenty_staging_owner
+# The first run on an instance without staging: no settings file, no roles, and the unit not installed yet
+# (it comes later in setup). set -e stops this script if anything in it fails.
+: > "$work/calls"; : > "$work/set"
+echo "--- fresh-box"; staging_settings 'f|f|f|t'
+echo "--- fresh-box-calls"; cat "$work/calls"
+rm -f "$work/env" "$work"/env.bak-*
+: > "$UNITF"
 : > "$work/calls"; : > "$work/set"
 echo "--- new"; staging_settings 'f|f|f'
 echo "--- calls"; cat "$work/calls"
@@ -631,6 +647,11 @@ echo "--- no-password-calls"; cat "$work/calls"
 `)
     expect(r.stderr).toBe('')
     const out = sections(r.stdout)
+    // Before its unit is installed, nothing is restarted, and setup goes on.
+    expect(out['fresh-box']).toContain('Set new generated passwords on both roles.')
+    expect(out['fresh-box']).not.toContain('Restarted first-twenty-staging')
+    expect(out['fresh-box-calls']).toBeDefined()
+    expect(out['fresh-box-calls']).not.toContain('try-restart')
     expect(out.new).toContain('Set new generated passwords on both roles.')
     expect(out.new).toContain('Restarted first-twenty-staging, if it was running, so it uses the new passwords.')
     const calls = out.calls.trim().split('\n')
@@ -656,16 +677,21 @@ echo "--- no-password-calls"; cat "$work/calls"
     const fns = ['info', 'warn', 'run', 'put', 'put_if_changed', 'memory_dropin', 'staging_memory', 'live_kit_warning'].map((n) => shellFunction(setup, n)).join('\n')
     const r = bash(`${prelude}
 ${fns}
-mkdir -p "$work/bin" "$work/units" "$work/units2"
+mkdir -p "$work/bin" "$work/units" "$work/units2" "$work/units3"
 printf '#!/usr/bin/env bash\\nexit 0\\n' > "$work/bin/chown"
+# systemctl show -p Slice answers FAKE_SLICE (nothing by default, as when systemd cannot say).
+printf '#!/usr/bin/env bash\\n[ "$1 $2 $3 $4" = "show -p Slice --value" ] && { printf "%%s" "\${FAKE_SLICE:-}"; exit 0; }\\nexit 1\\n' > "$work/bin/systemctl"
 chmod +x "$work"/bin/*
 export PATH="$work/bin:$PATH"
 DRY_RUN=false UNIT_DIR="$work/units" PG_UNIT=postgresql@16-main.service
 echo "--- first"; staging_memory 2>&1
 echo "--- again"; staging_memory 2>&1
-for f in first-twenty.service.d/memory.conf postgresql@16-main.service.d/memory.conf system.slice.d/memory.conf; do
+for f in first-twenty.service.d/memory.conf postgresql@16-main.service.d/memory.conf system-postgresql.slice.d/memory.conf system.slice.d/memory.conf; do
   echo "--- $f"; cat "$work/units/$f"
 done
+# What systemd reports wins over its naming rule.
+echo "--- custom"; UNIT_DIR="$work/units3" FAKE_SLICE=system-pg16.slice staging_memory 2>&1
+echo "--- custom-files"; (cd "$work/units3" && ls -d *.d)
 UNIT_DIR="$work/units2" PG_UNIT=
 echo "--- no-pg"; staging_memory 2>&1
 echo "--- no-pg-slice"; cat "$work/units2/system.slice.d/memory.conf"
@@ -678,16 +704,20 @@ echo "--- no-kit"; LIVE_DIR="$work/none" live_kit_warning 2>&1
 `)
     expect(r.stderr).toBe('')
     const out = sections(r.stdout)
-    expect(out.first.match(/Wrote /g)).toHaveLength(3)
-    expect(out.again.match(/is up to date\./g)).toHaveLength(3)
+    expect(out.first.match(/Wrote /g)).toHaveLength(4)
+    expect(out.again.match(/is up to date\./g)).toHaveLength(4)
     expect(out.again).not.toContain('Wrote ')
     const conf = (name: string) => directives(out[name])
     expect(out['first-twenty.service.d/memory.conf']).toMatch(/^\[Service\]$/m)
     expect(conf('first-twenty.service.d/memory.conf')).toEqual(['MemoryLow=150M'])
     expect(conf('postgresql@16-main.service.d/memory.conf')).toEqual(['MemoryLow=200M'])
+    // The cluster's unit runs in its template's slice under system.slice, which needs the reserve as well.
+    expect(out['system-postgresql.slice.d/memory.conf']).toMatch(/^\[Slice\]$/m)
+    expect(conf('system-postgresql.slice.d/memory.conf')).toEqual(['MemoryLow=200M'])
     expect(out['system.slice.d/memory.conf']).toMatch(/^\[Slice\]$/m)
     // A child's protection counts only up to its parent's: the slice gets exactly the sum.
     expect(conf('system.slice.d/memory.conf')).toEqual(['MemoryLow=350M'])
+    expect(out['custom-files'].trim().split('\n').sort()).toEqual(['first-twenty.service.d', 'postgresql@16-main.service.d', 'system-pg16.slice.d', 'system.slice.d'])
     expect(out['no-pg']).toContain('only the live server gets a memory reserve')
     expect(directives(out['no-pg-slice'])).toEqual(['MemoryLow=150M'])
     expect(out['old-kit']).toContain('run setup-ec2.sh only from a fresh clone of main')
@@ -714,8 +744,13 @@ echo '{"name":"first-twenty"}' > "$work/private/package.json"
 g -C "$work/private" add -A; g -C "$work/private" commit -qm private
 g clone -q "$work/private" "$work/live"
 g -C "$work/live" config core.autocrlf false
+# The private repo moves on after the clone, so the clone's origin/main is ahead of what runs.
+echo newer > "$work/private/newer.txt"
+g -C "$work/private" add -A; g -C "$work/private" commit -qm newer
+g -C "$work/live" fetch -q origin
 echo "--- before"
 echo "head=$(g -C "$work/live" rev-parse HEAD) branch=$(g -C "$work/live" symbolic-ref -q --short HEAD) upstream=$(g -C "$work/live" config --get branch.main.merge)"
+echo "remote-refs=$(g -C "$work/live" for-each-ref --format='%(refname)' refs/remotes/origin | tr '\\n' ' ')"
 DRY_RUN=false STAMP=20261027-000000 LIVE_DIR="$work/live" LIVE_STATE="$work/state" UNIT_DIR="$work/units" UPDATER="$work/bin/updater"
 GIT_URL=https://github.com/unique-name27/first-twenty-team.git REPO=unique-name27/first-twenty-team DEFAULT_REPO=$REPO
 DEPLOY_USER=ubuntu DEPLOY_GROUP=ubuntu RELEASE_AUTHOR=unique-name27 SCRIPT_DIR="$DEPLOY"
@@ -727,25 +762,50 @@ echo "branches=$(g -C "$work/live" for-each-ref --format='%(refname:short)' refs
 echo "upstream=[$(g -C "$work/live" config --get branch.previous-origin-main.merge || true)]"
 echo "origin=$(g -C "$work/live" remote get-url origin) previous=$(g -C "$work/live" remote get-url previous-origin)"
 echo "status=[$(g -C "$work/live" status --porcelain)]"
+echo "remote-refs=[$(g -C "$work/live" for-each-ref --format='%(refname)' refs/remotes | tr '\\n' ' ')]"
+# The hint an older deploy.sh prints on a detached HEAD: git switch main must not bring back the old code.
+rc=0; g -C "$work/live" switch -q main >/dev/null 2>&1 || rc=$?; echo "switch-main=$rc"
 echo "--- again"; setup_live 2>&1
 echo "--- after-again"
 echo "branches=$(g -C "$work/live" for-each-ref --format='%(refname:short)' refs/heads | tr '\\n' ' ')"
+# An earlier setup switched origin but left HEAD on main and the old origin/main in place: a run now
+# finishes the job.
+g clone -q "$work/private" "$work/live2"
+g -C "$work/live2" config core.autocrlf false
+g -C "$work/live2" remote set-url origin https://github.com/unique-name27/first-twenty-team.git
+echo "--- half-done"; LIVE_DIR="$work/live2" setup_live 2>&1
+echo "--- half-done-after"
+echo "branch=[$(g -C "$work/live2" symbolic-ref -q --short HEAD || true)]"
+echo "branches=$(g -C "$work/live2" for-each-ref --format='%(refname:short)' refs/heads | tr '\\n' ' ')"
+echo "remote-refs=[$(g -C "$work/live2" for-each-ref --format='%(refname)' refs/remotes | tr '\\n' ' ')]"
 `)
     expect(r.stderr).toBe('')
     const out = sections(r.stdout)
     const before = /^head=([0-9a-f]{40}) branch=main upstream=refs\/heads\/main$/m.exec(out.before)
     expect(before, out.before).not.toBeNull()
+    expect(out.before).toContain('refs/remotes/origin/main')
     expect(out.first).toContain('The old address is kept as the remote "previous-origin"')
     expect(out.first).toContain('the old branch main is kept as previous-origin-main, with no upstream')
+    expect(out.first).toContain("Removed the old repo's origin/main")
     // Same commit, no branch, nothing changed in the working tree.
     expect(out.after).toContain(`head=${before![1]} branch=[]`)
     expect(out.after).toContain('branches=previous-origin-main \n')
     expect(out.after).toContain('upstream=[]')
     expect(out.after).toContain(`origin=https://github.com/unique-name27/first-twenty-team.git previous=`)
     expect(out.after).toContain('status=[]')
+    // No remote-tracking ref names the old repo's commits, so git switch main has nothing to start from.
+    expect(out.after).toContain('remote-refs=[]')
+    expect(out.after).not.toContain('switch-main=0')
     // A second run finds origin switched already and changes nothing.
     expect(out.again).toContain('origin is already https://github.com/unique-name27/first-twenty-team.git')
+    expect(out.again).not.toContain('Removed the old repo')
     expect(out['after-again']).toContain('branches=previous-origin-main \n')
+    // Origin already switched by an earlier setup, HEAD still on main: this run detaches it and drops the old refs.
+    expect(out['half-done']).toContain('origin is already https://github.com/unique-name27/first-twenty-team.git')
+    expect(out['half-done']).toContain('the old branch main is kept as previous-origin-main, with no upstream')
+    expect(out['half-done-after']).toContain('branch=[]')
+    expect(out['half-done-after']).toContain('branches=previous-origin-main \n')
+    expect(out['half-done-after']).toContain('remote-refs=[]')
   })
 
   it('renders the units and the Caddy site for the staging domain, the deploy login and the release author', () => {
@@ -2471,9 +2531,17 @@ cat > "$work/bin/git" <<EOF
 echo "git \\$*" >> "\\$CALLS"
 exec "$REAL_GIT" "\\$@"
 EOF
-for c in caddy visudo useradd install systemctl chown chmod curl; do
+for c in caddy visudo useradd install chown chmod curl; do
   printf '#!/usr/bin/env bash\\necho "%s $*" >> "$CALLS"\\n' "$c" > "$work/bin/$c"
 done
+# As on an instance without staging: first-twenty-staging.service is not installed, and systemd does not
+# name a slice (setup then uses the one systemd's naming rule gives).
+cat > "$work/bin/systemctl" <<'EOF'
+#!/usr/bin/env bash
+echo "systemctl $*" >> "$CALLS"
+[ "$*" != 'show -p LoadState --value first-twenty-staging.service' ] || echo not-found
+exit 0
+EOF
 # The caddy user's folder, for the admin socket.
 printf '#!/usr/bin/env bash\\n[ "$1 $2" = "-c %%U" ] && { echo caddy; exit 0; }\\nexec /usr/bin/stat "$@"\\n' > "$work/bin/stat"
 chmod +x "$work"/bin/*
@@ -2554,7 +2622,6 @@ plan dirty --live-only
       'host    all  first_twenty_staging,first_twenty_staging_owner  ::/0          reject',
       'would generate two passwords, set them on first_twenty_staging and first_twenty_staging_owner, and write them only into /etc/first-twenty-staging/env',
       'would write /etc/first-twenty-staging/env (mode 0600, root:root)',
-      'would run: systemctl try-restart first-twenty-staging.service',
       'would run as first-twenty-staging: git clone --quiet https://github.com/unique-name27/first-twenty-team.git /opt/first-twenty-staging',
       'would write /etc/systemd/system/first-twenty-staging.service (mode 0644, root:root)',
       'would write /etc/systemd/system/first-twenty-staging-migrate.service (mode 0644, root:root)',
@@ -2563,6 +2630,8 @@ plan dirty --live-only
       'would run: install -d -m 0755 /etc/systemd/system/first-twenty.service.d /etc/systemd/system/system.slice.d',
       'would write /etc/systemd/system/first-twenty.service.d/memory.conf (mode 0644, root:root)',
       'would write /etc/systemd/system/postgresql@16-main.service.d/memory.conf (mode 0644, root:root)',
+      'would run: install -d -m 0755 /etc/systemd/system/system-postgresql.slice.d',
+      'would write /etc/systemd/system/system-postgresql.slice.d/memory.conf (mode 0644, root:root)',
       'would write /etc/systemd/system/system.slice.d/memory.conf (mode 0644, root:root)',
       'would run: systemctl daemon-reload',
       'would run: systemctl enable --quiet first-twenty-staging.service',
@@ -2592,6 +2661,9 @@ plan dirty --live-only
       return at
     })
     expect([...plan].sort((a, b) => a - b)).toEqual(plan)
+    // first-twenty-staging.service is not installed yet, so there is nothing to restart for new passwords.
+    expect(out).not.toContain('try-restart')
+    expect(callsOf(s)).toContain('systemctl show -p LoadState --value first-twenty-staging.service')
   })
 
   it('changes nothing: only reads, and never shows a password', () => {
@@ -2603,8 +2675,8 @@ plan dirty --live-only
     expect(s).toContain('live-branch=main\n')
     const calls = callsOf(s)
     // Nothing that changes the instance ran.
-    // (caddy version only reads.)
-    expect(calls.filter((c) => /^(caddy|visudo|useradd|install|systemctl|chown|chmod|curl) /.test(c) && c !== 'caddy version')).toEqual([])
+    // (caddy version and systemctl show only read.)
+    expect(calls.filter((c) => /^(caddy|visudo|useradd|install|systemctl|chown|chmod|curl) /.test(c) && c !== 'caddy version' && !c.startsWith('systemctl show '))).toEqual([])
     expect(calls.filter((c) => /^git .*\b(clone|set-url|remote add|fetch|checkout)\b/.test(c))).toEqual([])
     // psql only read the catalog and the pg_hba.conf location.
     const psql = calls.filter((c) => c.startsWith('psql '))
