@@ -164,7 +164,9 @@ To change the read model, edit `server/src/readmodel/spec.ts` (every field is a 
 `src/domain/types.ts`, so a typo fails `npm run typecheck`), then run
 `npm run server:gen-sql -- --read-model --write`. It saves the whole read model as the next migration,
 `server/sql/NNN_read_model.sql`, which drops the views and creates them again, so no applied migration
-changes. `server/src/readmodel/readmodel.test.ts` fails until the newest one matches. Changing a check in
+changes, and lists it in `server/sql/SHA256SUMS`. `server/src/readmodel/readmodel.test.ts` fails until the
+newest one matches. While that file is your branch's own and not on main yet, `--replace` instead of
+`--write` rewrites it; it refuses a file that is on main. Changing a check in
 `src/domain/integrity.ts` changes `v_integrity_problems` the same way.
 
 ## Claude Code in a codespace

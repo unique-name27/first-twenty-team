@@ -8,9 +8,11 @@
 //   1. Change this file (or the integrity checks).
 //   2. Run `npm run server:gen-sql -- --read-model --write`. It saves the whole read model as the next
 //      migration, server/sql/NNN_read_model.sql, which drops every read-model view and creates them all
-//      again, so no applied migration ever changes. (If the newest NNN_read_model.sql is one your own branch
-//      added and it is not on main yet, use --replace instead, which rewrites that file.)
-//   3. readmodel.test.ts fails until the newest NNN_read_model.sql equals the generator's output.
+//      again, so no applied migration ever changes, and lists it in server/sql/SHA256SUMS. (If the newest
+//      NNN_read_model.sql is one your own branch added and it is not on main yet, use --replace instead,
+//      which rewrites that file; it refuses a file that is on main.)
+//   3. readmodel.test.ts fails until the newest NNN_read_model.sql equals the generator's output, and
+//      server/src/checksums.test.ts fails if a migration differs from its line in SHA256SUMS.
 // A view removed from this file goes into RETIRED_VIEWS, so the next migration drops it.
 //
 // Rules for every view (the generator and readmodel.test.ts enforce them): workspace_id first (filter on it

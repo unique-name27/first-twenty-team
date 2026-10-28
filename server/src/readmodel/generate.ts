@@ -1,6 +1,6 @@
 // Writes the read model (spec.ts) as one migration body: the guarded cast helpers, every view, and the
 // read-only login's grant. `npm run server:gen-sql -- --read-model` prints it; --write saves it as the next
-// numbered migration and --replace rewrites the newest read-model migration (only for one not on main yet).
+// numbered migration and --replace rewrites the newest read-model migration (it refuses one on main).
 // readmodel.test.ts checks that the newest NNN_read_model.sql equals readModelSql() exactly.
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -245,6 +245,14 @@ export function nextReadModelFile(dir: string): string {
     .map(Number)
   const next = Math.max(0, ...numbers) + 1
   return `${String(next).padStart(3, '0')}_read_model.sql`
+}
+
+/** Why a folder's newest read-model migration differs from the generator (the drift test's message), or null. */
+export function readModelDrift(dir: string): string | null {
+  const newest = newestReadModelFile(dir)
+  if (!newest) return `There is no NNN_read_model.sql in server/sql. Run: ${READ_MODEL_COMMAND}`
+  if (isCurrent(dir, newest)) return null
+  return `server/sql/${newest} differs from what server/src/readmodel/spec.ts and src/domain/integrity.ts generate. Run: ${READ_MODEL_COMMAND} (or --replace when that file is your branch's own and not on main yet)`
 }
 
 /** Whether a read-model file says exactly what the generator says now (line endings aside). */

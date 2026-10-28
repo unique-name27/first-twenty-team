@@ -56,7 +56,8 @@ keeps running until stopped: start it in the background and stop it when you are
   link and the date it was checked; constants live in `src/data/law.ts`. If the source cannot be opened,
   stop and say so.
 - **Never edit an applied SQL migration** (`server/sql/001` to `006`, and any migration already on `main`).
-  A schema change is a new numbered file plus a test.
+  A schema change is a new numbered file plus a test; `npm run server:gen-sql -- --checksums` lists it in
+  `server/sql/SHA256SUMS`, which a test checks so an applied migration cannot change unnoticed.
 - **No secrets.** Never read, print or commit `.env` files, keys, tokens or passwords. The live server's
   settings are not in this repo, and nobody but the product owner deploys.
 - **Privacy rules in ARCHITECTURE.md are hard**: no protected characteristics, no SSNs or bank details,

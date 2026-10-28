@@ -5,7 +5,8 @@
 // workspaces. Date-dependent views read as of the sample's anchor (SET first_twenty.today).
 // The store loads first so every seed and domain module finishes loading before the sample is built.
 import '@/store/db'
-import { readFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { produce } from 'immer'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -24,7 +25,7 @@ import { migrationsDir } from '../migrate'
 import { replaceWorkspace } from '../repo'
 import { makeTestDb } from '../test/helpers'
 import { parseWorkspace } from '../validate'
-import { isCurrent, newestReadModelFile, READ_MODEL_COMMAND, readModelSql, readModelViews } from './generate'
+import { newestReadModelFile, nextReadModelFile, READ_MODEL_COMMAND, READ_MODEL_FILE_RE, readModelDrift, readModelSql, readModelViews } from './generate'
 import { READ_MODEL } from './spec'
 
 const ANCHOR = '2026-10-09'
@@ -117,13 +118,24 @@ afterAll(async () => {
 
 describe('the read-model migration', () => {
   it('is exactly what the generator writes', () => {
-    const dir = migrationsDir()
-    const newest = newestReadModelFile(dir)
-    expect(newest).toBe('007_read_model.sql')
-    expect(
-      isCurrent(dir, newest!),
-      `server/sql/${newest} differs from what server/src/readmodel/spec.ts and src/domain/integrity.ts generate. Run: ${READ_MODEL_COMMAND} (or --replace when that file is your own and not on main yet)`,
-    ).toBe(true)
+    expect(readModelDrift(migrationsDir())).toBeNull()
+  })
+
+  it('takes the next read-model migration that --write saves, and names the newest file when it drifts', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'ft-readmodel-'))
+    try {
+      cpSync(migrationsDir(), dir, { recursive: true })
+      const next = nextReadModelFile(dir)
+      expect(next).toMatch(READ_MODEL_FILE_RE)
+      expect(next > newestReadModelFile(dir)!).toBe(true)
+      writeFileSync(path.join(dir, next), readModelSql())
+      expect(readModelDrift(dir)).toBeNull()
+      writeFileSync(path.join(dir, next), `${readModelSql()}-- edited by hand\n`)
+      expect(readModelDrift(dir)).toContain(`server/sql/${next} differs`)
+      expect(readModelDrift(dir)).toContain(READ_MODEL_COMMAND)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('stops on Postgres older than 15 before it changes anything', async () => {
