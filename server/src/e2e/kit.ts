@@ -10,7 +10,7 @@
 // A test then drives it with act (a domain change through one browser's store, as the app makes it, then a
 // sync), apply (the careers form, as a candidate's browser sends it), advanceTo (the app's clock override)
 // and sql (the read model's views). Wrap each part in step(): when one fails, the failure dump prints the
-// step log, the hire journeys and the tail of the change log.
+// step log, the hire journeys, the integrity problems and the tail of the change log.
 // Test-only: only tests import server/src/e2e.
 //
 // The store loads first, so every seed and domain module finishes loading before the sample is built.
@@ -107,7 +107,7 @@ export type Journey = {
   connect(name: string): Promise<Browser>
   /** A second login, invited from the admin's browser and joined the normal way, synced. */
   invite(name: string, email: string): Promise<Browser>
-  /** The failure dump: the step log, the hire journeys and the change log's tail. */
+  /** The failure dump: the step log, the hire journeys, the integrity problems and the change log's tail. */
   dump(): Promise<string>
   close(): Promise<void>
 }

@@ -10,16 +10,16 @@ import { setTaskStatus } from '@/domain/checklists/actions'
 import {
   advanceApplication,
   applicationLabel,
-  approveOffer,
+  approvalRequired,
   createOffer,
   lowerFirst,
   markAccepted,
   markSent,
   nextStage,
   offerDefaults,
-  proposeTimesFor,
   scheduleInterview,
   sendBlockers,
+  stageById,
   submitScorecard,
 } from '@/domain/hiring'
 import { integrityProblems } from '@/domain/integrity'
@@ -27,6 +27,9 @@ import { hireFromOffer } from '@/domain/lifecycle'
 import { markPayRunSubmitted, payRunPrep, periodContaining, periodLabel, providerPhrase } from '@/domain/payrun'
 import { personNameById } from '@/domain/people'
 import type { Offer, Rating } from '@/domain/types'
+import { proposedSlots } from '@/features/hiring/interviews/conflicts'
+import { defaultStepFor, formatForStage } from '@/features/hiring/interviews/logic'
+import { offerActionPlan } from '@/features/hiring/offers/logic'
 import { nowISO, pacificDateOf, today } from '@/lib/dates'
 import { diffDB } from '../../../src/sync/diff'
 import { WORKSPACE_ID } from '../sqlgen'
@@ -100,9 +103,15 @@ describe('journey: a careers application to a hire, onboarding and the first pay
 
     const interview = await j.step('moves it to the intro call and schedules the interview', async () => {
       expect(await advance()).toBe('intro')
-      const plan = job.interviewPlan.find((s) => s.stageId === 'intro')!
-      // The first time the schedule sheet proposes for this panel.
-      const [startsAt] = proposeTimesFor(admin.db(), today(), 1, { panelIds: plan.interviewerIds, durationMin: plan.durationMin })
+      // What the schedule sheet starts with (ScheduleSheet.tsx): the next step of the plan, its panel and
+      // length, the format for its stage and the first time it proposes.
+      const db = admin.db()
+      const at = db.applications.find((a) => a.id === appId)!
+      const plan = defaultStepFor(job, at, db.interviews.filter((i) => i.applicationId === appId))!
+      expect(plan.stageId).toBe('intro')
+      const cand = db.candidates.find((c) => c.id === at.candidateId)!
+      const [startsAt] = proposedSlots(db, today(), { panelIds: plan.interviewerIds, candidateTz: cand.timezone ?? null, durationMin: plan.durationMin, applicationId: appId })
+      const format = formatForStage(stageById(job, plan.stageId)?.kind)
       const id = await j.act(admin, `Scheduled ${lowerFirst(plan.name)} with ${name}`, (d) =>
         scheduleInterview(
           d,
@@ -114,8 +123,8 @@ describe('journey: a careers application to a hire, onboarding and the first pay
             startsAt,
             durationMin: plan.durationMin,
             interviewerIds: plan.interviewerIds,
-            format: 'video',
-            videoLink: 'https://meet.example.test/ledgerlark-intro',
+            format,
+            ...(format === 'video' ? { videoLink: 'https://meet.example.test/ledgerlark-intro' } : {}),
             attributes: plan.attributes,
           },
           { date: today() },
@@ -147,8 +156,8 @@ describe('journey: a careers application to a hire, onboarding and the first pay
     })
 
     // ---- The offer and the hire ----------------------------------------------------------------
-    const offerId = await j.step('drafts the offer, approves it and sends it', async () => {
-      // As the offer builder saves a new offer from its defaults (OfferBuilder.tsx save).
+    const offerId = await j.step('drafts the offer and sends it', async () => {
+      // As the offer builder saves a new offer from its defaults (OfferBuilder.tsx save, Save offer).
       const draft = {
         ...(offerDefaults(admin.db(), appId, today()) as Omit<Offer, 'id'>),
         draftedById: admin.viewerId(),
@@ -160,8 +169,11 @@ describe('journey: a careers application to a hire, onboarding and the first pay
       const created = await j.act(admin, `Drafted an offer for ${name}`, (d) => createOffer(d, draft))
       if (!created.ok) throw new Error(created.reason)
       const id = created.id
-      await j.act(admin, `Approved the offer for ${name}`, (d) => approveOffer(d, id, { approverId: admin.viewerId(), at: nowISO() }))
       const offer = admin.db().offers.find((o) => o.id === id)!
+      // An offer the admin drafts needs no approval, so its card offers Mark sent and no Approve (offerActionPlan).
+      const needsApproval = approvalRequired(admin.db(), offer, today())
+      expect(needsApproval).toBe(false)
+      expect(offerActionPlan({ status: offer.status, lapsed: false, needsApproval, isAdmin: true, hired: false, letter: true }).buttons).toContain('send')
       expect(sendBlockers(admin.db(), offer, today())).toEqual([])
       await j.act(admin, `Marked the offer to ${name} sent`, (d) => markSent(d, id, { date: today() }))
       expect(admin.db().grants.some((g) => g.fromOfferId === id && g.status === 'reserved')).toBe(true)
@@ -176,7 +188,10 @@ describe('journey: a careers application to a hire, onboarding and the first pay
       const db = admin.db()
       const offer = db.offers.find((o) => o.id === offerId)!
       expect(db.people.find((p) => p.id === id)).toMatchObject({ hireNumber: next, fromApplicationId: appId, startDate: offer.startDate })
-      expect(db.comp.filter((c) => c.personId === id)).toMatchObject([{ reason: 'hire', salary: offer.salary, effectiveOn: offer.startDate }])
+      // The admin drafted the offer and approved it by sending it (Oct 15): the starting pay row says so.
+      expect(db.comp.filter((c) => c.personId === id)).toMatchObject([
+        { reason: 'hire', salary: offer.salary, effectiveOn: offer.startDate, approvedById: admin.viewerId(), approvedOn: '2026-10-15' },
+      ])
       expect(db.applications.find((a) => a.id === appId)).toMatchObject({ status: 'hired', stageId: 'hired' })
       return id
     })
@@ -185,7 +200,8 @@ describe('journey: a careers application to a hire, onboarding and the first pay
     // ---- Onboarding ----------------------------------------------------------------------------
     await j.step('completes the onboarding checklist from the first day', async () => {
       const checklist = admin.db().checklists.find((c) => c.personId === personId && c.kind === 'onboarding')
-      expect(checklist?.tasks.length).toBeGreaterThan(0)
+      expect(checklist, 'the hire has an onboarding checklist').toBeDefined()
+      expect(checklist!.tasks.length).toBeGreaterThan(0)
       j.advanceTo(startDate)
       // One tap per task, as the task row's Done button marks it (src/features/people/parts.tsx).
       for (const task of checklist!.tasks.filter((t) => t.status === 'open')) {

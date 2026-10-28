@@ -181,9 +181,10 @@ takes a candidate from Ledgerlark's careers page to their first paycheck and pro
 
 - the careers form works through the real route, with its real checks and limits (a typo comes back to
   the candidate, a second click stores nothing more), and the application reaches the admin's browser by sync;
-- the admin's browser can move it through the stages, schedule the intro call, enter the scorecard, draft,
-  approve and send the offer, record the acceptance, hire from it, complete the onboarding checklist and
-  submit the first pay run that pays the new person, each change made by the domain function the screen calls;
+- the admin's browser can move it through the stages, schedule the intro call, enter the scorecard, draft
+  and send the offer (an offer the admin drafts needs no approval), record the acceptance, hire from it,
+  complete the onboarding checklist and submit the first pay run that pays the new person, each change made
+  by the domain function the screen calls;
 - the server holds all of it: `v_hire_journey` has one complete row for the hire, `v_integrity_problems` is
   empty (and `src/domain/integrity.ts` agrees on the browser's copy), and `change_log` has every write in
   order, under the login that sent it;
@@ -254,6 +255,9 @@ The rules that keep a journey honest:
 - **Change data only the way people do**: `j.act` with a domain function, or the careers form. Never write a
   record by hand, in a browser's store or in SQL. A refused change (the recipe returns `false` or
   `{ ok: false, reason }`, as the app's own `act()` reads it) or a change that changes nothing fails the step.
+- **Take only the steps the screen offers.** Start from what the screen starts with (the schedule sheet's
+  first proposed time, the offer builder's defaults), and where a button shows only in some states, check
+  it the way the journey checks the offer card's Mark sent with `offerActionPlan`.
 - **One fixed clock.** Move it with `j.advanceTo`. Never assert on a time of day (activity times and approvals
   keep the real time of day on the journey's date) or on a generated id: compare ids with the records that hold them.
 - **Check what the server holds** with `j.sql` over the read model's views ("Query the data with SQL" above),
