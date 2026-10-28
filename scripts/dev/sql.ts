@@ -6,8 +6,9 @@
 //
 // While the stack runs, its API holds the PGlite database (one process per folder), so this asks the API:
 // POST /__dev/sql on 127.0.0.1 at the stack's port, with the secret the stack wrote to <data folder>/
-// dev-tools.json (server/src/dev/routes.ts). With no stack running, it opens <data folder>/pg itself, in a
-// worker thread (sql-worker.ts) that it stops after STATEMENT_TIMEOUT_MS. Either way the statement runs in
+// dev-tools.json (server/src/dev/routes.ts). With no stack running, it copies <data folder>/pg to a temporary
+// folder (sql-copy.ts says why) and opens the copy in a worker thread (sql-worker.ts) that it stops after
+// STATEMENT_TIMEOUT_MS, then deletes the copy. Either way the statement runs in
 // server/src/dev/readonly.ts: one statement, read only, rolled back. It never reads DATABASE_URL or a .env
 // file, and never connects anywhere but this computer's dev stack. The pure parts are in sql-lib.ts.
 import { existsSync, readFileSync } from 'node:fs'
@@ -29,6 +30,7 @@ import {
   WORKSPACE_LIST_SQL,
   WORKSPACE_LOOKUP_SQL,
 } from './sql-lib'
+import { copyForReading, type DatabaseCopy } from './sql-copy'
 import type { FromWorker, ToWorker, WorkerData } from './sql-worker'
 import { DEV_TOOLS_FILE, devDirName, stackPorts } from './stack-lib.mjs'
 import { isStackProcess, readStackPid } from './stack-process.mjs'
@@ -118,9 +120,21 @@ function stackRunner(port: number, secret: string, devDir: string, restart: stri
   }
 }
 
-/** Opens the database folder in a worker thread, which it stops if a statement runs past STATEMENT_TIMEOUT_MS. */
-async function directRunner(pgDir: string, devDir: string, fresh: string): Promise<Runner> {
-  const worker = new Worker(new URL('./sql-worker.ts', import.meta.url), { workerData: { pgDir } satisfies WorkerData })
+/**
+ * Opens a copy of the database folder in a worker thread, which it stops if a statement runs past
+ * STATEMENT_TIMEOUT_MS. The copy goes when the runner closes or fails to open.
+ */
+async function directRunner(copy: DatabaseCopy, devDir: string, fresh: string): Promise<Runner> {
+  try {
+    return await openCopy(copy, devDir, fresh)
+  } catch (err) {
+    copy.remove()
+    throw err
+  }
+}
+
+async function openCopy(copy: DatabaseCopy, devDir: string, fresh: string): Promise<Runner> {
+  const worker = new Worker(new URL('./sql-worker.ts', import.meta.url), { workerData: { pgDir: copy.dir } satisfies WorkerData })
   const send = (message: ToWorker) => worker.postMessage(message)
   /** Settles each message the worker sends: one listener at a time. */
   let listener: ((message: FromWorker) => void) | null = null
@@ -153,14 +167,21 @@ async function directRunner(pgDir: string, devDir: string, fresh: string): Promi
   const opened = await next(OPEN_TIMEOUT_MS, () => new Error(`Opening ${devDir}/pg took more than ${OPEN_TIMEOUT_MS / 1000} seconds.`))
   if (opened.type !== 'ready') {
     await worker.terminate()
-    // PGlite cannot open a folder it was writing to when its process was killed or the computer stopped.
-    if (opened.type === 'failed') throw new Error(`${devDir}/pg: ${opened.message} If the stack was stopped hard (killed, or the computer stopped), the folder may be damaged: ${fresh} makes a new one (it deletes this database and the dev login).`)
+    // A copy taken while a stack was starting may not open (try again); a folder damaged by a hard stop
+    // never does: PGlite cannot open a folder it was writing to when its process was killed.
+    if (opened.type === 'failed') {
+      throw new Error(
+        `${devDir}/pg: ${opened.message} npm run sql read a copy and left the folder as it was. If a stack started just now, ` +
+          `run this again. If the stack was stopped hard (killed, or the computer stopped), the folder may be damaged: ${fresh} ` +
+          'makes a new one (it deletes this database and the dev login).',
+      )
+    }
     throw new Error('The database worker did not start.')
   }
 
   let id = 0
   return {
-    where: `Read from ${devDir}/pg directly (no stack is running).`,
+    where: `Read from a copy of ${devDir}/pg (no stack is running).`,
     async run(request) {
       id += 1
       send({ type: 'run', id, request })
@@ -178,6 +199,7 @@ async function directRunner(pgDir: string, devDir: string, fresh: string): Promi
         await next(10_000, () => new Error('Closing the database took too long; it was stopped instead.')).catch(() => undefined)
       }
       await worker.terminate()
+      copy.remove()
     },
   }
 }
@@ -205,7 +227,7 @@ async function connect(offset: number): Promise<Runner> {
   }
   const pgDir = path.join(dir, 'pg')
   if (!existsSync(path.join(pgDir, 'PG_VERSION'))) throw new Error(`There is no database in ${devDir} yet. Run ${restart} once to make it.`)
-  return directRunner(pgDir, devDir, `npm run stack -- ${offset ? `--offset ${offset} ` : ''}--fresh`)
+  return directRunner(copyForReading(pgDir), devDir, `npm run stack -- ${offset ? `--offset ${offset} ` : ''}--fresh`)
 }
 
 /** The company's id for --workspace (an id or a slug), or a message listing the companies there are. */

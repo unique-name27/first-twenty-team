@@ -1,7 +1,8 @@
-// `npm run sql` when no stack runs (scripts/dev/sql.ts): this worker thread opens the stack's PGlite folder
-// and runs statements through server/src/dev/readonly.ts (read only, rolled back). It is a worker so that
-// sql.ts can stop it after STATEMENT_TIMEOUT_MS: PGlite cannot stop a statement once it runs, and a running
-// statement holds the thread it runs on. Nothing is written, so stopping it mid-statement loses nothing.
+// `npm run sql` when no stack runs (scripts/dev/sql.ts): this worker thread opens a copy of the stack's
+// PGlite folder (scripts/dev/sql-copy.ts; PGlite writes to a folder it opens, even for a SELECT) and runs
+// statements through server/src/dev/readonly.ts (read only, rolled back). It is a worker so that sql.ts can
+// stop it after STATEMENT_TIMEOUT_MS: PGlite cannot stop a statement once it runs, and a running statement
+// holds the thread it runs on. Stopping it mid-statement loses nothing: sql.ts deletes the copy.
 import { parentPort, workerData } from 'node:worker_threads'
 import { openPGlite } from '../../server/src/db'
 import { runReadOnly, type SqlAnswer, type SqlProblem, sqlProblem, type SqlRequest } from '../../server/src/dev/readonly'

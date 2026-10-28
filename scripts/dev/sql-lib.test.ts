@@ -137,7 +137,7 @@ describe('problemText', () => {
 })
 
 describe('npm run sql stays on this computer', () => {
-  const sources = ['scripts/dev/sql.ts', 'scripts/dev/sql-worker.ts', 'scripts/dev/sql-lib.ts'].map((file) => [file, readFileSync(file, 'utf8')] as const)
+  const sources = ['scripts/dev/sql.ts', 'scripts/dev/sql-worker.ts', 'scripts/dev/sql-lib.ts', 'scripts/dev/sql-copy.ts'].map((file) => [file, readFileSync(file, 'utf8')] as const)
 
   it('never reads DATABASE_URL, a .env file or the server settings', () => {
     for (const [file, code] of sources) {

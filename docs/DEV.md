@@ -146,10 +146,13 @@ How it reads the database:
 
 - **While `npm run stack` runs**, the stack's API holds the database (PGlite allows one process per
   folder), so `npm run sql` asks the API on 127.0.0.1, with a secret the stack makes each time it starts
-  (`.data/dev/dev-tools.json`). The API answers that route only on this computer and only with that secret,
-  and only the development server has the route: production never includes it.
-- **With no stack running**, it opens `.data/dev/pg` itself. Do not start the stack while it runs (it takes
-  a few seconds at most).
+  (`.data/dev/dev-tools.json`). The secret is what keeps the route private: in a codespace, a forwarded
+  port also reaches the API from 127.0.0.1, so keep port 8787 private there (the default) and never share
+  the secret. Without it the API answers 404. Only the development server has the route: production never
+  includes it.
+- **With no stack running**, it copies `.data/dev/pg` to a temporary folder, reads the copy and deletes it
+  (PGlite writes to a folder it opens, even to read). The stack stays the only process that writes the
+  folder, so starting the stack meanwhile, or running two at once, is safe.
 - It never reads `DATABASE_URL` or a `.env` file, so it never connects to any other database.
 
 The limits: one statement at a time, starting with `SELECT`, `WITH`, `VALUES`, `TABLE`, `EXPLAIN` or `SHOW`.

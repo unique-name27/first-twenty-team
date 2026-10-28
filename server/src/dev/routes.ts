@@ -7,6 +7,8 @@
 // for this run (Authorization: Bearer <secret>; the stack writes it to <data folder>/dev-tools.json, which
 // the Vite dev server never serves). Anything else gets the same 404 as a path that does not exist, before
 // the body is read. The path is outside /api, so the Vite dev server never passes a request on to it.
+// The secret is what keeps the route private: the loopback check only turns away other machines on the
+// network, and a port forwarded into a codespace arrives on 127.0.0.1 too.
 import { createHash, timingSafeEqual } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import type { Db } from '../db'
