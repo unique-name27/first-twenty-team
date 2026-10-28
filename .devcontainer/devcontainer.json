@@ -1,0 +1,29 @@
+{
+  "name": "First Twenty",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "hostRequirements": {
+    "cpus": 2
+  },
+  "forwardPorts": [8826, 8787],
+  "portsAttributes": {
+    "8826": {
+      "label": "First Twenty (dev)",
+      "onAutoForward": "openBrowserOnce"
+    },
+    "8787": {
+      "label": "API",
+      "onAutoForward": "silent"
+    }
+  },
+  "postCreateCommand": "npm ci",
+  "postAttachCommand": "npm run stack",
+  "customizations": {
+    "codespaces": {
+      "openFiles": ["docs/DEV.md"]
+    }
+  }
+}

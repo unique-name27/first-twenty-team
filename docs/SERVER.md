@@ -738,6 +738,9 @@ When everything looks right, remove the set-aside copy:
 PGlite is real Postgres compiled to WebAssembly. With no `.env` file the server uses it automatically and
 keeps the data in `.data/pg` in the project folder.
 
+`npm run stack` does all of the below in one command, on a database of its own in `.data/dev` with the
+sample company loaded and the browser signed in (`docs/DEV.md`). The steps here run the pieces one by one.
+
 ```bash
 npm run server:create-admin -- --email you@example.com     # once, for a local login
 npm run server:dev                                         # the API on http://127.0.0.1:8787

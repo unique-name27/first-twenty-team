@@ -10,6 +10,10 @@ import { SERVICE_WORKER_URL } from './sync/protocol'
 // apart from the saved copy. A no-op unless this browser connected to a server before.
 initSync()
 
+// Development only (docs/DEV.md): with `npm run stack`, signs this browser in to the dev server's sample
+// company. Vite replaces import.meta.env.DEV with false in a build, so the branch and the module go.
+if (import.meta.env.DEV) void import('./dev/autoconnect').then((m) => m.startAutoconnect())
+
 /**
  * The server's offline worker (docs/SERVER.md): keeps the app page, so the app still opens from this
  * browser's copy, with its queued changes, while the server cannot be reached. Only for a page the First

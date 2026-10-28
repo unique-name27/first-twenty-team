@@ -39,6 +39,9 @@ src/
               Contract: docs/SYNC.md
   careers/    careers pages (no React): render.ts (the HTML for the static demo site, scripts/careers, and
               the server's live pages), application.ts (the live apply form), careers.css
+  dev/        development only, never in a build: the npm run stack auto sign-in (autoconnect.ts), imported
+              by main.tsx behind import.meta.env.DEV (guard.test.ts checks it). Guide: docs/DEV.md
+scripts/dev/  npm run stack: the dev stack runner, its database setup and the Vite dev sign-in endpoint
 server/       optional API server (Fastify + Postgres, PGlite in development and tests), SQL migrations,
               EC2 deploy kit (server/deploy). Built separately: npm run server:build. Guide: docs/SERVER.md
               One login belongs to one company (workspace); SIGNUP_MODE=open makes it a public demo where

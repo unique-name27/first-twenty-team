@@ -83,7 +83,8 @@ gh repo edit ORG/first-twenty --enable-squash-merge --enable-merge-commit=false 
 3. **Protect main.** Protection on `main` is free for public repos (see the link above). The rule requires
    the CI check named `verify`, one approval, resolved conversations, and no force pushes. The product
    owner gives the project one hour a week, so CODEOWNERS names them only on the protected paths
-   (migrations, the deploy kit, dependencies, CLAUDE.md, `.claude/`, `.github/`); a pull request touching
+   (migrations, the deploy kit, dependencies, CLAUDE.md, `.claude/`, `.github/`, the dev container and
+   `scripts/dev/`); a pull request touching
    those also needs their approval. Admins can still merge in an emergency.
 
 ```bash

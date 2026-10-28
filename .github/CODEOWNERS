@@ -1,5 +1,6 @@
 # The product owner gives the project one hour a week, so only the riskiest paths wait for that review:
-# database migrations, the live server's deploy kit, dependencies, and the rules Claude Code and CI follow.
+# database migrations, the live server's deploy kit, dependencies, the rules Claude Code and CI follow, and the
+# dev container and stack scripts that run by themselves when a codespace starts.
 # Everything else merges on CI plus one teammate's approval.
 /server/sql/ @unique-name27
 /server/deploy/ @unique-name27
@@ -9,3 +10,5 @@
 /.claude/ @unique-name27
 /.github/ @unique-name27
 /SECURITY.md @unique-name27
+/.devcontainer/ @unique-name27
+/scripts/dev/ @unique-name27
