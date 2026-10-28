@@ -36,7 +36,8 @@ src/
               assistant (the Ask sheet, header button and its own Markdown renderer; no route)
   sync/       optional server sync engine (no UI): collections.ts (shared with the server), diff, outbox,
               API client, status store, the assistant's client (assistant.ts, sse.ts). Public API in index.ts.
-              Contract: docs/SYNC.md
+              sync/testing holds helpers for tests only (testing/guard.test.ts keeps the app from importing
+              them). Contract: docs/SYNC.md
   careers/    careers pages (no React): render.ts (the HTML for the static demo site, scripts/careers, and
               the server's live pages), application.ts (the live apply form), careers.css
   dev/        development only, never in a build: the npm run stack auto sign-in (autoconnect.ts), imported
@@ -49,6 +50,8 @@ server/       optional API server (Fastify + Postgres, PGlite in development and
               the route npm run sql asks); production code never imports it (structure.test.ts checks it).
               The read model (server/src/readmodel) generates SQL views for reading the data with plain
               SQL, v_integrity_problems among them (the checks of src/domain/integrity.ts). Guide: docs/DEV.md
+              Journey tests (server/src/e2e) walk whole paths, careers form to first pay run, through
+              the real server, database and sync engines (kit.ts; docs/DEV.md, "Journey tests").
               One login belongs to one company (workspace); SIGNUP_MODE=open makes it a public demo where
               anyone can create a company (held to the demo limits), and CAREERS_HOSTS serves the careers
               page of every company that has it on.
