@@ -28,6 +28,12 @@ export type RunOptions = {
    * zone puts that moment on another calendar date (an evening time in a UTC process), nowISO throws.
    */
   timeOfDay: string
+  /**
+   * Id suffixes (the 10 characters after newId's prefix and dash) the run never issues: the run ids already
+   * in a workspace the run builds on (runIdSuffixes), so a later run never repeats an earlier one's ids,
+   * whatever their seeds.
+   */
+  avoid?: Iterable<string>
 }
 
 /** The run that is on: what id.ts, dates.ts and draft.ts read. */
@@ -110,6 +116,19 @@ const TIME_OF_DAY = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/
  */
 const RUN_ID_MARK = 's'
 
+/** A run id in JSON text: the prefix's dash, then the suffix ('s' and 9 base-36 characters), then the closing quote. */
+const RUN_ID_IN_JSON = /-(s[0-9a-z]{9})"/g
+
+/**
+ * The suffixes of every run id in a value (a workspace), nested ones included, for RunOptions.avoid. Reads
+ * the JSON text, so it finds ids wherever they sit (records, checklist tasks, history rows).
+ */
+export function runIdSuffixes(value: unknown): Set<string> {
+  const out = new Set<string>()
+  for (const m of JSON.stringify(value).matchAll(RUN_ID_IN_JSON)) out.add(m[1])
+  return out
+}
+
 /** 'HH:MM' or 'HH:MM:SS' as hours, minutes and seconds; throws on anything else. */
 function readTimeOfDay(timeOfDay: string): ActiveRun['time'] {
   const time = TIME_OF_DAY.exec(timeOfDay)
@@ -121,7 +140,7 @@ function startRun(options: RunOptions): HeldRun {
   const time = readTimeOfDay(options.timeOfDay)
   if (typeof options.seed === 'number' && !Number.isFinite(options.seed)) throw new Error(`A run's seed is a finite number or a string, not ${options.seed}.`)
   const rng = makeRng(hashSeed(`ids ${options.seed}`))
-  const issued = new Set<string>()
+  const issued = new Set<string>(options.avoid ?? [])
   const draw = () => Math.floor(rng.next() * 36 ** 5).toString(36).padStart(5, '0') + Math.floor(rng.next() * 36 ** 4).toString(36).padStart(4, '0')
   return {
     actorId: options.actorId,

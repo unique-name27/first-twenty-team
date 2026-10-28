@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nowISO, parseDate, setClockOverride } from './dates'
 import { newId } from './id'
-import { activeRun, type RunOptions, updateRun, withRunContext } from './runContext'
+import { activeRun, type RunOptions, runIdSuffixes, updateRun, withRunContext } from './runContext'
 
 const RUN: RunOptions = { seed: 'ledgerlark', actorId: 'p-founder', timeOfDay: '10:30' }
 const RUN_ID = /^[a-z]+-s[0-9a-z]{9}$/
@@ -218,6 +218,30 @@ describe('updateRun', () => {
   it('never carries into the next run', () => {
     withRunContext(RUN, () => updateRun({ actorId: 'p-tomas', viewingAs: 'employee', timeOfDay: '15:00' }))
     expect(withRunContext(RUN, () => activeRun())).toMatchObject({ actorId: 'p-founder', viewingAs: 'admin', time: { hours: 10, minutes: 30, seconds: 0 } })
+  })
+})
+
+describe('avoid and runIdSuffixes', () => {
+  it('finds every run id in a workspace, nested ones too, and nothing else', () => {
+    const workspace = {
+      people: [{ id: 'p-s012345678', managerId: null }],
+      checklists: [{ id: 'cl-sabcdefghi', tasks: [{ id: 't-s000000001', note: 'see p-s111111111 later' }] }],
+      jobs: [{ id: 'j-founding-engineer', planSlotId: 'ps-0f1e2d3c4b' }],
+    }
+    expect([...runIdSuffixes(workspace)].sort()).toEqual(['s000000001', 's012345678', 'sabcdefghi'])
+  })
+
+  it('never issues an avoided suffix, and otherwise gives the same ids in the same order', () => {
+    const plain = withRunContext(RUN, () => Array.from({ length: 6 }, () => newId('p')))
+    const avoid = [plain[1], plain[4]].map((id) => id.split('-')[1])
+    const avoiding = withRunContext({ ...RUN, avoid }, () => Array.from({ length: 4 }, () => newId('p')))
+    expect(avoiding).toEqual([plain[0], plain[2], plain[3], plain[5]])
+  })
+
+  it('lets a second run on the same workspace and seed add ids without repeating the first run\'s', () => {
+    const first = withRunContext(RUN, () => Array.from({ length: 50 }, () => newId('act')))
+    const second = withRunContext({ ...RUN, avoid: runIdSuffixes({ activity: first.map((id) => ({ id })) }) }, () => Array.from({ length: 50 }, () => newId('act')))
+    expect(new Set([...first, ...second]).size).toBe(100)
   })
 })
 
