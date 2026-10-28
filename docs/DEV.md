@@ -494,7 +494,9 @@ write it as a failing test on the fixed as-of date: a generated company, `advanc
 server as an Import would, advances it 90 days at the normal policy (the last week runs into January 2027 on
 the 2026 law values, with `allowStaleLaw`) and loads it again. Then `v_integrity_problems` must be empty,
 `v_hire_journey` must have a row for every hire, the server must give back exactly what it was sent, and a
-second run must give the same JSON. `stress` is generated and loaded once, to prove the server takes it.
+second run must give the same JSON. With `SIM_STRESS=1` it also generates `stress` and loads it once, to prove
+the server takes it: `SIM_STRESS=1 npx vitest run server/src/sim/smoke.test.ts -t stress`. That case is left
+out of CI until it has been timed (it has never finished on the computers it was written on).
 
 ## Claude Code in a codespace
 

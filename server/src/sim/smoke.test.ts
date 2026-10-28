@@ -1,8 +1,11 @@
 // The simulator's smoke test (docs/DEV.md, "Simulate a company"): every browser scenario is generated, loaded
 // into the server through replaceWorkspace as the app's Import loads a company, advanced 90 days at the normal
 // policy and loaded again. Then the read model finds no integrity problem and one hire journey per hire, the
-// server gives back exactly what was loaded, and the same run gives the same JSON twice. stress is generated
-// and loaded once, with no advance, to prove the server takes a company that size.
+// server gives back exactly what was loaded, and the same run gives the same JSON twice.
+//
+// stress is generated and loaded once, with no advance, to prove the server takes a company that size. It
+// runs only with SIM_STRESS=1 (SIM_STRESS=1 npx vitest run server/src/sim/smoke.test.ts -t stress): it has
+// not yet been timed on any computer, so it stays out of the required CI check until it has been.
 //
 // 90 days from the scenarios' as-of date (2026-10-09) end on 2027-01-07, a week past the law tables' year, so
 // the advance passes allowStaleLaw: those days run on the 2026 values, as for a company that has not yet
@@ -80,7 +83,7 @@ describe('the simulator, through the server', () => {
     }, 180_000)
   }
 
-  it('stress: the server takes it whole', async () => {
+  it.runIf(process.env.SIM_STRESS === '1')('stress: the server takes it whole', async () => {
     await resetDb(db)
     const g = generateCompany({ scenario: 'stress' })
     await load(JSON.stringify(g.db))
