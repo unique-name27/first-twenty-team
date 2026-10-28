@@ -45,13 +45,16 @@ src/
               by main.tsx behind import.meta.env.DEV (guard.test.ts checks it). Guide: docs/DEV.md
   sim/        tests and tools only, never the app (guard.test.ts checks it): generated companies, built
               through the same steps the screens take (generate.ts, actions.ts, scenarios.ts), and the time
-              machine that lives a workspace's next days the same way (advance.ts). Guide: docs/DEV.md
+              machine that lives a workspace's next days the same way (advance.ts), and the move of a
+              generated company to another week (shift.ts). Guide: docs/DEV.md
 scripts/dev/  npm run stack: the dev stack runner, its database setup and the Vite dev sign-in endpoint;
-              npm run sql: read-only SQL on the stack's database
+              npm run sql: read-only SQL on the stack's database; npm run sim: generated companies in the
+              stack, the time machine and saves
 server/       optional API server (Fastify + Postgres, PGlite in development and tests), SQL migrations,
               EC2 deploy kit (server/deploy). Built separately: npm run server:build. Guide: docs/SERVER.md
               server/src/dev is development only: the entry npm run stack starts (the same server plus
-              the route npm run sql asks); production code never imports it (structure.test.ts checks it).
+              the routes npm run sql and npm run sim ask); production code never imports it (structure.test.ts
+              checks it).
               The read model (server/src/readmodel) generates SQL views for reading the data with plain
               SQL, v_integrity_problems among them (the checks of src/domain/integrity.ts). Guide: docs/DEV.md
               Journey tests (server/src/e2e) walk whole paths, careers form to first pay run, through

@@ -103,6 +103,9 @@ only read from disk. After changing a SQL migration in `server/sql/`, run `npm r
 A new test file goes next to the code it tests, and its folder decides its tier. A file that fits no tier fails
 `scripts/test/tiers.test.ts`, so no test can quietly stop running. Every test run is in UTC, as on CI.
 
+For a bug that needs a whole company, start from a generated one (`npm run sim`, docs/DEV.md "Simulate a
+company") and name its scenario, seed and as-of date in the issue and the test.
+
 ## Rotations
 
 The project runs eight weeks. Week 1 starts at the kickoff. Team members rotate through the workstreams

@@ -50,6 +50,7 @@ codespace uses (`.devcontainer/devcontainer.json`).
 | `npm run stack -- --offset 10` | A second stack beside the first: ports 8836 and 8797, its own database |
 | `npm run stack -- --no-seed` | A new database without the sample company (an empty server, as a new founder sees it) |
 | `npm run sql -- hires` | Reads the stack's database with SQL, never changing it ("Query the data with SQL" below) |
+| `npm run sim -- reset full-20` | Replaces the stack's company with a generated one; `advance 30d` moves it forward ("Simulate a company" below) |
 | `npm run dev` | The app alone, keeping its data in the browser only (no server) |
 | `npm run server:dev` | The API alone, on its own database in `.data/pg` (docs/SERVER.md, "Develop locally") |
 | `npm test` | Every test, all four tiers; `npm test -- src/sync` runs the tests in one folder |
@@ -68,10 +69,11 @@ codespace uses (`.devcontainer/devcontainer.json`).
 | Piece | Where | Notes |
 | --- | --- | --- |
 | The app (Vite dev server) | http://127.0.0.1:8826 | Reloads on every change. Passes `/api` through to the API, so the app and the API share one address, as on the live server |
-| The API (Fastify, `tsx watch`) | http://127.0.0.1:8787 | Restarts when server code changes. Development mode, sign-up open (try making a company), Lark is the scripted fake (no key needed, nothing leaves the computer). It runs `server/src/dev/index.ts`: the same server as production plus the development-only route `npm run sql` asks |
+| The API (Fastify, `tsx watch`) | http://127.0.0.1:8787 | Restarts when server code changes. Development mode, sign-up open (try making a company), Lark is the scripted fake (no key needed, nothing leaves the computer). It runs `server/src/dev/index.ts`: the same server as production plus the development-only routes `npm run sql` and `npm run sim` ask |
 | The database (PGlite) | `.data/dev/pg` | Real Postgres compiled to WebAssembly. Only one process can open it at a time |
 | The dev login | `.data/dev/credentials.json` | `dev@example.test` with a random password, made once. The file never leaves your computer or codespace (`.data/` is git-ignored) |
-| The `npm run sql` secret | `.data/dev/dev-tools.json` | Made anew each time the stack starts and deleted when it stops. Only `npm run sql` reads it |
+| The dev tools secret | `.data/dev/dev-tools.json` | Made anew each time the stack starts and deleted when it stops. Only `npm run sql` and `npm run sim` read it |
+| The simulator's files | `.data/dev/scenarios`, `.data/dev/saves`, `.data/dev/sim-date.json` | Generated companies kept for the next reset, saved copies, and the company's date (`npm run sim`). `--fresh` deletes them with the rest |
 
 In a codespace, GitHub forwards port 8826 to `https://<your-codespace-name>-8826.app.github.dev`. The stack
 tells Vite to accept that address and gives the API `PUBLIC_ORIGIN` set to it, so invite links point there
@@ -414,6 +416,83 @@ const { db: later, summary } = advance(db, { to: '2026-12-30', seed: 1 })   // 9
 that time off and hiring happened, and that a second run is byte-identical; `src/sim/advance.rules.test.ts`
 covers the presets, the refusals, a clock in the middle of a pay period, leavers and leave, and December.
 
+## Simulate a company
+
+`npm run sim` puts a generated company (above) into the stack, moves it through time and keeps copies of it,
+so you can try the app on a company of 8, 15 or 20 people instead of the sample.
+
+| Command | What it does |
+| --- | --- |
+| `npm run sim -- list` | The scenarios, one line each |
+| `npm run sim -- run full-20` | Generates a scenario and prints its summary. `--seed N` and `--as-of YYYY-MM-DD` pick another seed or date; `--out co.json` also writes it as a backup that Settings > Data > Import reads. Needs no stack |
+| `npm run sim -- reset full-20` | Replaces the stack's company with the scenario, moved to today (below). Takes `--seed`, `--as-of` and `--no-shift` |
+| `npm run sim -- advance 30d` | Lives the stack's company through the next 30 days: `12w`, `3m` or a date work too. `--policy quiet`, `normal` (the default) or `busy`; `--seed N` (default 1) |
+| `npm run sim -- save before-payroll` | Keeps a copy of the stack's company in `.data/dev/saves` |
+| `npm run sim -- restore before-payroll` | Puts that copy back |
+| `npm run sim -- saves` | Lists the copies |
+
+Add `--offset 10` to work on the stack started with `npm run stack -- --offset 10` (its files are then in
+`.data/dev-10`). `stress` is for the server only: `run` writes it, `reset` refuses it.
+
+**How it reaches the stack.** While the stack runs, its API holds the database, so reset, advance, save and
+restore ask the API: `GET` and `POST /__dev/workspace`, development-only routes beside the one `npm run sql`
+uses, with the same per-run secret and the same checks, for the stack's own company only. advance reads the
+company, lives the days in the `npm run sim` process and sends the result back. A replace goes through the
+same server function as the app's Import, so the app takes it the way it takes a company another computer
+sent: on its next sync (within 30 seconds, or when its tab gets focus) it shows the new company with a notice
+that the server's workspace was replaced. After an advance or a restore of the same company, the notice says
+it was replaced with another copy of it. With no stack running, `npm run sim` takes the stack's lock
+(`.data/dev/stack.pid`: `npm run stack` refuses to start meanwhile and says why) and writes to the database
+folder itself. Ctrl+C then waits until the write is done, because a write cut short can damage the folder.
+
+**Moved to today.** The app shows a company on today's date, so reset moves the generated story by whole
+weeks, the way the sample moves itself on load: weekdays keep their names, so interviews stay on weekdays and
+starts on Mondays. It moves to the last day on or before today that falls on the as-of date's weekday, then
+lives the 0 to 6 days left with the time machine (normal policy), so the company's date is today. Law values,
+the holiday list, time off policies and checklist templates stay on their own dates; only the company's story
+moves. Pay periods follow the calendar, so pay runs are marked again for the periods the moved story covers.
+Because the law values do not move, a move can carry part of the story across January 1 into the next year's
+values, and reset refuses a move that would put the founding date before 2025-01-01 or today after 2026-12-31
+(the dates the built-in rules cover). `--no-shift` loads the company on its as-of date instead: the app still
+shows today, and Settings > Data > Pretend today is shows the as-of date. `ledgerlark` is the sample as the app
+loads it, moved by the app's own rule. Tests never move a company: they use the fixed as-of date.
+
+**The company's date.** advance starts from the company's date: the day the last reset, advance or restore
+left it on, kept in `.data/dev/sim-date.json` for the copy the server holds (edits in the app keep it; any
+other company, such as the sample the stack loads or an Import, lives on today's date). After `advance 30d`
+the company is 30 days ahead of the app, which still shows it on today's date, so people who started in those
+days look like future starts. To see it on its own date, let the app take the new copy, then set Settings >
+Data > Pretend today is to that date (the app holds sync while it is on).
+
+**What the time machine does, and what it does not.** Each day it runs the app's load-time changes; on business
+days it sends and approves time off, hires through the pipeline, gives anniversary raises, now and then has
+someone resign (with a backfill) or start a leave, prepares and marks pay runs submitted, and on Mondays clears
+the inbox's one-button items and checks the compliance rules ("The time machine" above has the details). It
+never declines time off, terminates anyone, adds contractors, extends offers, enters provider totals, approves
+grants at a board meeting or changes Settings > Rules and rates, and it refuses dates past 2026-12-31.
+
+**Saves.** `npm run sim -- save <name>` writes `.data/dev/saves/<name>.json`: the company as the server holds
+it, and its date. A save with the same name is replaced. restore keeps the saved company's identity, so the
+app treats it as another copy of that company, or as another company when the stack holds a different one.
+
+**The cache.** Generated companies are kept in `.data/dev/scenarios`, by scenario, seed, as-of date and a hash
+of every source file generation reaches (the generator, the domain rules, the law tables, the name pools), so
+a repeat reset takes about a second and any change to that code generates again. Delete the folder whenever
+you like. `npm run stack -- --fresh` deletes the whole data folder, saves and cache included.
+
+**File a bug as scenario, seed and as-of date.** "full-20, seed 2020, as of 2026-10-09: the second pay run of
+November leaves out the person on leave." Anyone can rebuild that company exactly, with
+`npm run sim -- run full-20 --seed 2020 --as-of 2026-10-09 --out co.json` or `generateCompany` in a test. If
+you saw it in the stack, add the day you ran reset (the move to today depends on it) and each advance in
+order, with its policy and seed: "reset on 2026-10-28, then advance 30d --policy busy --seed 1". Best of all,
+write it as a failing test on the fixed as-of date: a generated company, `advance` if needed, and the check.
+
+`server/src/sim/smoke.test.ts` (server tier, on CI) generates every scenario but `stress`, loads it into the
+server as an Import would, advances it 90 days at the normal policy (the last week runs into January 2027 on
+the 2026 law values, with `allowStaleLaw`) and loads it again. Then `v_integrity_problems` must be empty,
+`v_hire_journey` must have a row for every hire, the server must give back exactly what it was sent, and a
+second run must give the same JSON. `stress` is generated and loaded once, to prove the server takes it.
+
 ## Claude Code in a codespace
 
 Claude Code is installed in every codespace. Open a new terminal (the stack keeps the first one busy) and
@@ -471,6 +550,10 @@ started before `npm run sql` existed, or `npm run server:dev`, holds the port. S
 
 **npm run sql: "The stack's API did not take the request".** The running stack's secret does not match the
 one in `.data/dev/dev-tools.json` (usually a stack started before `npm run sql` existed). Restart the stack.
+
+**"npm run sim is writing to this data folder".** `npm run sim` holds the folder while it writes to it with
+no stack running. Wait a few seconds and start the stack again. If no `npm run sim` is running, the stack
+removes the file it left behind by itself.
 
 **npm run sql: "No answer from the stack's API".** A statement is still running in the stack's API, which
 PGlite cannot interrupt. Wait, or stop the stack with Ctrl+C and start it again.
