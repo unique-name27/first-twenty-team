@@ -11,12 +11,16 @@
 # Staging (skipped with --live-only), next to the live server and apart from it:
 #   - the first-twenty-staging system user (no login, no sudo beyond the two commands below)
 #   - the first_twenty_staging database and its two roles, made by postgres-setup.sql with the staging
-#     names, with passwords it generates and writes only to /etc/first-twenty-staging/env (root only);
-#     pg_hba.conf lines keep the staging roles in that database, from this instance only (backed up first)
+#     names; pg_hba.conf lines keep the staging roles in that database, from this instance only (backed up
+#     first), and only then it generates their passwords and writes them only to
+#     /etc/first-twenty-staging/env (root only), restarting a staging server that is installed and running
 #   - /etc/first-twenty-staging/env: port 8788, open sign-up with demo limits, no assistant, no careers
 #   - /opt/first-twenty-staging: a clone of the team repo, owned by first-twenty-staging
 #   - first-twenty-staging.service, first-twenty-staging-migrate.service, and
 #     first-twenty-autoupdate-staging.service and .timer (every 5 minutes)
+#   - memory reserves (MemoryLow= drop-ins) for first-twenty.service, the Postgres cluster's unit, the slice
+#     that unit runs in (system-postgresql.slice) and system.slice, so a staging build gives up its memory
+#     before the live server and Postgres do
 #   - /etc/sudoers.d/first-twenty-staging: first-twenty-staging may start first-twenty-staging-migrate and
 #     restart first-twenty-staging, nothing else (checked with visudo first)
 #   - /etc/caddy/first-twenty.d/staging.caddy for the staging domain, and the line that imports it in
@@ -27,7 +31,9 @@
 #
 # Live (skipped with --staging-only):
 #   - switches the origin of /opt/first-twenty to the public team repo over HTTPS, keeping the old address
-#     as the remote previous-origin
+#     as the remote previous-origin and dropping the old repo's origin/main; HEAD stays on the same commit
+#     but leaves its branch, which is renamed previous-origin-main and loses its upstream, so no git switch
+#     or git pull brings the old code back
 #   - records the commit /opt/first-twenty has checked out as deployed, so nothing happens until the
 #     product owner publishes a newer release
 #   - first-twenty-autoupdate-live.service and .timer (every 5 minutes), run as the login that owns
@@ -48,7 +54,8 @@
 #   -h, --help              show this help
 #
 # It never touches the live database, its roles, /etc/first-twenty/env or the live Caddy sites (the admin
-# line changes where Caddy listens for configuration, not what it serves).
+# line changes where Caddy listens for configuration, not what it serves). The memory drop-ins only add a
+# reserve to first-twenty.service and Postgres; their unit files stay as they are.
 
 set -euo pipefail
 
@@ -194,11 +201,13 @@ pg_value() {
   (cd / && runuser -u postgres -- psql -XAtqc "$1")
 }
 
-# Prints whether the staging database, its server role and its owner role exist, as "t|t|t" (f where one
-# is missing), or nothing when Postgres cannot be asked. Reads the catalog only.
+# Prints whether the staging database, its server role and its owner role exist, and whether no staging
+# role is without a password, as "t|t|t|t" (f where one is not so), or nothing when Postgres cannot be
+# asked. Reads the catalog only. A role without a password was made by postgres-setup.sql on a run that
+# stopped before it set one, so the settings file (if any) does not match it.
 staging_objects() {
   command -v psql >/dev/null 2>&1 && id -u postgres >/dev/null 2>&1 || return 0
-  pg_value "SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = '$STAGING_DB'), EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '$STAGING_ROLE'), EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '$STAGING_OWNER')" 2>/dev/null || true
+  pg_value "SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = '$STAGING_DB'), EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '$STAGING_ROLE'), EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '$STAGING_OWNER'), NOT EXISTS (SELECT 1 FROM pg_authid WHERE rolname IN ('$STAGING_ROLE', '$STAGING_OWNER') AND rolpassword IS NULL)" 2>/dev/null || true
 }
 
 # postgres-setup.sql with the staging names: the same roles, limits, grants and lockdown as live, for
@@ -266,6 +275,27 @@ host    all  $STAGING_ROLE,$STAGING_OWNER  0.0.0.0/0     reject
 host    all  $STAGING_ROLE,$STAGING_OWNER  ::/0          reject
 # END first-twenty-staging
 EOF
+}
+
+# Whether pg_hba.conf file $1 holds at most one staging block, with its BEGIN line before its END line.
+# Anything else (a marker edited away by hand, say) would make hba_with_block drop lines that are not its own.
+hba_markers_ok() {
+  awk '
+    /^# BEGIN first-twenty-staging/ { if (begin || end) bad = 1; begin++ }
+    /^# END first-twenty-staging/ { if (!begin || end) bad = 1; end++ }
+    END { exit (bad || begin != end) ? 1 : 0 }
+  ' "$1"
+}
+
+# pg_hba.conf file $1 without its staging block: everything setup must leave as it is. A BEGIN line with
+# no END line after it counts as an ordinary line, so a file that lost its END line never looks unchanged.
+hba_outside() {
+  awk '
+    !inblock && /^# BEGIN first-twenty-staging/ { inblock = 1; held = $0 ORS; next }
+    inblock { held = held $0 ORS; if (/^# END first-twenty-staging/) { inblock = 0; held = "" } next }
+    { print }
+    END { if (inblock) printf "%s", held }
+  ' "$1"
 }
 
 # pg_hba.conf file $1 with the staging block in place of the one between the BEGIN and END lines, or at
@@ -375,58 +405,30 @@ put_if_changed "$UPDATER" 0755 root:root <"$SCRIPT_DIR/auto-update.sh"
 # Staging
 # ------------------------------------------------------------------------------------------------
 
-setup_staging() {
-  local objects need_passwords app_pw owner_pw hba hba_new errors
-
-  step "Staging: the $STAGING_USER system user"
-  if id -u "$STAGING_USER" >/dev/null 2>&1; then
-    info "User $STAGING_USER already exists."
-  else
-    run useradd --system --user-group --home-dir "$STAGING_HOME" --no-create-home \
-      --shell "$(command -v nologin || echo /usr/sbin/nologin)" --comment "First Twenty staging" "$STAGING_USER"
-  fi
-
-  step "Staging: folders"
-  run install -d -m 0750 -o "$STAGING_USER" -g "$STAGING_USER" "$STAGING_HOME" "$STAGING_STATE" "$STAGING_DIR"
-  # Open for reading the folder (so first-twenty-staging can see the pause switch), not the settings file.
-  run install -d -m 0755 -o root -g root "$STAGING_ENV_DIR"
-
-  step "Staging: the $STAGING_DB database and its roles"
-  objects=$(staging_objects)
-  [ -n "$objects" ] || die "Cannot ask Postgres as the postgres user (is it running on this instance?)."
-  case "$objects" in
-    't|t|t') info "The database and both roles exist; postgres-setup.sql (staging names) checks their settings and grants again." ;;
-    *) info "Creating what is missing with postgres-setup.sql, staging names ($STAGING_ROLE, $STAGING_OWNER)." ;;
-  esac
-  if [ "$DRY_RUN" = true ]; then
-    info "would run: postgres-setup.sql with the staging names, as the postgres user"
-  else
-    staging_sql | (cd / && runuser -u postgres -- psql -X -q -v ON_ERROR_STOP=1 -d postgres) >/dev/null
-  fi
-  need_passwords=false
-  [ -f "$STAGING_ENV" ] || need_passwords=true
-  case "$objects" in *'|f|'* | *'|f') need_passwords=true ;; esac
-  if [ "$need_passwords" = true ]; then
-    if [ "$DRY_RUN" = true ]; then
-      info "would generate two passwords, set them on $STAGING_ROLE and $STAGING_OWNER, and write them only into $STAGING_ENV"
-    else
-      app_pw=$(new_password)
-      owner_pw=$(new_password)
-      set_staging_passwords "$app_pw" "$owner_pw"
-      info "Set new generated passwords on both roles."
-    fi
-  else
-    info "Kept the passwords in $STAGING_ENV."
-  fi
-
+# The pg_hba.conf lines for the staging roles (hba_block), put at the top of the file Postgres reads (SHOW
+# hba_file) after a backup, checked by Postgres before it reloads. It refuses a file whose staging markers
+# are not one well-formed block, and a result that changes anything outside the block, leaving the file
+# untouched. Also sets PG_UNIT, the systemd unit of this Postgres cluster (postgresql@16-main.service for
+# /etc/postgresql/16/main/pg_hba.conf), or nothing when the path does not say.
+staging_hba() {
+  local hba hba_new errors
   hba=$(pg_value 'SHOW hba_file' 2>/dev/null || true)
-  hba_new=$(mktemp)
   if [ -z "$hba" ] || [ ! -f "$hba" ]; then
     # Without these lines a staging password (which code on staging can read) would open other databases.
-    rm -f "$hba_new"
     die "Could not find pg_hba.conf (SHOW hba_file), so the staging roles cannot be limited to $STAGING_DB. Nothing on staging runs yet; fix that and run this again."
   fi
+  PG_UNIT=""
+  if [[ $hba =~ /postgresql/([0-9]+)/([A-Za-z0-9_.-]+)/pg_hba\.conf$ ]]; then
+    PG_UNIT="postgresql@${BASH_REMATCH[1]}-${BASH_REMATCH[2]}.service"
+  fi
+  hba_markers_ok "$hba" ||
+    die "$hba has first-twenty-staging marker lines that are not one BEGIN line followed by one END line (edited by hand?), so it was left as it is. Fix them, or remove them with the lines between, then run this again (a copy from an earlier run: $hba.bak-*)."
+  hba_new=$(mktemp)
   hba_with_block "$hba" >"$hba_new"
+  if ! cmp -s <(hba_outside "$hba") <(hba_outside "$hba_new"); then
+    rm -f "$hba_new"
+    die "Putting the staging lines in $hba would change lines outside its first-twenty-staging block, so it was left as it is. Check the file by hand, then run this again."
+  fi
   if cmp -s "$hba_new" "$hba"; then
     info "$hba already has the staging lines."
   elif [ "$DRY_RUN" = true ]; then
@@ -447,23 +449,136 @@ setup_staging() {
     info "Put the staging lines in $hba (previous copy: $hba.bak-$STAMP) and reloaded Postgres."
   fi
   rm -f "$hba_new"
+}
 
-  step "Staging: settings in $STAGING_ENV"
-  if [ "$need_passwords" = true ]; then
-    if [ -f "$STAGING_ENV" ]; then
-      run cp -p "$STAGING_ENV" "$STAGING_ENV.bak-$STAMP"
-      info "The roles were new, so the old settings file (now $STAGING_ENV.bak-$STAMP) had passwords that no longer work."
-    fi
-    staging_env "${app_pw:-}" "${owner_pw:-}" | put "$STAGING_ENV" 0600 root:root
-    [ "$DRY_RUN" = true ] || info "Wrote $STAGING_ENV (root only): port $STAGING_PORT, https://$STAGING_DOMAIN, open sign-up with demo limits, no assistant, no careers pages."
-  else
-    info "Kept the existing $STAGING_ENV (not overwritten)."
+# The staging settings file. New passwords (when the file is missing, or a role is missing or has no
+# password, as $1 from staging_objects says) are set on the roles and written to the file in one go, so the
+# two never disagree, and a staging server already running is restarted to read them (systemd reads the
+# file only when a service starts). On the first run its unit is not installed yet (that comes later), and
+# systemctl try-restart fails for a unit it cannot find, so it is asked only for an installed one.
+staging_settings() {
+  local need_passwords=false app_pw="" owner_pw=""
+  [ -f "$STAGING_ENV" ] || need_passwords=true
+  case "$1" in *'|f|'* | *'|f') need_passwords=true ;; esac
+  if [ "$need_passwords" = false ]; then
+    info "Kept the passwords and the rest of the existing $STAGING_ENV (not overwritten)."
     if ! grep -qx "PUBLIC_ORIGIN=https://$STAGING_DOMAIN" "$STAGING_ENV"; then
       warn "PUBLIC_ORIGIN in $STAGING_ENV is not https://$STAGING_DOMAIN (did --staging-domain change?). Set it with:"
       warn "  sudo sed -i 's#^PUBLIC_ORIGIN=.*#PUBLIC_ORIGIN=https://$STAGING_DOMAIN#' $STAGING_ENV && sudo systemctl restart first-twenty-staging"
     fi
+    return 0
   fi
+  if [ "$DRY_RUN" = true ]; then
+    info "would generate two passwords, set them on $STAGING_ROLE and $STAGING_OWNER, and write them only into $STAGING_ENV"
+  else
+    app_pw=$(new_password)
+    owner_pw=$(new_password)
+    set_staging_passwords "$app_pw" "$owner_pw"
+    info "Set new generated passwords on both roles."
+  fi
+  if [ -f "$STAGING_ENV" ]; then
+    run cp -p "$STAGING_ENV" "$STAGING_ENV.bak-$STAMP"
+    info "The roles get new passwords, so the old settings file (now $STAGING_ENV.bak-$STAMP) no longer works."
+  fi
+  staging_env "${app_pw:-}" "${owner_pw:-}" | put "$STAGING_ENV" 0600 root:root
+  [ "$DRY_RUN" = true ] || info "Wrote $STAGING_ENV (root only): port $STAGING_PORT, https://$STAGING_DOMAIN, open sign-up with demo limits, no assistant, no careers pages."
   unset app_pw owner_pw
+  if [ "$(systemctl show -p LoadState --value first-twenty-staging.service 2>/dev/null || true)" = loaded ]; then
+    run systemctl try-restart first-twenty-staging.service
+    [ "$DRY_RUN" = true ] || info "Restarted first-twenty-staging, if it was running, so it uses the new passwords."
+  fi
+}
+
+# A MemoryLow= drop-in: the memory the kernel leaves to unit $1 when memory runs short, so a staging build
+# next to it gives up its own memory first.
+memory_dropin() {
+  cat <<EOF
+# Written by First Twenty setup-auto-deploy.sh (docs/SERVER.md, "What staging shares with the live server").
+# While staging builds on this instance, the kernel reclaims memory from $1 only after
+# everything unprotected, the build included, has given up its own. Not a limit: it can use more.
+[$2]
+MemoryLow=$3
+EOF
+}
+
+# MemoryLow= for the live server and Postgres (PG_UNIT, from staging_hba), and for the slices above them. A
+# unit's protection counts only up to its parent's, and slices have none by default. first-twenty.service
+# sits in system.slice. The cluster's unit sits one level lower: systemd puts every instance of a template
+# in a slice named after it (system-postgresql.slice for postgresql@16-main.service), so that slice gets the
+# Postgres reserve too. system.slice gets exactly the sum, since protection a slice has left over would
+# spread to the build as well. The build itself gets no memory limit: a limit below what it needs would
+# make it thrash, longer and harder on the disk than now.
+staging_memory() {
+  local live=150 pg=200 total pg_slice
+  total=$live
+  run install -d -m 0755 "$UNIT_DIR/first-twenty.service.d" "$UNIT_DIR/system.slice.d"
+  memory_dropin first-twenty.service Service "${live}M" | put_if_changed "$UNIT_DIR/first-twenty.service.d/memory.conf" 0644 root:root
+  if [ -n "${PG_UNIT:-}" ]; then
+    run install -d -m 0755 "$UNIT_DIR/$PG_UNIT.d"
+    # Kept as well: on its own it still works where the kernel does not pass slice protection down.
+    memory_dropin "$PG_UNIT" Service "${pg}M" | put_if_changed "$UNIT_DIR/$PG_UNIT.d/memory.conf" 0644 root:root
+    # The slice systemd reports (reading it changes nothing), else the one its rule gives. The unit is not
+    # moved to system.slice instead: that would need a restart of Postgres, which serves other databases.
+    pg_slice=$(systemctl show -p Slice --value "$PG_UNIT" 2>/dev/null || true)
+    [[ $pg_slice =~ ^[A-Za-z0-9_.@-]+\.slice$ ]] && [ "$pg_slice" != -.slice ] || pg_slice="system-${PG_UNIT%%@*}.slice"
+    if [ "$pg_slice" != system.slice ]; then
+      run install -d -m 0755 "$UNIT_DIR/$pg_slice.d"
+      memory_dropin "$pg_slice" Slice "${pg}M" | put_if_changed "$UNIT_DIR/$pg_slice.d/memory.conf" 0644 root:root
+    fi
+    # Only a slice inside system.slice draws on its reserve.
+    case "$pg_slice" in system.slice | system-*.slice) total=$((live + pg)) ;; esac
+  else
+    warn "Could not tell this Postgres cluster's systemd unit from the pg_hba.conf path, so only the live server gets a memory reserve."
+  fi
+  memory_dropin system.slice Slice "${total}M" | put_if_changed "$UNIT_DIR/system.slice.d/memory.conf" 0644 root:root
+}
+
+# Until the live server runs a release with this kit, /opt/first-twenty holds an older setup-ec2.sh, which
+# would rewrite /etc/caddy/Caddyfile without the admin and import lines (and then fail to reload Caddy).
+live_kit_warning() {
+  local template=$LIVE_DIR/server/deploy/Caddyfile
+  [ -f "$template" ] || return 0
+  grep -q '^[[:space:]]*admin unix//' "$template" && return 0
+  warn "$LIVE_DIR holds an older deploy kit (its server/deploy/Caddyfile has no \"admin unix//\" line). Until the"
+  warn "live server runs a release that includes this kit, run setup-ec2.sh only from a fresh clone of main (as"
+  warn "for this setup), never from $LIVE_DIR: the older script rewrites /etc/caddy/Caddyfile without the admin"
+  warn "and import lines this setup added, and then cannot reload Caddy."
+}
+
+setup_staging() {
+  local objects
+
+  step "Staging: the $STAGING_USER system user"
+  if id -u "$STAGING_USER" >/dev/null 2>&1; then
+    info "User $STAGING_USER already exists."
+  else
+    run useradd --system --user-group --home-dir "$STAGING_HOME" --no-create-home \
+      --shell "$(command -v nologin || echo /usr/sbin/nologin)" --comment "First Twenty staging" "$STAGING_USER"
+  fi
+
+  step "Staging: folders"
+  run install -d -m 0750 -o "$STAGING_USER" -g "$STAGING_USER" "$STAGING_HOME" "$STAGING_STATE" "$STAGING_DIR"
+  # Open for reading the folder (so first-twenty-staging can see the pause switch), not the settings file.
+  run install -d -m 0755 -o root -g root "$STAGING_ENV_DIR"
+
+  step "Staging: the $STAGING_DB database and its roles"
+  objects=$(staging_objects)
+  [ -n "$objects" ] || die "Cannot ask Postgres as the postgres user (is it running on this instance?)."
+  case "$objects" in
+    't|t|t|t') info "The database and both roles exist; postgres-setup.sql (staging names) checks their settings and grants again." ;;
+    *) info "Creating what is missing with postgres-setup.sql, staging names ($STAGING_ROLE, $STAGING_OWNER)." ;;
+  esac
+  if [ "$DRY_RUN" = true ]; then
+    info "would run: postgres-setup.sql with the staging names, as the postgres user"
+  else
+    staging_sql | (cd / && runuser -u postgres -- psql -X -q -v ON_ERROR_STOP=1 -d postgres) >/dev/null
+  fi
+  # The pg_hba.conf lines come first, so the staging roles never have a working password without them, and
+  # a failure here leaves no new password behind that the settings file does not have.
+  staging_hba
+
+  step "Staging: settings in $STAGING_ENV"
+  staging_settings "$objects"
 
   step "Staging: the code in $STAGING_DIR"
   if [ -d "$STAGING_DIR/.git" ]; then
@@ -479,8 +594,10 @@ setup_staging() {
   put_if_changed "$UNIT_DIR/first-twenty-staging-migrate.service" 0644 root:root <"$SCRIPT_DIR/first-twenty-staging-migrate.service"
   render_staging_unit | put_if_changed "$UNIT_DIR/first-twenty-autoupdate-staging.service" 0644 root:root
   put_if_changed "$UNIT_DIR/first-twenty-autoupdate-staging.timer" 0644 root:root <"$SCRIPT_DIR/first-twenty-autoupdate-staging.timer"
+  # Memory reserves for the live server and Postgres while staging builds next to them.
+  staging_memory
   run systemctl daemon-reload
-  # Enabled for boot, started by the first deploy (there is nothing built to run yet).
+  # Enabled for boot, started by the first deploy (until it has built the server, the unit is skipped).
   run systemctl enable --quiet first-twenty-staging.service
 
   step "Staging: the sudo rule in $SUDOERS"
@@ -503,6 +620,7 @@ setup_staging() {
   run systemctl enable --now --quiet first-twenty-autoupdate-staging.timer
   # The first deploy starts now rather than at the next tick; --no-block returns at once.
   run systemctl start --no-block first-twenty-autoupdate-staging.service
+  live_kit_warning
 }
 
 # The admin line in the global options block of Caddyfile $1 (the block Caddy reads only when it is the
@@ -697,23 +815,52 @@ setup_caddy() {
 # ------------------------------------------------------------------------------------------------
 
 setup_live() {
-  local origin head keep
+  local origin head keep branch kept upstream switched=false refs ref
 
   step "Live: $LIVE_DIR fetches from $GIT_URL"
   origin=$(as_user "$DEPLOY_USER" git -C "$LIVE_DIR" remote get-url origin 2>/dev/null || true)
   if [ "$origin" = "$GIT_URL" ]; then
     info "origin is already $GIT_URL."
-  elif [ -n "$origin" ]; then
-    info "origin is $origin today; the team repo has its own history, so releases are fetched by exact commit and checked out detached."
-    # The old address stays as a remote of its own, which no branch follows: a later git pull on the old
-    # branch then fails (the histories differ) instead of bringing old code back.
-    keep=previous-origin
-    if as_user "$DEPLOY_USER" git -C "$LIVE_DIR" remote get-url "$keep" >/dev/null 2>&1; then keep=previous-origin-$STAMP; fi
-    run_as "$DEPLOY_USER" git -C "$LIVE_DIR" remote add "$keep" "$origin"
-    [ "$DRY_RUN" = true ] || info "The old address is kept as the remote \"$keep\" (git -C $LIVE_DIR remote -v)."
-    run_as "$DEPLOY_USER" git -C "$LIVE_DIR" remote set-url origin "$GIT_URL"
   else
-    run_as "$DEPLOY_USER" git -C "$LIVE_DIR" remote add origin "$GIT_URL"
+    switched=true
+    if [ -n "$origin" ]; then
+      info "origin is $origin today; the team repo has its own history, so releases are fetched by exact commit and checked out detached."
+      # The old address stays as a remote of its own, which no branch follows.
+      keep=previous-origin
+      if as_user "$DEPLOY_USER" git -C "$LIVE_DIR" remote get-url "$keep" >/dev/null 2>&1; then keep=previous-origin-$STAMP; fi
+      run_as "$DEPLOY_USER" git -C "$LIVE_DIR" remote add "$keep" "$origin"
+      [ "$DRY_RUN" = true ] || info "The old address is kept as the remote \"$keep\" (git -C $LIVE_DIR remote -v)."
+      run_as "$DEPLOY_USER" git -C "$LIVE_DIR" remote set-url origin "$GIT_URL"
+    else
+      run_as "$DEPLOY_USER" git -C "$LIVE_DIR" remote add origin "$GIT_URL"
+    fi
+  fi
+  # The branch checked out now (main, usually) holds the old repo's code. HEAD leaves it for the same commit,
+  # which changes no file, and the branch is renamed and loses its upstream, so no git switch main or git
+  # pull (from a hint, a habit or an old guide) can bring that code back. Releases are checked out detached
+  # from now on. This runs whenever HEAD is still on a branch, so a run after an earlier setup that only
+  # switched origin finishes the job; once HEAD is detached it does nothing.
+  branch=$(as_user "$DEPLOY_USER" git -C "$LIVE_DIR" symbolic-ref -q --short HEAD 2>/dev/null || true)
+  # The old repo's remote-tracking refs (origin/main, origin/HEAD) also name its commits until the first
+  # release is fetched, and git switch main would make a new main from them. They go when origin changes or
+  # HEAD is still on a branch (the old repo, the remote previous-origin, still has those commits), and the
+  # updater fetches origin/main from the team repo before every deploy.
+  if [ "$switched" = true ] || [ -n "$branch" ]; then
+    refs=$(as_user "$DEPLOY_USER" git -C "$LIVE_DIR" for-each-ref --format='%(refname)' refs/remotes/origin/ 2>/dev/null || true)
+    for ref in $refs; do
+      # --no-deref: origin/HEAD goes itself, not the branch it points at.
+      run_as "$DEPLOY_USER" git -C "$LIVE_DIR" update-ref --no-deref -d "$ref"
+    done
+    [ -z "$refs" ] || [ "$DRY_RUN" = true ] || info "Removed the old repo's origin/main (and origin/HEAD); the first release fetches origin/main from $GIT_URL."
+  fi
+  if [ -n "$branch" ]; then
+    kept=previous-origin-main
+    if as_user "$DEPLOY_USER" git -C "$LIVE_DIR" rev-parse -q --verify "refs/heads/$kept" >/dev/null 2>&1; then kept=previous-origin-main-$STAMP; fi
+    upstream=$(as_user "$DEPLOY_USER" git -C "$LIVE_DIR" config --get "branch.$branch.merge" 2>/dev/null || true)
+    run_as "$DEPLOY_USER" git -C "$LIVE_DIR" checkout --quiet --detach
+    run_as "$DEPLOY_USER" git -C "$LIVE_DIR" branch -m "$branch" "$kept"
+    [ -z "$upstream" ] || run_as "$DEPLOY_USER" git -C "$LIVE_DIR" branch --unset-upstream "$kept"
+    [ "$DRY_RUN" = true ] || info "HEAD now points at the same commit without a branch; the old branch $branch is kept as $kept, with no upstream."
   fi
   # Code copied over the checkout (deploy.sh --archive, rsync) shows up as changed files, and the live
   # channel never checks a release out over changes.

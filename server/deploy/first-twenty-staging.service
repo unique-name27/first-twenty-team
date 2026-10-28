@@ -16,6 +16,9 @@ Description=First Twenty staging server
 Documentation=file:///opt/first-twenty-staging/docs/SERVER.md
 Wants=network-online.target
 After=network-online.target postgresql.service
+# Skipped, not failed, until the first staging deploy has built the server (setup enables this unit before).
+ConditionPathExists=/opt/first-twenty-staging/dist-server/server.mjs
+# No start limit, as in first-twenty.service: with one, deploy.sh's sudo systemctl restart could be refused.
 StartLimitIntervalSec=0
 
 [Service]
@@ -30,6 +33,10 @@ UnsetEnvironment=MIGRATION_DATABASE_URL
 ExecStart=/usr/bin/node dist-server/server.mjs
 Restart=on-failure
 RestartSec=5
+# A staging build that crashes at startup is started again less and less often: after 5 seconds at first,
+# then longer each time, up to every 10 minutes (instead of every 5 seconds, all day, on the live instance).
+RestartSteps=6
+RestartMaxDelaySec=10min
 TimeoutStopSec=20
 UMask=0077
 LimitNOFILE=65536

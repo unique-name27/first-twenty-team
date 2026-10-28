@@ -22,4 +22,7 @@ Group=ubuntu
 ExecStart=/usr/local/bin/first-twenty-autoupdate live
 Environment=FT_RELEASE_AUTHOR=unique-name27
 TimeoutStartSec=60min
+# A run that is stopped (systemctl stop, or TimeoutStartSec) gets this long to end: deploy.sh first puts the
+# folder back when it had not restarted the server yet.
+TimeoutStopSec=5min
 ProtectSystem=full
