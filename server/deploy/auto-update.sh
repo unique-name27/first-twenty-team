@@ -7,7 +7,7 @@
 #   first-twenty-autoupdate staging   as first-twenty-staging: the newest commit on main, once its "verify"
 #                                     check passed, to the staging copy in /opt/first-twenty-staging
 #   first-twenty-autoupdate live      as the login that owns /opt/first-twenty: the newest GitHub release,
-#                                     when the product owner published it, it is not a draft or prerelease,
+#                                     when the product owner created it, it is not a draft or prerelease,
 #                                     its commit is on main, was made before the release was published
 #                                     (so the tag was not moved later) and that commit's "verify" check passed
 #   first-twenty-autoupdate live --record-deployed
@@ -18,10 +18,13 @@
 # /etc/first-twenty/autodeploy.paused exists). Otherwise it asks GitHub what is newest and, when that is a
 # commit it has not deployed, whose check passed and that has not failed 3 deploys already, checks it out
 # (detached, fetched by its exact commit) and runs deploy.sh from it: for live, the usual backup before
-# migrations, health checks and the way back on failure. A commit that fails is tried again on the next
-# runs, 3 times in all (a try counts when it starts, so a run that is stopped or killed counts too); a
-# newer commit or release starts over. Staging also refuses to deploy while Caddy's admin API answers on
-# 127.0.0.1:2019, where code from main could reach it.
+# migrations, health checks and the way back on failure. A deploy that fails before its restart puts the
+# folder back (deploy.sh does) and is tried again on the next runs, 3 times in all (a try counts when it
+# starts, so a run that is stopped or killed counts too); a newer commit or release starts over. A live
+# deploy that fails (or is stopped) after the restart is not tried again: every later run logs the way back instead, with
+# the previous commit and the dump taken before its migrations. While the newest release is one that
+# failed, each live run exits 1, so first-twenty-autoupdate-live stays failed. Staging also refuses to
+# deploy while Caddy's admin API answers on 127.0.0.1:2019, where code from main could reach it.
 #
 # GitHub's API is called without a token, which allows 60 requests an hour from this instance's address.
 # Each run sends the ETag of the last answer (If-None-Match), so an unchanged answer is a short 304; it
@@ -31,14 +34,15 @@
 # that limit does not count. Nothing secret is read, stored or logged.
 #
 # State lives in "state" in the channel's state folder (key=value lines): the deployed commit, commits that
-# failed and how often, ETags. Deleting it never deploys anything unchecked: live then counts the commit
-# checked out in /opt/first-twenty as deployed (after a failed deploy that is the failed one, so record the
-# right one with --record-deployed), and staging deploys main again. To try a commit again after 3 failed
-# deploys, delete only the failed= line.
+# failed and how often, the dump taken before a failing commit's migrations, ETags. Deleting it never
+# deploys anything unchecked: live then counts the commit checked out in /opt/first-twenty as deployed
+# (after a deploy that failed after its restart that is the failed one, so record the right one with
+# --record-deployed), and staging deploys main again. To try a commit again after 3 failed deploys, delete
+# only the failed= line (and the skip_ lines after a failure after the restart).
 #
 # Settings, from the environment (the systemd units set the ones that differ from these defaults):
 #   FT_REPO            owner/name of the GitHub repo (default unique-name27/first-twenty-team)
-#   FT_RELEASE_AUTHOR  the only GitHub login whose releases go live (default unique-name27)
+#   FT_RELEASE_AUTHOR  the only GitHub login whose releases go live, as their creator (default unique-name27)
 #   FT_CHECK_NAME      the CI check that must have passed (default verify)
 #   FT_CHECK_APP       the GitHub App that must have reported it (default github-actions)
 #   FT_MAX_TRIES       deploys of one commit before giving up on it (default 3)
@@ -204,15 +208,24 @@ fi
 # ------------------------------------------------------------------------------------------------
 
 # /etc/first-twenty is open only to root and the service's group, so the live login asks sudo (which it
-# needs for deploy.sh anyway). If nobody can tell, nothing is deployed.
+# needs for deploy.sh anyway), in one call per run that answers yes or no: every sudo call is logged, and
+# this runs every 5 minutes. No answer at all (no sudo) means nobody can tell, so nothing is deployed.
 if [ -x "$(dirname "$PAUSE_FILE")" ]; then
-  [ ! -e "$PAUSE_FILE" ] || { log "paused ($PAUSE_FILE exists); nothing checked. Remove that file to resume."; exit 0; }
-elif sudo -n true 2>/dev/null; then
-  ! sudo -n test -e "$PAUSE_FILE" || { log "paused ($PAUSE_FILE exists); nothing checked. Remove that file to resume."; exit 0; }
+  if [ -e "$PAUSE_FILE" ]; then paused=yes; else paused=no; fi
 else
-  log "cannot tell whether $PAUSE_FILE exists (no access to its folder, no sudo), so nothing is deployed."
-  exit 1
+  paused=$(sudo -n sh -c 'test -e "$1" && echo yes || echo no' sh "$PAUSE_FILE" 2>/dev/null || true)
 fi
+case "$paused" in
+  no) ;;
+  yes)
+    log "paused ($PAUSE_FILE exists); nothing checked. Remove that file to resume."
+    exit 0
+    ;;
+  *)
+    log "cannot tell whether $PAUSE_FILE exists (no access to its folder, no sudo), so nothing is deployed."
+    exit 1
+    ;;
+esac
 
 # ------------------------------------------------------------------------------------------------
 # GitHub
@@ -354,8 +367,10 @@ console.log(["id=" + clean(r.id), "tag=" + clean(r.tag_name), "draft=" + clean(r
       STATE[release_id]=$rel_id
       STATE[release_tag]=$rel_tag
       STATE[release_published]=$rel_published
+      # GitHub's "author" of a release is whoever created it (publishing a draft does not change it), so a
+      # draft someone else created never goes live, even when the product owner publishes it.
       if [ "$rel_author" != "$RELEASE_AUTHOR" ]; then
-        STATE[release_skip]="it was published by ${rel_author:-nobody we know}, and only $RELEASE_AUTHOR's releases go live"
+        STATE[release_skip]="it was created by ${rel_author:-nobody we know}, and only releases $RELEASE_AUTHOR created go live"
       elif [ "$rel_draft" != false ] || [ "$rel_pre" != false ]; then
         STATE[release_skip]="it is a draft or a prerelease"
       elif ! [[ $rel_published =~ ^[0-9]+$ ]]; then
@@ -399,23 +414,85 @@ if [ "$TARGET" = "$DEPLOYED" ]; then
   exit 0
 fi
 
-# A commit skipped for good (see below) stays skipped, for this release: a new release starts over.
+# A commit skipped for good (see below) stays skipped, for this release: a new release starts over. The
+# reason is logged on every run, so it stays at the bottom of this log. A live release skipped because its
+# deploy failed after the restart (skip_failed) keeps the unit failed, like one that failed 3 times.
 SKIP_KEY=$TARGET${TARGET_TAG:+@${STATE[release_id]:-}}
 if [ "${STATE[skip_sha]:-}" = "$SKIP_KEY" ]; then
   log "$WHAT is not deployed: ${STATE[skip_why]:-see the earlier runs}."
   save_state
+  [ "$CHANNEL" != live ] || [ "${STATE[skip_failed]:-}" != "$SKIP_KEY" ] || exit 1
   exit 0
+fi
+
+# predump=<sha>:<file> is the dump deploy.sh took before the first try of that commit ran its migrations. It
+# is kept until that commit deploys or another one is the newest, and later tries get it as FT_PRIOR_BACKUP,
+# so every way back printed for this commit names the dump from before any of its migrations.
+PRIOR=""
+case "${STATE[predump]:-}" in
+  "$TARGET":/*) PRIOR=${STATE[predump]#*:} ;;
+  *) unset 'STATE[predump]' ;;
+esac
+
+# What deploy.sh reports about how far it got (report() in deploy.sh), in a file this script starts with
+# the commit it is for: phase=before-restart or restarted, restored=1, dump=<file>. Later lines win.
+REPORT=$STATE_DIR/deploy-report
+read_report() {
+  phase=$(sed -n 's/^phase=//p' "$REPORT" | tail -n 1)
+  restored=$(sed -n 's/^restored=//p' "$REPORT" | tail -n 1)
+  dump=$(sed -n 's/^dump=//p' "$REPORT" | tail -n 1)
+  [[ $dump =~ ^/[A-Za-z0-9._/-]+$ ]] || dump=""
+  if [ -n "$dump" ] && [ -z "$PRIOR" ]; then
+    PRIOR=$dump
+    STATE[predump]=$TARGET:$dump
+  fi
+}
+
+# A live deploy that failed after its restart is not tried again: the new code already ran, a retry would
+# restart it again, and its way back would no longer name the dump from before the migrations. The reason,
+# with that way back, is logged on every later run (the skip above), so it stays at the bottom of this log.
+# $1 says how the deploy ended, $2 is the commit that ran before.
+skip_after_restart() {
+  STATE[skip_sha]=$SKIP_KEY
+  STATE[skip_failed]=$SKIP_KEY
+  STATE[skip_why]="its deploy $1 after the new server was started, so it is not tried again. Roll back to the previous commit $(short "${2:-unknown}") as in docs/SERVER.md \"Roll back\"${PRIOR:+, restoring $PRIOR (the dump taken before its migrations)}"
+  save_state
+  log "$WHAT is not deployed: ${STATE[skip_why]}."
+  exit 1
+}
+
+# A report still here was left by a run that was stopped in the middle of a deploy (TimeoutStartSec, or out
+# of memory) before it could read it, so what that deploy got to still counts.
+phase=""
+restored=""
+dump=""
+if [ -f "$REPORT" ]; then
+  if [ "$(sed -n 's/^target=//p' "$REPORT" | head -n 1)" = "$TARGET" ]; then
+    read_report
+    rm -f "$REPORT"
+    [ "$CHANNEL" != live ] || [ "$phase" != restarted ] || skip_after_restart "was stopped" "$DEPLOYED"
+  fi
+  rm -f "$REPORT"
 fi
 
 TRIES=$(fail_count "$TARGET")
 if [ "$TRIES" -ge "$MAX_TRIES" ]; then
   if [ "$CHANNEL" = staging ]; then
     log "$WHAT failed to deploy $TRIES times; not trying again until a newer commit is on main."
-  else
-    log "$WHAT failed to deploy $TRIES times; not trying again until a newer release is published (or record a fix by hand with: first-twenty-autoupdate live --record-deployed)."
+    save_state
+    exit 0
   fi
+  log "$WHAT failed to deploy $TRIES times; not trying again until a newer release is published.${PRIOR:+ Some of its migrations may have been applied; the dump from before them is $PRIOR.}"
+  # This line is all a run that systemd stopped or the OOM killer ended leaves behind, so it says where the
+  # code stands when it is not the deployed commit.
+  head=$(git -C "$APP_DIR" rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null || true)
+  if [ -n "$DEPLOYED" ] && [ -n "$head" ] && [ "$head" != "$DEPLOYED" ]; then
+    log "The code in $APP_DIR is at $(short "$head") and may be half built, while the server runs $(short "$DEPLOYED") until its next restart. To put it back: sudo touch $PAUSE_FILE, then: cd $APP_DIR && git checkout --detach $(short "$DEPLOYED") && bash server/deploy/deploy.sh --no-pull"
+  fi
+  log "After rebuilding a commit by hand (git checkout --detach <commit> && bash server/deploy/deploy.sh --no-pull), record it with: first-twenty-autoupdate live --record-deployed"
   save_state
-  exit 0
+  # Failed, so first-twenty-autoupdate-live stays failed (systemctl --failed) while this release is the newest.
+  exit 1
 fi
 
 CHECK=""
@@ -547,6 +624,7 @@ set_fail_count "$TARGET" "$TRY"
 save_state
 # The way back that deploy.sh prints: the deployed commit, else whatever was checked out before.
 PREVIOUS=${DEPLOYED:-$(git -C "$APP_DIR" rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null || true)}
+printf 'target=%s\n' "$TARGET" >"$REPORT"
 log "deploying $WHAT (try $TRY of $MAX_TRIES; deployed now: $(short "${DEPLOYED:-none}"))."
 rc=0
 if ! git -C "$APP_DIR" -c advice.detachedHead=false checkout --quiet --detach "$TARGET"; then
@@ -554,14 +632,18 @@ if ! git -C "$APP_DIR" -c advice.detachedHead=false checkout --quiet --detach "$
   log "git could not check out $(short "$TARGET") in $APP_DIR (see above; most likely untracked files in the way)."
   rc=1
 else
-  (cd "$APP_DIR" && FT_DEPLOY_LOCK_HELD=1 FT_PREVIOUS_COMMIT="$PREVIOUS" bash server/deploy/deploy.sh "${DEPLOY_ARGS[@]}") || rc=$?
+  (cd "$APP_DIR" && FT_DEPLOY_LOCK_HELD=1 FT_PREVIOUS_COMMIT="$PREVIOUS" FT_DEPLOY_REPORT="$REPORT" \
+    FT_AUTODEPLOY_STATE="$STATE_FILE" FT_PRIOR_BACKUP="$PRIOR" bash server/deploy/deploy.sh "${DEPLOY_ARGS[@]}") || rc=$?
 fi
 exec 9>&-
+read_report
+rm -f "$REPORT"
 
 if [ "$rc" -eq 0 ]; then
   STATE[deployed_sha]=$TARGET
   STATE[deployed_at]=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   set_fail_count "$TARGET" 0
+  unset 'STATE[predump]'
   save_state
   log "deployed $WHAT."
   if ! cmp -s "${BASH_SOURCE[0]}" "$APP_DIR/server/deploy/auto-update.sh"; then
@@ -570,13 +652,28 @@ if [ "$rc" -eq 0 ]; then
   exit 0
 fi
 
+if [ "$CHANNEL" = live ] && [ "$phase" = restarted ]; then
+  log "deploy of $WHAT failed after the restart (try $TRY of $MAX_TRIES, output above)."
+  skip_after_restart failed "$PREVIOUS"
+fi
+
+save_state
 # The try was counted before the checkout.
 if [ "$TRY" -ge "$MAX_TRIES" ]; then
   log "deploy of $WHAT failed (try $TRY of $MAX_TRIES, output above); giving up on it until something newer appears."
 else
   log "deploy of $WHAT failed (try $TRY of $MAX_TRIES, output above); trying again next run."
 fi
-if [ "$CHANNEL" = live ]; then
-  log "To stop the retries and roll back: sudo touch $PAUSE_FILE, then follow the steps deploy.sh printed above."
+head=$(git -C "$APP_DIR" rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null || true)
+if [ "$restored" = 1 ]; then
+  log "Nothing was restarted, and deploy.sh put $APP_DIR back at $(short "$PREVIOUS"), the version the server still runs."
+elif [ "$phase" != restarted ] && [ -n "$PREVIOUS" ] && [ -n "$head" ] && [ "$head" != "$PREVIOUS" ]; then
+  # Failed before the restart, but deploy.sh did not put the folder back (it was killed, say), so the code
+  # may be half built. (Staging after its restart runs the new code: deploy.sh printed the way back.)
+  if [ "$CHANNEL" = live ]; then
+    log "The code in $APP_DIR is now $(short "$head") and may be half built, while the server still runs $(short "$PREVIOUS") until its next restart. To stop the retries and roll back: sudo touch $PAUSE_FILE, then: cd $APP_DIR && git checkout --detach $(short "$PREVIOUS") && bash server/deploy/deploy.sh --no-pull"
+  else
+    log "The code in $APP_DIR is now $(short "$head") and may be half built. To stop the retries and roll back: sudo touch $PAUSE_FILE, then as $(id -un): cd $APP_DIR && git checkout --detach $(short "$PREVIOUS") && bash server/deploy/deploy.sh --instance staging --no-pull"
+  fi
 fi
 exit 1
