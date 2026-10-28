@@ -14,6 +14,8 @@ scripts/*.png
 !.env.example
 .data/
 dist-server/
+# server/deploy/deploy.sh: the previous build, kept until a deploy is done
+.deploy-prev/
 
 # Claude Code: settings.json is shared by the team; personal settings stay local
 .claude/settings.local.json

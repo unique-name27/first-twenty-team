@@ -457,9 +457,10 @@ describe.skipIf(!BASH)('shell scripts (bash -n)', { timeout: BASH_TEST_MS }, () 
  * APP_DIR is $app), a stand-in with-env.sh that runs its command as is (with-env.sh has its own tests),
  * and stub commands that log every call to $CALLS. The FAKE_* variables decide what each stub does.
  * `run <name> "<VAR=value ...>" [deploy.sh options]` starts one deploy in the background, in its own
- * folder (settings file, backups, call log), from the code in $RUN_APP. `report` waits for them all and
- * prints, per run, its exit code, its output (out: lines) and the commands it ran (call: lines). Forks
- * are slow in Git Bash, so the runs go in parallel.
+ * folder (settings file, backups, call log), from a copy of the code in $RUN_APP: deploy.sh keeps the
+ * previous build in its code folder (.deploy-prev) and puts it back on a failure, so parallel runs must not
+ * share one. `report` waits for them all and prints, per run, its exit code, its output (out: lines) and
+ * the commands it ran (call: lines). Forks are slow in Git Bash, so the runs go in parallel.
  */
 const deployStubs = `
 app="$work/app"
@@ -535,9 +536,10 @@ run() { # run <name> "<VAR=value ...>" [deploy.sh options]
   : > "$dir/calls"
   (
     rc=0
-    env FAKE_LOAD=loaded FAKE_WORKDIR="$RUN_APP" FAKE_BACKUP=ok FAKE_PENDING=1 FAKE_STATUS=ok FAKE_MIGRATE=ok FAKE_HEALTH=ok $vars \\
+    cp -R "$RUN_APP" "$dir/app"
+    env FAKE_LOAD=loaded FAKE_WORKDIR="$dir/app" FAKE_BACKUP=ok FAKE_PENDING=1 FAKE_STATUS=ok FAKE_MIGRATE=ok FAKE_HEALTH=ok $vars \\
       CALLS="$dir/calls" FAKE_BACKUP_DIR="$dir/backups" PATH="$work/bin:$PATH" FIRST_TWENTY_ENV="$dir/env" \\
-      TMPDIR="$dir" HEALTH_WAIT_SECONDS=2 bash "$RUN_APP/server/deploy/deploy.sh" --no-pull "$@" > "$dir/out" 2>&1 || rc=$?
+      TMPDIR="$dir" HEALTH_WAIT_SECONDS=2 bash "$dir/app/server/deploy/deploy.sh" --no-pull "$@" > "$dir/out" 2>&1 || rc=$?
     echo "$rc" > "$dir/rc"
   ) &
 }
