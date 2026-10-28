@@ -369,6 +369,51 @@ SIM_WRITE_SUMMARIES=1 npx vitest run src/sim/generate.test.ts
 Generated ids are stable but mean nothing: find records by what they are (the person hired from an
 application, the open job), never by id.
 
+### The time machine
+
+`advance(db, { to, seed, policy })` (`src/sim/advance.ts`) lives a workspace's next days, from the company's
+date (the clock override, which it then leaves on `to`) through `to`. It works on any workspace: a generated
+company, the sample, or one saved from the app. Each day opens the app once, so its load-time changes run
+(`applyLoadChanges`: scheduled job and pay changes, hand-offs, lapsed offers; the app has no midnight timer).
+Then on business days the people act, through the same actions as the generator, each after the check its
+screen makes:
+
+- time off: a sick day on the day, or vacation one to six weeks out, sent only when `checkRequest` shows no
+  warning (a sick day before its service wait still goes to Admin); the manager approves it the next
+  business day;
+- hiring: the founder keeps the plan stocked while the company is under its size and opens each role from its
+  plan line about six weeks before its start (`openJobFromPlan`, then Edit details and Mark posted);
+  candidates arrive, are reviewed, interviewed and scored, and the hiring manager decides on the scorecards;
+  an offer goes out only when `sendBlockerList` is empty, and the candidate accepts, declines or lets it
+  expire;
+- a merit raise on a work anniversary, as Change job or pay proposes it, unless it leaves the band;
+- now and then a resignation (with a backfill) or a protected leave that `leaveEligibility` allows, and a
+  return on the expected day;
+- each pay period's prep (`payRunPrep`, totals from `payRunTotals`) and Mark submitted on its run-payroll-by
+  day;
+- on Mondays Admin clears the inbox's one-button items (`inboxItems`, then `applyInboxOp`) and the compliance
+  rules are evaluated (`evaluateAll`); in December next year's holidays are added when missing.
+
+`policy` is `'quiet'`, `'normal'` (the default) or `'busy'`, or rates changed from one:
+`{ preset: 'busy', attritionPerYear: 0.3 }`. It returns `{ db, trace, report, summary }`: the trace has the
+generator's format, the report counts what happened and the summary says it in plain lines. The same
+workspace, date, seed and policy give byte-identical output, and a `to` past the law coverage is refused
+unless you pass `allowStaleLaw`.
+
+```ts
+import { setClockOverride } from '@/lib/dates'
+import { advance } from '@/sim/advance'
+import { generateCompany } from '@/sim/generate'
+
+const { db } = generateCompany({ scenario: 'seed-8', asOf: '2026-10-01' })
+setClockOverride('2026-10-01')
+const { db: later, summary } = advance(db, { to: '2026-12-30', seed: 1 })   // 90 days at the normal policy
+```
+
+`src/sim/advance.test.ts` advances seed-8 and full-20 by 30 and 90 days and checks the integrity, the pay runs,
+that time off and hiring happened, and that a second run is byte-identical; `src/sim/advance.rules.test.ts`
+covers the presets, the refusals, a clock in the middle of a pay period, leavers and leave, and December.
+
 ## Claude Code in a codespace
 
 Claude Code is installed in every codespace. Open a new terminal (the stack keeps the first one busy) and
