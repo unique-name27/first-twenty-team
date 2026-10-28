@@ -1,0 +1,25 @@
+# First Twenty live: deploy the newest GitHub release by the product owner (systemd oneshot).
+# Started every 5 minutes by first-twenty-autoupdate-live.timer. Installed by setup-auto-deploy.sh, which
+# puts the login that owns /opt/first-twenty in User= and Group= (docs/SERVER.md, "Automatic deploys from GitHub").
+#
+#   sudo journalctl -u first-twenty-autoupdate-live -n 100     what the last runs did
+#   sudo systemctl start first-twenty-autoupdate-live          check now instead of waiting
+#   sudo touch /etc/first-twenty/autodeploy.paused             pause it (rm the file to resume)
+#
+# It runs as the login that deploys by hand today, because deploy.sh needs that login's sudo (settings,
+# backup, migrations, restart). /tmp stays shared, so a deploy started by hand and an automatic one never
+# run at the same time (they take the same lock file).
+
+[Unit]
+Description=First Twenty live: deploy the owner's GitHub releases
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+ExecStart=/usr/local/bin/first-twenty-autoupdate live
+Environment=FT_RELEASE_AUTHOR=unique-name27
+TimeoutStartSec=60min
+ProtectSystem=full

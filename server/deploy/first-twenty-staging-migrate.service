@@ -1,0 +1,56 @@
+# First Twenty staging: apply pending database migrations (systemd oneshot unit).
+# Installed by setup-auto-deploy.sh to /etc/systemd/system/first-twenty-staging-migrate.service.
+# deploy.sh --instance staging starts it (sudo systemctl start first-twenty-staging-migrate.service, one of
+# the two commands the first-twenty-staging user may run with sudo) and waits until it has finished.
+#
+#   sudo journalctl -u first-twenty-staging-migrate -n 50    what the last run did
+#
+# Migrations run as the schema owner (MIGRATION_DATABASE_URL), whose password only root can read in
+# /etc/first-twenty-staging/env: systemd reads that file, then runs the migration as first-twenty-staging.
+# sh copies the owner connection into DATABASE_URL inside the process, so it never appears on a command
+# line ($$ is systemd's way of writing one $ for sh).
+
+[Unit]
+Description=First Twenty staging database migrations
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=first-twenty-staging
+Group=first-twenty-staging
+WorkingDirectory=/opt/first-twenty-staging
+EnvironmentFile=/etc/first-twenty-staging/env
+Environment=NODE_ENV=production
+ExecStart=/bin/sh -c 'DATABASE_URL="$$MIGRATION_DATABASE_URL" exec /usr/bin/node dist-server/migrate.mjs'
+TimeoutStartSec=15min
+UMask=0077
+
+# Hardening, as in first-twenty-staging.service.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1/32 ::1/128

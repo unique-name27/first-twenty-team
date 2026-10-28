@@ -916,6 +916,14 @@ if [ "$TARGET" = "$CADDYFILE" ]; then
 else
   render_caddyfile "$CADDY_SRC" site-only >"$NEW"
 fi
+# The admin line puts Caddy's admin API on a Unix socket. Caddy before 2.7 cannot be reloaded through one
+# (its client sends a request newer Go refuses), so there the line stays out and the admin API stays on
+# localhost:2019 until Caddy is updated.
+CADDY_NOW=$(caddy_version)
+if [ -n "$CADDY_NOW" ] && [ "$(printf '%s\n' 2.7.0 "$CADDY_NOW" | sort -V | head -n 1)" != 2.7.0 ]; then
+  sed -i '/^[[:space:]]*admin unix\/\//d' "$NEW"
+  warn "Caddy $CADDY_NOW is older than 2.7, so its admin API stays on localhost:2019 (automatic deploys' staging needs 2.7 or newer)."
+fi
 chmod 0644 "$NEW"
 
 if ! runuser -u caddy -- caddy validate --adapter caddyfile --config "$NEW" >/dev/null 2>&1; then
@@ -974,7 +982,14 @@ fi
 
 systemctl enable --quiet caddy
 if systemctl is-active --quiet caddy; then
-  systemctl reload caddy || die "Caddy rejected the new config. See: sudo journalctl -u caddy -n 50"
+  # systemctl reload sends the new config to the admin address written in it. The first time it has the
+  # admin line (the Unix socket), the running Caddy still listens on localhost:2019, so caddy reload is
+  # told that address instead. A failed reload leaves Caddy running the config it had.
+  if ! systemctl reload caddy 2>/dev/null; then
+    curl -s -o /dev/null --max-time 3 http://127.0.0.1:2019/config/ &&
+      runuser -u caddy -- caddy reload --config "$CADDYFILE" --adapter caddyfile --address localhost:2019 ||
+      die "Caddy rejected the new config. See: sudo journalctl -u caddy -n 50"
+  fi
   info "Caddy reloaded."
 else
   systemctl start caddy || die "Caddy did not start. See: sudo journalctl -u caddy -n 50"
