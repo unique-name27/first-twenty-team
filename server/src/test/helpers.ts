@@ -70,6 +70,28 @@ export async function resetDb(db: Db): Promise<void> {
   await db.query(`INSERT INTO workspaces (id, name, slug, keep) VALUES ($1, 'Default workspace', 'default-workspace', true)`, [WORKSPACE_ID])
 }
 
+/**
+ * Saves the rows of every table as they are now, and returns a function that puts exactly those rows
+ * back. For a test file whose setup is slow (a sample company or two): set up once in beforeAll, save,
+ * and restore before each test. Every test still starts from the same rows, for a fraction of the time
+ * a new setup takes. The copies live in a schema of their own, test_saved.
+ */
+export async function saveRows(db: Db): Promise<() => Promise<void>> {
+  const tables = (await db.query<{ name: string }>(`SELECT tablename AS name FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename`)).rows.map(
+    (r) => `"${r.name}"`,
+  )
+  await db.exec('DROP SCHEMA IF EXISTS test_saved CASCADE; CREATE SCHEMA test_saved;')
+  await db.exec(tables.map((t) => `CREATE TABLE test_saved.${t} AS TABLE public.${t};`).join('\n'))
+  return () =>
+    db.tx(async (q) => {
+      // The rows go back exactly as saved, so foreign keys and triggers stay out of it until the
+      // transaction ends (SET LOCAL lasts until then, whether it commits or not).
+      await q.exec('SET LOCAL session_replication_role = replica')
+      await q.exec(`TRUNCATE ${tables.map((t) => `public.${t}`).join(', ')}`)
+      await q.exec(tables.map((t) => `INSERT INTO public.${t} SELECT * FROM test_saved.${t};`).join('\n'))
+    })
+}
+
 export async function makeApp(db: Db, overrides: Partial<Config> = {}): Promise<FastifyInstance> {
   const app = await buildApp({ db, config: testConfig(overrides), logger: false })
   await app.ready()

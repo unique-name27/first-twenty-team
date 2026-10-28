@@ -15,7 +15,7 @@ import { testConfig } from '../config'
 import { CAREERS_CSP } from '../csp'
 import type { Db } from '../db'
 import { applyChanges, changesSince, replaceWorkspace, snapshot } from '../repo'
-import { createAdmin, makeTestDb, resetDb } from '../test/helpers'
+import { createAdmin, makeTestDb, resetDb, saveRows } from '../test/helpers'
 import { LIMITS, parseChanges, parseWorkspace } from '../validate'
 import { LOAD_BUDGET, loadCareersDb, MAX_LISTED_JOBS } from './data'
 import { ApplyRateLimiter } from './limits'
@@ -28,9 +28,17 @@ const ADDRESS = '203.0.113.7'
 
 let db: Db
 let app: FastifyInstance
+let restoreRows: () => Promise<void>
 
 beforeAll(async () => {
   db = await makeTestDb()
+  // The companies every test starts from, set up once (loading the sample takes a while) and put back
+  // before each test, so every test still starts from the same rows.
+  await resetDb(db)
+  await addCompany('w-acme', 'acme', sample())
+  await addCompany('w-other', 'other-co', otherCo())
+  await addCompany('w-empty', 'empty-co', null)
+  restoreRows = await saveRows(db)
 })
 afterAll(async () => {
   await db.close()
@@ -66,10 +74,7 @@ async function careersApp(limiter?: ApplyRateLimiter, opts: { db?: Db; now?: () 
 }
 
 beforeEach(async () => {
-  await resetDb(db)
-  await addCompany('w-acme', 'acme', sample())
-  await addCompany('w-other', 'other-co', otherCo())
-  await addCompany('w-empty', 'empty-co', null)
+  await restoreRows()
   app = await careersApp()
 })
 
