@@ -1,6 +1,6 @@
-// server/src/dev holds development-only server code (POST /__dev/sql for npm run sql). It stays out of
-// production by structure: only the development entry, server/src/dev/index.ts, imports it, and npm run
-// stack is the only thing that starts that entry. This walks the import graph of every production entry
+// server/src/dev holds development-only server code (the /__dev routes for npm run sql and npm run sim).
+// It stays out of production by structure: only the development entry, server/src/dev/index.ts, imports
+// it, and npm run stack is the only thing that starts that entry. This walks the import graph of every production entry
 // (the ones vite.server.config.ts bundles, which include server/src/index.ts, and app.ts on its own) and
 // fails if any path reaches this folder. The test-only folders (the journey kit in server/src/e2e, the
 // server test helpers, src/sync/testing) are held to the same rule. It reads the source instead of
