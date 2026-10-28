@@ -3,7 +3,8 @@
 // with bash against stub commands, as in deploy-kit.test.ts; git runs for real against a local repo that
 // stands in for GitHub, and a stub curl answers the GitHub API from fixture files.
 //
-// `npm test` runs it (vite.config.ts includes server/deploy/**/*.test.ts). On its own, with one worker:
+// `npm test` and `npm run test:deploy` run it (the deploy tier, scripts/test/tiers.ts). On its own, with
+// one worker:
 //   npm test -- server/deploy/auto-update.test.ts --maxWorkers=1
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'

@@ -22,7 +22,9 @@ import {
   upsertAdmin,
   verifyPassword,
 } from './auth'
+import { SCRYPT_N, TEST_SCRYPT_N } from './config'
 import type { Db } from './db'
+import { WORKSPACE_ID } from './sqlgen'
 import { codePoint, makeTestDb, resetDb, TRIMMED_SPACES } from './test/helpers'
 
 describe('password hashing', () => {
@@ -35,6 +37,20 @@ describe('password hashing', () => {
     expect(await verifyPassword('test-password-1234', hash)).toBe(true)
     expect(await verifyPassword('test-password-1235', hash)).toBe(false)
     expect(await hashPassword('test-password-1234')).not.toBe(hash)
+  })
+
+  it('checks each hash at the cost it names, so hashes made at the test cost and the real one both verify', async () => {
+    const cheap = await hashPassword('test-password-1234', TEST_SCRYPT_N)
+    expect(cheap.split('$').slice(0, 4)).toEqual(['scrypt', String(TEST_SCRYPT_N), '8', '1'])
+    const real = await hashPassword('test-password-1234')
+    expect(real.split('$')[1]).toBe(String(SCRYPT_N))
+    for (const hash of [cheap, real]) {
+      expect(await verifyPassword('test-password-1234', hash)).toBe(true)
+      expect(await verifyPassword('test-password-1235', hash)).toBe(false)
+    }
+    // The cost is part of what is checked: the same salt and key under another N is a mismatch.
+    const [scheme, , r, p, salt, key] = cheap.split('$')
+    expect(await verifyPassword('test-password-1234', [scheme, 2 * TEST_SCRYPT_N, r, p, salt, key].join('$'))).toBe(false)
   })
 
   it('treats malformed stored hashes as a mismatch', async () => {
@@ -480,6 +496,24 @@ describe('upsertAdmin', () => {
     expect(await findTrustedDevice(db, token, 'founder@example.com')).toBe(hashToken(token))
     await upsertAdmin(db, 'founder@example.com', 'second-password-123')
     expect(await findTrustedDevice(db, token, 'founder@example.com')).toBeNull()
+  })
+
+  it('signs in an admin whose password was hashed at either cost, whatever cost the check runs at', async () => {
+    await upsertAdmin(db, 'founder@example.com', 'first-password-123', WORKSPACE_ID, TEST_SCRYPT_N)
+    const stored = (await db.query<{ password_hash: string }>('SELECT password_hash FROM users')).rows[0].password_hash
+    expect(stored.split('$')[1]).toBe(String(TEST_SCRYPT_N))
+    for (const cost of [SCRYPT_N, TEST_SCRYPT_N]) {
+      expect(await checkCredentials(db, 'founder@example.com', 'first-password-123', cost)).toMatchObject({ email: 'founder@example.com' })
+      expect(await checkCredentials(db, 'founder@example.com', 'wrong-password-123', cost)).toBeNull()
+      expect(await checkCredentials(db, 'nobody@example.com', 'first-password-123', cost)).toBeNull()
+    }
+    // Hashed again at the real cost (create-admin, the dev stack), it still checks out under either.
+    await upsertAdmin(db, 'founder@example.com', 'first-password-123')
+    const again = (await db.query<{ password_hash: string }>('SELECT password_hash FROM users')).rows[0].password_hash
+    expect(again.split('$')[1]).toBe(String(SCRYPT_N))
+    for (const cost of [SCRYPT_N, TEST_SCRYPT_N]) {
+      expect(await checkCredentials(db, 'founder@example.com', 'first-password-123', cost)).toMatchObject({ email: 'founder@example.com' })
+    }
   })
 
   it('enforces a 12-character minimum and a valid email', async () => {

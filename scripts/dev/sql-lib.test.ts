@@ -1,17 +1,8 @@
-// The pure parts of npm run sql, and its shortcuts run against the Ledgerlark sample through the same
-// read-only runner the stack's API uses (PGlite in memory). The store loads first so every seed and domain
-// module finishes loading before the sample is built.
-import '@/store/db'
+// The pure parts of npm run sql (sql-lib.ts): arguments, requests, the printed table and messages. Its
+// shortcuts run against the Ledgerlark sample in server/src/dev/shortcuts.test.ts, which needs a database.
 import { readFileSync } from 'node:fs'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { buildSampleDB } from '@/data/seed'
-import type { Db } from '../../server/src/db'
-import { ROW_CAP, runReadOnly, type SqlAnswer } from '../../server/src/dev/readonly'
-import { checkStatement } from '../../server/src/dev/statement'
-import { replaceWorkspace } from '../../server/src/repo'
-import { makeTestDb } from '../../server/src/test/helpers'
-import { parseWorkspace } from '../../server/src/validate'
-import { asObjects, cellText, DEFAULT_WORKSPACE, formatTable, parseSqlArgs, problemText, requestFor, rowCountLine, SHORTCUTS, type ShortcutName, USAGE } from './sql-lib'
+import { describe, expect, it } from 'vitest'
+import { asObjects, cellText, DEFAULT_WORKSPACE, formatTable, parseSqlArgs, problemText, ROW_CAP, requestFor, rowCountLine, SHORTCUTS, type SqlAnswer, USAGE } from './sql-lib'
 
 describe('parseSqlArgs', () => {
   it('reads a shortcut, in any case', () => {
@@ -151,46 +142,5 @@ describe('npm run sql stays on this computer', () => {
     const [, sql] = sources[0]
     const urls = [...sql.matchAll(/`(\w+:\/\/[^`]*)`/g)].map((m) => m[1])
     expect(urls).toEqual(['http://127.0.0.1:${port}/api/health', 'http://127.0.0.1:${port}${DEV_SQL_PATH}'])
-  })
-})
-
-describe('the shortcuts', () => {
-  it('are each one statement that reads, for one company ($1)', () => {
-    for (const [name, s] of Object.entries(SHORTCUTS)) expect(checkStatement(s.sql), name).toMatchObject({ ok: true, kind: 'cursor', placeholders: 1 })
-  })
-
-  describe('on the sample company', () => {
-    const ANCHOR = '2026-10-09'
-    let db: Db
-    beforeAll(async () => {
-      db = await makeTestDb()
-      await replaceWorkspace(db, parseWorkspace({ db: buildSampleDB(), confirmReplace: true }), null, DEFAULT_WORKSPACE)
-    })
-    afterAll(async () => {
-      await db.close()
-    })
-
-    const run = (name: ShortcutName) => runReadOnly(db, requestFor(parseSqlArgs([name, '--today', ANCHOR]), DEFAULT_WORKSPACE))
-
-    it('all run, and the sample has rows for each but integrity, which is clean', async () => {
-      for (const name of Object.keys(SHORTCUTS) as ShortcutName[]) {
-        const answer = await run(name)
-        expect(answer.truncated, name).toBe(false)
-        if (name === 'integrity') expect(answer.rows, name).toEqual([])
-        else expect(answer.rows.length, name).toBeGreaterThan(0)
-      }
-    })
-
-    it('read hires as one row per hire, with the columns the table prints', async () => {
-      const hires = await run('hires')
-      expect(hires.columns.map((c) => c.name)).toEqual(['employee_no', 'person_name', 'job_title', 'source', 'applied_on', 'offer_accepted_on', 'start_date', 'days_to_hire', 'tasks_done', 'tasks', 'first_payday'])
-      expect(hires.rows).toHaveLength(16)
-      expect(formatTable(hires).split('\n')).toHaveLength(18)
-    })
-
-    it('read nothing of another company', async () => {
-      const other = await runReadOnly(db, requestFor(parseSqlArgs(['people']), 'no-such-company'))
-      expect(other.rows).toEqual([])
-    })
   })
 })
