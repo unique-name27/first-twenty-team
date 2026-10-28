@@ -14,7 +14,7 @@ you are ready.
 
 - **No install:** double-click `first-twenty.html` (or `Launch First Twenty.bat`). Build it first with `npm run build` if the file is missing.
 - **Develop:** open a codespace (the badge above), or run `npm ci` and `npm run stack` on your own computer and open http://127.0.0.1:8826. It runs the app and the server together, signed in to the sample company (`docs/DEV.md`). `npm run dev` runs the app alone.
-- **Check everything:** `npm run verify` (typecheck, tests, one-file build).
+- **Check everything:** `npm run verify` (typecheck, the unit, server and journey tests, the one-file build); `npm run test:deploy` runs the deploy kit's tests.
 - **Demo careers site:** `npm run build:careers` writes `dist-careers/`, a static careers site for the fictional sample company (its open jobs, each posting exactly as First Twenty generates it, and a demo apply form that sends nothing). It uses relative links only and expects the app one folder up, so publish it as a `careers/` folder beside the app; its "hiring side" links open the app's Jobs list and each job's pipeline. Rebuild it in the same publish step as the app, every time: the sample's dates move with the calendar (the app shifts them by whole weeks), so a careers build from an earlier day shows posted dates that no longer match the app. To link to an app somewhere else, add `-- --app-href <path or URL>`.
 
 ## Working on it as a team

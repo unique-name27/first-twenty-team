@@ -4,8 +4,8 @@
 // commands. postgres-setup.sql itself runs in PGlite in postgres-setup.test.ts: kept apart so PGlite
 // never shares a worker with this file's Git Bash spawns.
 //
-// `npm test` runs it (vite.config.ts includes server/deploy/**/*.test.ts) and `npm run typecheck` checks
-// it (server/tsconfig.json includes deploy). On its own: npx vitest run server/deploy
+// `npm test` and `npm run test:deploy` run it (the deploy tier, scripts/test/tiers.ts) and
+// `npm run typecheck` checks it (server/tsconfig.json includes deploy). On its own: npx vitest run server/deploy
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'

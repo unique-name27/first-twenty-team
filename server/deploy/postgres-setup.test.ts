@@ -3,7 +3,8 @@
 // PGlite runs in its own worker: next to that file's hundreds of Git Bash spawns, PGlite's emulated
 // initdb on Windows sometimes saw a hangup signal or crashed the worker.
 //
-// `npm test` runs it (vite.config.ts includes server/deploy/**/*.test.ts). On its own: npx vitest run server/deploy
+// `npm test` and `npm run test:deploy` run it (the deploy tier, scripts/test/tiers.ts). On its own:
+// npx vitest run server/deploy
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'

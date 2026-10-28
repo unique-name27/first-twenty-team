@@ -1,13 +1,14 @@
-// npm run sql with no stack reads a copy of the stack's PGlite folder (sql-copy.ts): the folder itself is
-// left byte for byte as it was, and the copy goes afterwards.
+// npm run sql with no stack reads a copy of the stack's PGlite folder (scripts/dev/sql-copy.ts): the folder itself is
+// left byte for byte as it was, and the copy goes afterwards. It lives here because it opens a database:
+// tests under scripts/ never load server code (scripts/test/tiers.ts).
 import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { openPGlite } from '../../server/src/db'
-import { runReadOnly } from '../../server/src/dev/readonly'
-import { copyForReading } from './sql-copy'
+import { copyForReading } from '../../../scripts/dev/sql-copy'
+import { openPGlite } from '../db'
+import { runReadOnly } from './readonly'
 
 /** Every file under a folder with the SHA-256 of its bytes. */
 function fingerprint(dir: string): Record<string, string> {

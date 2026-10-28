@@ -1,11 +1,12 @@
 // Test helpers: one in-memory PGlite per test file (migrated once, wiped between tests) and a fresh
-// Fastify app per test, driven with app.inject().
+// Fastify app per test, driven with app.inject(). Passwords hash at the cheap test cost (config.ts
+// TEST_SCRYPT_N), in makeApp's config and in createAdmin.
 import { PGlite } from '@electric-sql/pglite'
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify'
 import { RECORD_COLLECTIONS, tableName } from '../../../src/sync/collections'
 import { buildApp, type BuildAppOptions } from '../app'
 import { DEVICE_COOKIE, SECURE_DEVICE_COOKIE, SECURE_SESSION_COOKIE, SESSION_COOKIE, upsertAdmin } from '../auth'
-import { type Config, testConfig } from '../config'
+import { type Config, TEST_SCRYPT_N, testConfig } from '../config'
 import { type Db, fromPGlite } from '../db'
 import { migrate } from '../migrate'
 import { WORKSPACE_ID } from '../sqlgen'
@@ -69,6 +70,28 @@ export async function resetDb(db: Db): Promise<void> {
   await db.query(`INSERT INTO workspaces (id, name, slug, keep) VALUES ($1, 'Default workspace', 'default-workspace', true)`, [WORKSPACE_ID])
 }
 
+/**
+ * Saves the rows of every table as they are now, and returns a function that puts exactly those rows
+ * back. For a test file whose setup is slow (a sample company or two): set up once in beforeAll, save,
+ * and restore before each test. Every test still starts from the same rows, for a fraction of the time
+ * a new setup takes. The copies live in a schema of their own, test_saved.
+ */
+export async function saveRows(db: Db): Promise<() => Promise<void>> {
+  const tables = (await db.query<{ name: string }>(`SELECT tablename AS name FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename`)).rows.map(
+    (r) => `"${r.name}"`,
+  )
+  await db.exec('DROP SCHEMA IF EXISTS test_saved CASCADE; CREATE SCHEMA test_saved;')
+  await db.exec(tables.map((t) => `CREATE TABLE test_saved.${t} AS TABLE public.${t};`).join('\n'))
+  return () =>
+    db.tx(async (q) => {
+      // The rows go back exactly as saved, so foreign keys and triggers stay out of it until the
+      // transaction ends (SET LOCAL lasts until then, whether it commits or not).
+      await q.exec('SET LOCAL session_replication_role = replica')
+      await q.exec(`TRUNCATE ${tables.map((t) => `public.${t}`).join(', ')}`)
+      await q.exec(tables.map((t) => `INSERT INTO public.${t} SELECT * FROM test_saved.${t};`).join('\n'))
+    })
+}
+
 /** The app on `db` with the test config (`overrides` on top) and, in `options`, any other buildApp option (careers routes, limiters). */
 export async function makeApp(db: Db, overrides: Partial<Config> = {}, options: Omit<BuildAppOptions, 'db' | 'config'> = {}): Promise<FastifyInstance> {
   const app = await buildApp({ db, config: testConfig(overrides), logger: false, ...options })
@@ -76,8 +99,9 @@ export async function makeApp(db: Db, overrides: Partial<Config> = {}, options: 
   return app
 }
 
+/** The test admin, its password hashed at the cheap test cost (config.ts TEST_SCRYPT_N), as makeApp's config hashes. */
 export async function createAdmin(db: Db): Promise<string> {
-  return (await upsertAdmin(db, ADMIN.email, ADMIN.password)).id
+  return (await upsertAdmin(db, ADMIN.email, ADMIN.password, WORKSPACE_ID, TEST_SCRYPT_N)).id
 }
 
 /** The session token a response sets, under either cookie name (plain http or https), or null. */

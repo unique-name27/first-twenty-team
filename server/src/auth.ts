@@ -24,7 +24,7 @@
 //   for the whole server, in sliding windows of an hour (AddressRateLimiter).
 import { createHash, randomBytes, scrypt as scryptCb, type ScryptOptions, timingSafeEqual } from 'node:crypto'
 import { isIPv4, isIPv6 } from 'node:net'
-import type { Config } from './config'
+import { type Config, SCRYPT_N } from './config'
 import type { Db, Queryable } from './db'
 import { WORKSPACE_ID } from './sqlgen'
 
@@ -67,7 +67,7 @@ export function cookieCount(header: string | undefined, name: string): number {
 export const MIN_PASSWORD_LENGTH = 12
 export const MAX_PASSWORD_LENGTH = 1024
 
-const SCRYPT = { N: 2 ** 15, r: 8, p: 1, keylen: 64, saltBytes: 16 }
+const SCRYPT = { r: 8, p: 1, keylen: 64, saltBytes: 16 }
 // 128 * N * r = 32 MiB for the default parameters; leave headroom over Node's 32 MiB default.
 const MAXMEM = 96 * 1024 * 1024
 
@@ -77,11 +77,14 @@ function scrypt(password: string, salt: Buffer, keylen: number, options: ScryptO
   })
 }
 
-/** 'scrypt$N$r$p$<salt base64>$<key base64>' */
-export async function hashPassword(password: string): Promise<string> {
+/**
+ * 'scrypt$N$r$p$<salt base64>$<key base64>'. N is SCRYPT_N everywhere but tests (config.scryptN, which
+ * checkScryptCost guards); the hash names its own cost, so verifyPassword checks it at that cost.
+ */
+export async function hashPassword(password: string, N = SCRYPT_N): Promise<string> {
   const salt = randomBytes(SCRYPT.saltBytes)
-  const key = await scrypt(password, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p, maxmem: MAXMEM })
-  return ['scrypt', SCRYPT.N, SCRYPT.r, SCRYPT.p, salt.toString('base64'), key.toString('base64')].join('$')
+  const key = await scrypt(password, salt, SCRYPT.keylen, { N, r: SCRYPT.r, p: SCRYPT.p, maxmem: MAXMEM })
+  return ['scrypt', N, SCRYPT.r, SCRYPT.p, salt.toString('base64'), key.toString('base64')].join('$')
 }
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
@@ -96,11 +99,12 @@ export async function verifyPassword(password: string, stored: string): Promise<
   return timingSafeEqual(actual, expected)
 }
 
-let dummyHash: Promise<string> | null = null
-/** Spends the same time as a real check so unknown emails cannot be told apart by timing. */
-export async function burnPasswordCheck(password: string): Promise<void> {
-  dummyHash ??= hashPassword(randomBytes(18).toString('base64'))
-  await verifyPassword(password, await dummyHash)
+const dummyHashes = new Map<number, Promise<string>>()
+/** Spends the same time as a real check (at cost N) so unknown emails cannot be told apart by timing. */
+export async function burnPasswordCheck(password: string, N = SCRYPT_N): Promise<void> {
+  let dummy = dummyHashes.get(N)
+  if (!dummy) dummyHashes.set(N, (dummy = hashPassword(randomBytes(18).toString('base64'), N)))
+  await verifyPassword(password, await dummy)
 }
 
 /** The longest email address there can be (RFC 5321), counted after normalizeEmail. */
@@ -285,18 +289,19 @@ export async function purgeSessions(db: Queryable, config: Pick<Config, 'session
 }
 
 /**
- * Checks email and password. Returns the user, or null (same timing whether or not the email exists).
- * The email is normalized again here, which leaves a loginEmail() string unchanged, so the login route
- * looks up the very string it rate-limited.
+ * Checks email and password. Returns the user, or null (same timing whether or not the email exists:
+ * an unknown email costs one check at scryptN, the cost new hashes are made at). The email is normalized
+ * again here, which leaves a loginEmail() string unchanged, so the login route looks up the very string
+ * it rate-limited.
  */
-export async function checkCredentials(db: Queryable, email: string, password: string): Promise<AuthUser | null> {
+export async function checkCredentials(db: Queryable, email: string, password: string, scryptN = SCRYPT_N): Promise<AuthUser | null> {
   const r = await db.query<{ id: string; email: string; role: string; workspace_id: string; password_hash: string }>(
     'SELECT id, email, role, workspace_id, password_hash FROM users WHERE email = $1',
     [normalizeEmail(email)],
   )
   const user = r.rows[0]
   if (!user) {
-    await burnPasswordCheck(password)
+    await burnPasswordCheck(password, scryptN)
     return null
   }
   if (!(await verifyPassword(password, user.password_hash))) return null
@@ -316,14 +321,15 @@ export type UpsertAdminResult = { id: string; email: string; created: boolean; p
  * password) when one exists. Existing sessions of that admin are signed out and its trusted devices
  * forgotten. The id is kept, so updated_by references stay valid. Only this workspace's logins count:
  * the admins of demo companies on the same server are never touched, and an email that already signs in
- * to another company is refused (one login belongs to one company).
+ * to another company is refused (one login belongs to one company). scryptN is the hash's cost: tests
+ * pass TEST_SCRYPT_N (test/helpers.ts createAdmin).
  */
-export async function upsertAdmin(db: Db, rawEmail: string, password: string, workspaceId = WORKSPACE_ID): Promise<UpsertAdminResult> {
+export async function upsertAdmin(db: Db, rawEmail: string, password: string, workspaceId = WORKSPACE_ID, scryptN = SCRYPT_N): Promise<UpsertAdminResult> {
   const email = normalizeEmail(rawEmail)
   if (!isValidEmail(email)) throw new Error('Enter a valid email address, like you@company.com.')
   const problem = passwordProblem(password)
   if (problem) throw new Error(problem)
-  const hash = await hashPassword(password)
+  const hash = await hashPassword(password, scryptN)
   return db.tx(async (q) => {
     const admins = await q.query<{ id: string; email: string }>(
       `SELECT id, email FROM users WHERE role = 'admin' AND workspace_id = $1 ORDER BY created_at FOR UPDATE`,

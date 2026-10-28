@@ -6,6 +6,9 @@ import { isStatementWord, scan } from '../../server/src/dev/statement'
 import { WORKSPACE_ID } from '../../server/src/sqlgen'
 import { MAX_OFFSET } from './stack-lib.mjs'
 
+// For this file's tests, which live under scripts/ and so never import server/src themselves (scripts/test/tiers.ts).
+export { ROW_CAP, type SqlAnswer }
+
 /** The company the shortcuts read unless --workspace names another: the one npm run stack loads the sample into. */
 export const DEFAULT_WORKSPACE = WORKSPACE_ID
 

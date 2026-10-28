@@ -56,7 +56,7 @@ import {
 import type { AssistantClient } from './assistant/client'
 import { fakeAssistantClient } from './assistant/fake'
 import { registerAssistantRoutes } from './assistant/routes'
-import type { Config } from './config'
+import { checkScryptCost, type Config } from './config'
 import { API_CSP, appCsp, CAREERS_CSP, inlineScriptHashes } from './csp'
 import type { Db } from './db'
 import { badRequest, HttpError } from './errors'
@@ -195,6 +195,7 @@ export function careersHostPattern(hosts: readonly string[]): RegExp | null {
 
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
   const { db, config } = options
+  checkScryptCost(config)
   const limiter = options.limiter ?? new LoginRateLimiter()
   const accountLimiter = options.accountLimiter ?? new AddressRateLimiter(ACCOUNT_LIMITS)
   const inviteAcceptLimiter = options.inviteAcceptLimiter ?? new AddressRateLimiter(INVITE_ACCEPT_LIMITS)
@@ -428,7 +429,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     }
     try {
       if (passwordGate.full) throw new GateFullError()
-      return await passwordGate.run(() => hashPassword(password))
+      return await passwordGate.run(() => hashPassword(password, config.scryptN))
     } catch (err) {
       if (!(err instanceof GateFullError)) {
         accounts.failed()
@@ -608,7 +609,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
       let user: AuthUser | null = null
       if (possible) {
         try {
-          user = await passwordGate.run(() => checkCredentials(db, email, password))
+          user = await passwordGate.run(() => checkCredentials(db, email, password, config.scryptN))
         } catch (err) {
           if (!(err instanceof GateFullError)) throw err
           if (trusted) limiter.cancelledTrusted(device)

@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { loadConfig, loadDotEnv, parseDotEnv } from './config'
+import { checkScryptCost, loadConfig, loadDotEnv, parseDotEnv, SCRYPT_N, TEST_SCRYPT_N, testConfig } from './config'
 import { ConfigError } from './errors'
 
 const root = mkdtempSync(path.join(tmpdir(), 'ft-config-'))
@@ -257,5 +257,33 @@ describe('loadConfig: development tools', () => {
     expect(() => load({ ...PROD, DEV_TOOLS: 'yes' })).toThrow(/DEV_TOOLS is for development only/)
     expect(load({ ...PROD, DEV_TOOLS: '0' }).devTools).toBe(false)
     expect(load(PROD).devTools).toBe(false)
+  })
+})
+
+describe('the password hashing cost', () => {
+  const PROD = { NODE_ENV: 'production', DATABASE_URL: 'postgres://first_twenty:placeholder@127.0.0.1:5432/first_twenty' }
+
+  it('is always the real one from the environment: no variable changes it, whatever NODE_ENV says', () => {
+    for (const env of [{}, { NODE_ENV: 'test' }, PROD]) expect(load({ ...env, SCRYPT_N: '16', TEST_SCRYPT_N: '16' }).scryptN).toBe(SCRYPT_N)
+  })
+
+  it('is the cheap test cost in a test config, and the real one when the overrides make it another kind', () => {
+    expect(TEST_SCRYPT_N).toBeLessThan(SCRYPT_N)
+    expect(testConfig().scryptN).toBe(TEST_SCRYPT_N)
+    expect(testConfig({ nodeEnv: 'production' }).scryptN).toBe(SCRYPT_N)
+    expect(testConfig({ nodeEnv: 'development' }).scryptN).toBe(SCRYPT_N)
+  })
+
+  it('refuses the test cost, or any cost but the real one, outside tests', () => {
+    expect(() => testConfig({ nodeEnv: 'production', scryptN: TEST_SCRYPT_N })).toThrow(ConfigError)
+    expect(() => testConfig({ nodeEnv: 'development', scryptN: TEST_SCRYPT_N })).toThrow(/for tests only/)
+    expect(() => checkScryptCost({ ...load(PROD), scryptN: TEST_SCRYPT_N })).toThrow('for tests only (got N=1024 with NODE_ENV=production)')
+    expect(() => checkScryptCost({ ...load({}), scryptN: 2 ** 16 })).toThrow(ConfigError)
+    expect(() => checkScryptCost(load(PROD))).not.toThrow()
+  })
+
+  it('takes only a power of 2 up to the real cost in tests', () => {
+    for (const n of [2, 16, TEST_SCRYPT_N, SCRYPT_N]) expect(() => testConfig({ scryptN: n })).not.toThrow()
+    for (const n of [0, 1, 1000, 2.5, -1024, 2 * SCRYPT_N]) expect(() => testConfig({ scryptN: n }), String(n)).toThrow(/power of 2/)
   })
 })

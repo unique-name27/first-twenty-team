@@ -20,9 +20,16 @@ Read before changing code:
 | `npm run sql` | Reads the stack's database with SQL and never changes it: `npm run sql -- hires`, or one SELECT in quotes (`docs/DEV.md`) |
 | `npm run dev` | The app alone at http://127.0.0.1:8826 |
 | `npm run server:dev` | The optional server on PGlite (Postgres in WebAssembly, no install) |
-| `npm test` | All unit tests (Vitest); `npm test -- src/domain/payrun` runs one folder |
+| `npm test` | Every test, all four tiers (Vitest); `npm test -- src/domain/payrun` runs one folder |
+| `npm run test:unit` | The unit tests: no database, no server (`src/`, `scripts/`) |
+| `npm run test:server` | The server tests: the API on in-memory PGlite (`server/src/`) |
+| `npm run test:e2e` | The journeys through the real API (`server/src/e2e/`, the `src/sync` round trips) |
+| `npm run test:deploy` | The deploy kit's tests (`server/deploy/`): seconds on Linux, about 13 minutes on Windows |
+| `npm run test:changed` | Only the tests your changes since `origin/main` touch, in every tier but the deploy kit |
+| `npm run test:watch` | Reruns the tests each save touches (every tier but the deploy kit) |
+| `npm run check` | Typecheck and `test:changed`: a quick check while you work |
 | `npm run typecheck` | TypeScript for the app and the server |
-| `npm run verify` | Typecheck, all tests, the one-file build. Must pass before a pull request |
+| `npm run verify` | Typecheck, the unit, server and journey tests, the one-file build. Must pass before a pull request. The deploy kit's tests run in a CI job of their own and in `npm run test:deploy` |
 
 Run Vite only through these scripts (they pass the memory flag it needs); never `npx vite`. `npm run stack`
 keeps running until stopped: start it in the background and stop it when you are done.
@@ -37,6 +44,7 @@ keeps running until stopped: start it in the background and stop it when you are
 - One issue, one branch, one pull request. Keep pull requests small enough to review in 15 minutes.
 - For anything bigger than a one-file fix, propose a plan first and wait for the team member to approve it.
 - Before saying a change is done, run `npm run verify` and report the result honestly, failures included.
+  After a change under `server/deploy/`, run `npm run test:deploy` too.
   For UI changes, also check the page in the browser at 375px wide, by keyboard only, and in every look.
 - Write the pull request description from `.github/pull_request_template.md`, and say what Claude did
   in the "How Claude helped" section.
@@ -74,4 +82,10 @@ keeps running until stopped: start it in the background and stop it when you are
 - Pure logic gets a `*.test.ts` next to it. Use fixed dates (`setClockOverride` from `@/lib/dates`),
   never the real clock.
 - A bug fix starts with a test that fails without the fix.
-- Server tests run against PGlite; they never need a real database or network.
+- Server tests run against PGlite; they never need a real database or network. `server/src/test/` holds
+  their shared setup (`useApp`, `useCareers`, `saveRows`); passwords there hash at a cheap test-only cost.
+- Every test file belongs to exactly one tier (`scripts/test/tiers.ts`); a file outside the tier folders
+  fails `scripts/test/tiers.test.ts`. A test under `src/` that starts the real server belongs in the e2e tier.
+- Every test run is in UTC (`vite.config.ts`), as on CI.
+- `npm run check` picks tests by their imports, so it misses files read from disk: after a change to
+  `server/sql/`, run `npm run test:server` and `npm run test:e2e` too.

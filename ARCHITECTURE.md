@@ -16,7 +16,7 @@ Read this file before changing code. `docs/SPEC.md` holds the product spec (what
 - `vite-plugin-singlefile` for the one-file build. No other runtime dependencies. Charts are hand-drawn SVG (`src/ui/charts.tsx`).
 - Vitest for unit tests (`src/**/*.test.ts`, node environment, pure logic only; the optional server's tests live in `server/src` and `server/deploy`).
 - Do not add dependencies without a strong reason. Never use the React Compiler (Node 24 crashes in it here).
-- Scripts: `npm run dev` (port 8826), `npm run typecheck`, `npm test`, `npm run build`, `npm run verify` (all three).
+- Scripts: `npm run dev` (port 8826), `npm run typecheck`, `npm test` (all four test tiers, CONTRIBUTING.md "Tests"), `npm run build`, `npm run verify` (typecheck, every test tier but the deploy kit, the build).
 - Run vite only through the npm scripts (they pass `--max-semi-space-size=64`); never `npx vite`.
 
 ## Folder map and ownership
