@@ -5,6 +5,8 @@
 // workspaces. Date-dependent views read as of the sample's anchor (SET first_twenty.today).
 // The store loads first so every seed and domain module finishes loading before the sample is built.
 import '@/store/db'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { produce } from 'immer'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { blankDB } from '@/data/blank'
@@ -306,6 +308,27 @@ describe('the sample, loaded through replaceWorkspace', () => {
     for (let i = 1; i < months.length; i++) expect(months[i].month > months[i - 1].month).toBe(true)
     expect(months.reduce((n, m) => n + m.starts, 0)).toBe(sample.people.length)
     for (const m of months) expect(m.headcount, m.month).toBe(headcountOn(sample, m.month_end))
+  })
+
+  it('answers every ready-made query in server/deploy/browse.sql', async () => {
+    const statements = readFileSync(path.join(migrationsDir(), '..', 'deploy', 'browse.sql'), 'utf8')
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .filter((l) => !l.startsWith('--'))
+      .join('\n')
+      .split(';')
+      .map((x) => x.trim())
+      .filter(Boolean)
+    const answers = new Map<string, number>()
+    for (const sql of statements) {
+      const r = await db.query(sql)
+      answers.set(sql, r.rows.length)
+    }
+    const count = (from: string) => [...answers].find(([sql]) => sql.includes(`FROM ${from} `))?.[1]
+    expect(count('v_hire_journey')).toBe(sample.applications.filter((a) => a.status === 'hired').length)
+    expect(count('v_current_job')).toBe(sample.people.length)
+    expect(count('v_pay_runs')).toBe(sample.company.payRuns?.length)
+    expect(count('v_integrity_problems')).toBe(0)
   })
 
   it('lists the pay runs from the company document', async () => {

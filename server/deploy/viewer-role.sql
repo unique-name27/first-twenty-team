@@ -11,8 +11,10 @@
 -- hashes), sessions, trusted_devices or invites (token hashes). Every transaction it opens is read-only,
 -- and it holds no write privilege anyway, so a slip in a SQL editor cannot change the data. It cannot
 -- reach any other database through the grants below (pg_hba.conf can also pin it to first_twenty:
--- docs/SERVER.md). Safe to re-run; run it again after a migration adds a table, so the new table is
--- readable too. A table that holds credentials must be added to both lists below before that.
+-- docs/SERVER.md). It reads the read model's views too (migration 007 and later: v_people, v_hire_journey,
+-- ...), each only as far as these table grants go. Safe to re-run; run it again after a migration adds a
+-- table, so the new table is readable too (a migration that recreates the views grants them to this login
+-- itself). A table that holds credentials must be added to both lists below before that.
 
 SELECT 'CREATE ROLE first_twenty_viewer LOGIN'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'first_twenty_viewer') \gexec
@@ -34,3 +36,11 @@ WHERE schemaname = 'public' AND tablename NOT IN ('users', 'sessions', 'trusted_
 SELECT format('REVOKE ALL ON public.%I FROM first_twenty_viewer', tablename)
 FROM pg_tables
 WHERE schemaname = 'public' AND tablename IN ('users', 'sessions', 'trusted_devices', 'invites') \gexec
+
+-- Every read-model view (docs/DEV.md, "Query the data with SQL"). Each one runs with the reader's own
+-- rights (security_invoker), so it shows only rows of the tables granted above; a view without that
+-- option is left out.
+SELECT format('GRANT SELECT ON public.%I TO first_twenty_viewer', c.relname)
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public' AND c.relkind = 'v'
+  AND EXISTS (SELECT 1 FROM unnest(c.reloptions) AS o WHERE lower(o) IN ('security_invoker=true', 'security_invoker=on', 'security_invoker=1', 'security_invoker=yes')) \gexec
