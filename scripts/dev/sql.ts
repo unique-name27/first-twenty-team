@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { Worker } from 'node:worker_threads'
 import { type SqlAnswer, type SqlProblem, type SqlRequest, STATEMENT_TIMEOUT_MS } from '../../server/src/dev/readonly'
 import { DEV_SQL_PATH } from '../../server/src/dev/routes'
+import { copyForReading, type DatabaseCopy } from './sql-copy'
 import {
   asObjects,
   DEFAULT_WORKSPACE,
@@ -30,7 +31,6 @@ import {
   WORKSPACE_LIST_SQL,
   WORKSPACE_LOOKUP_SQL,
 } from './sql-lib'
-import { copyForReading, type DatabaseCopy } from './sql-copy'
 import type { FromWorker, ToWorker, WorkerData } from './sql-worker'
 import { DEV_TOOLS_FILE, devDirName, stackPorts } from './stack-lib.mjs'
 import { isStackProcess, readStackPid } from './stack-process.mjs'
