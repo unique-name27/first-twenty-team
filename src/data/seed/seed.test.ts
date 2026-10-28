@@ -10,12 +10,13 @@ import { boardConsentQueue, cliffDate, poolSummary, sharesHeld, vestedShares } f
 import { allScorecardsOwed } from '@/domain/hiring/scorecards'
 import { postingBlockReason, postingHeadcount } from '@/domain/hiring/postings'
 import { pacificDateOf } from '@/domain/hiring/util'
+import { describeProblem, integrityProblems } from '@/domain/integrity'
 import { currentComp, exemptCheck, exemptFlags } from '@/domain/pay'
 import { payCalendar, payRunPrep, periodStarting } from '@/domain/payrun'
 import { employmentState, headcountOn, incomingOn, onLeave } from '@/domain/people'
 import { pendingApprovals, whoIsOut } from '@/domain/timeoff'
 import { trainingRequirements } from '@/domain/trainings'
-import type { DB, EntityType, ID } from '@/domain/types'
+import type { DB, ID } from '@/domain/types'
 import { addDays, setClockOverride } from '@/lib/dates'
 import { buildSampleDB, SAMPLE_ANCHOR } from './index'
 import { samplePayRuns } from './payroll'
@@ -37,179 +38,6 @@ const person = (id: ID) => {
   const p = db.people.find((x) => x.id === id)
   if (!p) throw new Error(`missing person ${id}`)
   return p
-}
-
-/** Every reference between collections, as a list of problems (empty when the data is consistent). */
-function brokenReferences(d: DB): string[] {
-  const out: string[] = []
-  const ids = <T extends { id: ID }>(list: T[]) => new Set(list.map((r) => r.id))
-  const people = ids(d.people)
-  const candidates = ids(d.candidates)
-  const jobs = new Map(d.jobs.map((j) => [j.id, j]))
-  const apps = ids(d.applications)
-  const interviews = new Map(d.interviews.map((i) => [i.id, i]))
-  const offers = ids(d.offers)
-  const contractors = ids(d.contractors)
-  const departments = ids(d.departments)
-  const levels = ids(d.levels)
-  const families = ids(d.families)
-  const locations = ids(d.locations)
-  const policies = ids(d.policies)
-  const timeOffPolicies = ids(d.timeOffPolicies)
-  const plan = ids(d.plan)
-  const checklists = ids(d.checklists)
-  const requests = ids(d.timeOffRequests)
-  const leaves = ids(d.leaveCases)
-  const grants = ids(d.grants)
-  const templates = ids(d.checklistTemplates)
-  const check = (ok: boolean, msg: string) => {
-    if (!ok) out.push(msg)
-  }
-  const optPerson = (id: ID | null | undefined, msg: string) => check(!id || people.has(id), msg)
-
-  for (const dep of d.departments) optPerson(dep.headId, `department ${dep.id}: head ${dep.headId}`)
-  for (const b of d.bands) check(families.has(b.familyId) && levels.has(b.levelId), `band ${b.id}: family or level`)
-
-  for (const p of d.people) {
-    optPerson(p.managerId, `${p.id}: manager ${p.managerId}`)
-    check(p.managerId !== p.id, `${p.id}: manages themselves`)
-    check(departments.has(p.departmentId), `${p.id}: department ${p.departmentId}`)
-    check(levels.has(p.levelId), `${p.id}: level ${p.levelId}`)
-    check(families.has(p.familyId), `${p.id}: family ${p.familyId}`)
-    check(locations.has(p.locationId), `${p.id}: location ${p.locationId}`)
-    check(!p.fromCandidateId || candidates.has(p.fromCandidateId), `${p.id}: candidate ${p.fromCandidateId}`)
-    check(!p.fromApplicationId || apps.has(p.fromApplicationId), `${p.id}: application ${p.fromApplicationId}`)
-    const mgr = d.people.find((m) => m.id === p.managerId)
-    if (mgr && !p.endDate) check(!mgr.endDate || mgr.endDate >= TODAY, `${p.id}: manager ${mgr.id} has left`)
-  }
-  for (const c of d.comp) {
-    check(people.has(c.personId), `comp ${c.id}: person ${c.personId}`)
-    check(levels.has(c.levelId), `comp ${c.id}: level ${c.levelId}`)
-    optPerson(c.managerId, `comp ${c.id}: manager ${c.managerId}`)
-    check(!c.departmentId || departments.has(c.departmentId), `comp ${c.id}: department ${c.departmentId}`)
-    optPerson(c.approvedById, `comp ${c.id}: approver ${c.approvedById}`)
-  }
-  for (const g of d.grants) {
-    const holder =
-      g.holderType === 'employee' ? people.has(g.personId) : g.holderType === 'candidate' ? candidates.has(g.personId) : contractors.has(g.personId)
-    check(holder, `grant ${g.id}: ${g.holderType} ${g.personId}`)
-    check(!g.fromOfferId || offers.has(g.fromOfferId), `grant ${g.id}: offer ${g.fromOfferId}`)
-  }
-  for (const k of d.contractors) {
-    check(people.has(k.managerId), `contractor ${k.id}: manager ${k.managerId}`)
-    check(departments.has(k.departmentId), `contractor ${k.id}: department ${k.departmentId}`)
-  }
-  // Documents belong to employees, or to advisors for their grant agreements.
-  for (const doc of d.documents) check(people.has(doc.personId) || contractors.has(doc.personId), `document ${doc.id}: person ${doc.personId}`)
-
-  for (const s of d.plan) {
-    check(!s.jobId || jobs.has(s.jobId), `plan ${s.id}: job ${s.jobId}`)
-    optPerson(s.personId, `plan ${s.id}: person ${s.personId}`)
-    optPerson(s.backfillForPersonId, `plan ${s.id}: backfill for ${s.backfillForPersonId}`)
-    check(departments.has(s.departmentId) && families.has(s.familyId) && levels.has(s.levelId), `plan ${s.id}: org fields`)
-    if (s.jobId) check(jobs.get(s.jobId)?.planSlotId === s.id, `plan ${s.id}: job ${s.jobId} does not point back`)
-  }
-  for (const j of d.jobs) {
-    check(departments.has(j.departmentId) && families.has(j.familyId) && levels.has(j.levelId), `job ${j.id}: org fields`)
-    check(people.has(j.hiringManagerId), `job ${j.id}: hiring manager ${j.hiringManagerId}`)
-    for (const p of j.panelIds) check(people.has(p), `job ${j.id}: panel ${p}`)
-    for (const l of j.locationIds) check(locations.has(l), `job ${j.id}: location ${l}`)
-    for (const step of j.interviewPlan) {
-      check(j.stages.some((s) => s.id === step.stageId), `job ${j.id}: step ${step.id} stage ${step.stageId}`)
-      for (const p of step.interviewerIds) check(people.has(p), `job ${j.id}: interviewer ${p}`)
-    }
-    check(!j.planSlotId || plan.has(j.planSlotId), `job ${j.id}: plan slot ${j.planSlotId}`)
-    optPerson(j.backfillForPersonId, `job ${j.id}: backfill for ${j.backfillForPersonId}`)
-  }
-  for (const c of d.candidates) optPerson(c.referrerId, `candidate ${c.id}: referrer ${c.referrerId}`)
-  for (const a of d.applications) {
-    check(candidates.has(a.candidateId), `application ${a.id}: candidate ${a.candidateId}`)
-    const job = jobs.get(a.jobId)
-    check(!!job, `application ${a.id}: job ${a.jobId}`)
-    if (job) check(job.stages.some((s) => s.id === a.stageId), `application ${a.id}: stage ${a.stageId}`)
-    optPerson(a.nextStep?.ownerId, `application ${a.id}: next step owner ${a.nextStep?.ownerId}`)
-    for (const h of a.history) optPerson(h.byId, `application ${a.id}: history by ${h.byId}`)
-  }
-  for (const i of d.interviews) {
-    check(apps.has(i.applicationId), `interview ${i.id}: application ${i.applicationId}`)
-    for (const p of i.interviewerIds) check(people.has(p), `interview ${i.id}: interviewer ${p}`)
-  }
-  for (const s of d.scorecards) {
-    const i = interviews.get(s.interviewId)
-    check(!!i, `scorecard ${s.id}: interview ${s.interviewId}`)
-    check(apps.has(s.applicationId), `scorecard ${s.id}: application ${s.applicationId}`)
-    check(!i || i.applicationId === s.applicationId, `scorecard ${s.id}: application differs from its interview`)
-    check(people.has(s.interviewerId), `scorecard ${s.id}: interviewer ${s.interviewerId}`)
-    optPerson(s.enteredById, `scorecard ${s.id}: entered by ${s.enteredById}`)
-  }
-  for (const o of d.offers) {
-    check(apps.has(o.applicationId), `offer ${o.id}: application ${o.applicationId}`)
-    check(candidates.has(o.candidateId), `offer ${o.id}: candidate ${o.candidateId}`)
-    check(jobs.has(o.jobId), `offer ${o.id}: job ${o.jobId}`)
-    const app = d.applications.find((a) => a.id === o.applicationId)
-    check(!app || (app.candidateId === o.candidateId && app.jobId === o.jobId), `offer ${o.id}: application does not match`)
-    check(people.has(o.managerId), `offer ${o.id}: manager ${o.managerId}`)
-    check(levels.has(o.levelId) && families.has(o.familyId) && departments.has(o.departmentId) && locations.has(o.locationId), `offer ${o.id}: org fields`)
-    optPerson(o.personId, `offer ${o.id}: person ${o.personId}`)
-    optPerson(o.draftedById, `offer ${o.id}: drafted by ${o.draftedById}`)
-    for (const ap of o.approvals) check(people.has(ap.approverId), `offer ${o.id}: approver ${ap.approverId}`)
-  }
-  for (const r of d.referrals) {
-    check(candidates.has(r.candidateId), `referral ${r.id}: candidate ${r.candidateId}`)
-    check(people.has(r.referrerId), `referral ${r.id}: referrer ${r.referrerId}`)
-  }
-  for (const c of d.checklists) {
-    check(people.has(c.personId), `checklist ${c.id}: person ${c.personId}`)
-    check(templates.has(c.templateId), `checklist ${c.id}: template ${c.templateId}`)
-    for (const t of c.tasks) {
-      optPerson(t.assigneeId, `checklist ${c.id} task ${t.id}: assignee ${t.assigneeId}`)
-      optPerson(t.doneById, `checklist ${c.id} task ${t.id}: done by ${t.doneById}`)
-    }
-  }
-  for (const r of d.timeOffRequests) {
-    check(people.has(r.personId), `time off ${r.id}: person ${r.personId}`)
-    check(timeOffPolicies.has(r.policyId), `time off ${r.id}: policy ${r.policyId}`)
-    optPerson(r.approverId, `time off ${r.id}: approver ${r.approverId}`)
-  }
-  for (const a of d.timeOffAdjustments) {
-    check(people.has(a.personId) && timeOffPolicies.has(a.policyId), `adjustment ${a.id}: person or policy`)
-  }
-  for (const l of d.leaveCases) check(people.has(l.personId), `leave ${l.id}: person ${l.personId}`)
-  for (const t of d.trainings) check(people.has(t.personId), `training ${t.id}: person ${t.personId}`)
-  for (const a of d.acks) {
-    check(people.has(a.personId), `ack ${a.id}: person ${a.personId}`)
-    check(policies.has(a.policyId), `ack ${a.id}: policy ${a.policyId}`)
-  }
-  for (const r of d.recordsRequests) check(people.has(r.personId), `records request ${r.id}: person ${r.personId}`)
-  for (const r of d.recurring) optPerson(r.ownerId, `recurring ${r.id}: owner ${r.ownerId}`)
-  for (const [ruleId, s] of Object.entries(d.complianceStatus)) optPerson(s.ownerId, `compliance ${ruleId}: owner ${s.ownerId}`)
-
-  const entitySets: Partial<Record<EntityType, Set<ID>>> = {
-    person: people,
-    candidate: candidates,
-    application: apps,
-    job: new Set(jobs.keys()),
-    offer: offers,
-    interview: new Set(interviews.keys()),
-    checklist: checklists,
-    timeoff: requests,
-    leave: leaves,
-    contractor: contractors,
-    plan,
-  }
-  for (const a of d.activity) {
-    optPerson(a.actorId, `activity ${a.id}: actor ${a.actorId}`)
-    const set = entitySets[a.entityType]
-    if (set) check(set.has(a.entityId), `activity ${a.id}: ${a.entityType} ${a.entityId}`)
-    // Equity rows name a grant, a holder, a 409A valuation, a pool increase or the equity setup ('equity'), as the domain logs them.
-    if (a.entityType === 'equity') {
-      const known = grants.has(a.entityId) || people.has(a.entityId) || contractors.has(a.entityId) || a.entityId === 'equity'
-      const setup = d.equity.valuations.some((v) => v.id === a.entityId) || d.equity.poolIncreases.some((x) => x.id === a.entityId)
-      check(known || setup, `activity ${a.id}: equity ${a.entityId}`)
-    }
-    if (a.relatedId) check(people.has(a.relatedId) || candidates.has(a.relatedId) || contractors.has(a.relatedId) || jobs.has(a.relatedId) || apps.has(a.relatedId), `activity ${a.id}: related ${a.relatedId}`)
-  }
-  return out
 }
 
 describe('composed sample: structure', () => {
@@ -243,8 +71,13 @@ describe('composed sample: structure', () => {
     expect(new Set(taskIds).size).toBe(taskIds.length)
   })
 
-  it('resolves every foreign key', () => {
-    expect(brokenReferences(db)).toEqual([])
+  it('passes every integrity check: references, hires, date order, unique values', () => {
+    expect(integrityProblems(db).map(describeProblem)).toEqual([])
+    // On the anchor date nobody still on the team reports to someone who has already left.
+    for (const p of db.people) {
+      const manager = db.people.find((m) => m.id === p.managerId)
+      if (manager && !p.endDate) expect(!manager.endDate || manager.endDate >= TODAY, `${p.id}: manager ${manager.id} has left`).toBe(true)
+    }
   })
 
   it('dates all history on or before the anchor', () => {
