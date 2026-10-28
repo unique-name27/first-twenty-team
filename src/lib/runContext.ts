@@ -6,7 +6,8 @@
 // One run at a time: the run is module state, not tied to a call stack, because the app's code runs in
 // browsers too (no AsyncLocalStorage there). An async run stays on until its promise settles, so anything
 // else that runs meanwhile in this process (a timer, a sync engine) runs inside it. A second run started
-// while one is on, nested or alongside, throws.
+// while one is on, nested or alongside, throws. A long run that tells a story (the simulator, src/sim) moves
+// its actor and time of day along with updateRun, and keeps one stream of ids.
 //
 // Module rule: its only runtime import is the seeded random numbers (rng.ts, which imports nothing), so
 // id.ts, dates.ts and draft.ts can all read it without an import cycle.
@@ -38,7 +39,15 @@ export type ActiveRun = {
   nextIdSuffix(): string
 }
 
-let active: ActiveRun | null = null
+/** The run as this module holds it: what updateRun may change, and the id stream it never resets. */
+type HeldRun = {
+  actorId: ID | null
+  viewingAs: Role
+  time: ActiveRun['time']
+  nextIdSuffix(): string
+}
+
+let active: HeldRun | null = null
 
 /** The run that is on, or null (the app, and everything outside withRunContext). */
 export function activeRun(): ActiveRun | null {
@@ -70,6 +79,23 @@ export function withRunContext<T>(options: RunOptions, fn: () => T): T {
   }
 }
 
+/** What updateRun may change: who the run acts as, in which Viewing-as mode, and its time of day. */
+export type RunUpdate = Partial<Pick<RunOptions, 'actorId' | 'viewingAs' | 'timeOfDay'>>
+
+/**
+ * Changes the run's actor, Viewing-as and time of day from here on, for a run that moves through a story
+ * (one action by the founder in the morning, the next by an interviewer the day after). Fields left out
+ * stay as they were; the id stream goes on unchanged, so ids stay unique across the whole run. Throws
+ * outside a run, and on a time of day it cannot read (then nothing changes).
+ */
+export function updateRun(update: RunUpdate): void {
+  if (!active) throw new Error('No run is on: updateRun works only inside withRunContext.')
+  const time = update.timeOfDay !== undefined ? readTimeOfDay(update.timeOfDay) : active.time
+  if (update.actorId !== undefined) active.actorId = update.actorId
+  if (update.viewingAs !== undefined) active.viewingAs = update.viewingAs
+  active.time = time
+}
+
 function isThenable(value: unknown): value is PromiseLike<unknown> {
   return !!value && (typeof value === 'object' || typeof value === 'function') && typeof (value as { then?: unknown }).then === 'function'
 }
@@ -84,9 +110,15 @@ const TIME_OF_DAY = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/
  */
 const RUN_ID_MARK = 's'
 
-function startRun(options: RunOptions): ActiveRun {
-  const time = TIME_OF_DAY.exec(options.timeOfDay)
-  if (!time) throw new Error(`A run's time of day is 'HH:MM' or 'HH:MM:SS' (24-hour), not '${options.timeOfDay}'.`)
+/** 'HH:MM' or 'HH:MM:SS' as hours, minutes and seconds; throws on anything else. */
+function readTimeOfDay(timeOfDay: string): ActiveRun['time'] {
+  const time = TIME_OF_DAY.exec(timeOfDay)
+  if (!time) throw new Error(`A run's time of day is 'HH:MM' or 'HH:MM:SS' (24-hour), not '${timeOfDay}'.`)
+  return { hours: Number(time[1]), minutes: Number(time[2]), seconds: Number(time[3] ?? 0) }
+}
+
+function startRun(options: RunOptions): HeldRun {
+  const time = readTimeOfDay(options.timeOfDay)
   if (typeof options.seed === 'number' && !Number.isFinite(options.seed)) throw new Error(`A run's seed is a finite number or a string, not ${options.seed}.`)
   const rng = makeRng(hashSeed(`ids ${options.seed}`))
   const issued = new Set<string>()
@@ -94,7 +126,7 @@ function startRun(options: RunOptions): ActiveRun {
   return {
     actorId: options.actorId,
     viewingAs: options.viewingAs ?? 'admin',
-    time: { hours: Number(time[1]), minutes: Number(time[2]), seconds: Number(time[3] ?? 0) },
+    time,
     nextIdSuffix() {
       let suffix = RUN_ID_MARK + draw()
       while (issued.has(suffix)) suffix = RUN_ID_MARK + draw()

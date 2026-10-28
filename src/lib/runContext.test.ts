@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nowISO, parseDate, setClockOverride } from './dates'
 import { newId } from './id'
-import { activeRun, type RunOptions, withRunContext } from './runContext'
+import { activeRun, type RunOptions, updateRun, withRunContext } from './runContext'
 
 const RUN: RunOptions = { seed: 'ledgerlark', actorId: 'p-founder', timeOfDay: '10:30' }
 const RUN_ID = /^[a-z]+-s[0-9a-z]{9}$/
@@ -178,6 +178,46 @@ describe('withRunContext', () => {
     expect(sample()).toEqual(first)
     expect(withRunContext(RUN, () => activeRun())).toMatchObject({ actorId: 'p-founder', viewingAs: 'admin', time: { hours: 10, minutes: 30, seconds: 0 } })
     expect(activeRun()).toBeNull()
+  })
+})
+
+describe('updateRun', () => {
+  it('moves the actor, Viewing-as and time of day along, and leaves out what it is not given', () => {
+    setClockOverride('2026-10-09')
+    withRunContext(RUN, () => {
+      updateRun({ actorId: 'p-tomas', viewingAs: 'manager', timeOfDay: '14:15' })
+      expect(activeRun()).toMatchObject({ actorId: 'p-tomas', viewingAs: 'manager', time: { hours: 14, minutes: 15, seconds: 0 } })
+      expect(nowISO()).toBe('2026-10-09T21:15:00.000Z')
+      updateRun({ timeOfDay: '09:05:30' })
+      expect(activeRun()).toMatchObject({ actorId: 'p-tomas', viewingAs: 'manager', time: { hours: 9, minutes: 5, seconds: 30 } })
+      updateRun({ actorId: null })
+      expect(activeRun()).toMatchObject({ actorId: null, viewingAs: 'manager' })
+    })
+    expect(activeRun()).toBeNull()
+  })
+
+  it('keeps one stream of ids across updates, the same as a run with none', () => {
+    setClockOverride('2026-10-09')
+    const updated = withRunContext(RUN, () => {
+      const ids = [newId('p'), newId('act')]
+      updateRun({ actorId: 'p-tomas', viewingAs: 'employee', timeOfDay: '15:00' })
+      ids.push(newId('c'), newId('act'))
+      return ids
+    })
+    expect(updated).toEqual(sample().ids)
+  })
+
+  it('throws outside a run, and on a time of day it cannot read without changing anything', () => {
+    expect(() => updateRun({ actorId: 'p-tomas' })).toThrow('No run is on: updateRun works only inside withRunContext.')
+    withRunContext(RUN, () => {
+      expect(() => updateRun({ actorId: 'p-tomas', timeOfDay: '25:00' })).toThrow("A run's time of day is 'HH:MM' or 'HH:MM:SS' (24-hour), not '25:00'.")
+      expect(activeRun()).toMatchObject({ actorId: 'p-founder', viewingAs: 'admin', time: { hours: 10, minutes: 30, seconds: 0 } })
+    })
+  })
+
+  it('never carries into the next run', () => {
+    withRunContext(RUN, () => updateRun({ actorId: 'p-tomas', viewingAs: 'employee', timeOfDay: '15:00' }))
+    expect(withRunContext(RUN, () => activeRun())).toMatchObject({ actorId: 'p-founder', viewingAs: 'admin', time: { hours: 10, minutes: 30, seconds: 0 } })
   })
 })
 
