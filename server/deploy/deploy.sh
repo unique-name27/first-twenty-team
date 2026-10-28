@@ -14,8 +14,10 @@
 # when there are any (sudo systemctl start first-twenty-backup), npm run server:migrate (with the
 # settings from /etc/first-twenty/env), restart the service, then check /api/health locally and through
 # Caddy. If a step fails it stops there; the server keeps running the version it already loaded. A step
-# that fails before the restart also puts the folder back as that version left it: the build it had
-# (kept with hard links in .deploy-prev until the deploy is done) and the commit that ran before. When a
+# that fails before the restart, or a deploy stopped before it (Ctrl-C, systemctl stop of the updater), also
+# puts the folder back as that version left it: the build it had (kept with hard links in .deploy-prev
+# until the deploy is done) and the commit that ran before. A deploy killed before it could do that leaves
+# the copy marked .pending, and the next deploy keeps it as the build to put back. When a
 # migration ran and the new server is not healthy, it prints the way back, with the file name of the
 # backup it took just before migrating. A backup that wrote its local dump but then failed (the copy to
 # S3) does not stop the deploy: that dump is the way back, and the script warns. HEALTH_URL and
@@ -126,9 +128,13 @@ esac
 # back. Hard links make that copy cheap, and they are safe here because nothing writes into the old files:
 # npm ci deletes everything in node_modules before it installs, and Vite empties dist-server and
 # dist-single (emptyOutDir) before it writes new files. first-twenty.html is the exception: copyFileSync
-# overwrites it in place, which would change a hard-linked copy too, so it is copied for real.
+# overwrites it in place, which would change a hard-linked copy too, so it is copied for real. A finished
+# copy holds .pending: the commit the build came from (commit=, when known) and the paths it kept (kept=).
+# It goes just before the restart, so a copy with .pending is the build the server still runs, and a copy
+# without it was left after a restart and is out of date.
 PREV_DIR=$APP_DIR/.deploy-prev
 BUILD_PATHS=(node_modules dist-server dist-single first-twenty.html)
+KEPT=()
 
 # The folder the installed service runs its code from (WorkingDirectory= in its unit), or nothing when
 # the unit is not installed or systemd cannot say. systemctl marks a folder that may be missing with "!".
@@ -160,27 +166,37 @@ command -v curl >/dev/null 2>&1 || die "curl is not installed."
 cd "$APP_DIR"
 
 # A few key=value lines for first-twenty-autoupdate, added to the file it names with FT_DEPLOY_REPORT (in
-# its state folder, which it starts): phase=before-restart, then phase=restarted just before the restart;
-# dump=<file> once the backup before migrating is taken; restored=1 when a failure before the restart put
-# this folder back. Each line is written as soon as it is true, so a run that is stopped halfway still says
-# how far it got. Nothing is written without FT_DEPLOY_REPORT, and a write that fails never stops a deploy.
+# its state folder, which it starts): phase=before-restart, then phase=restarted just before the restart and
+# phase=finished once the new server reported healthy; dump=<file> once the backup before migrating is
+# taken; migrated=1 once migrations were applied; applied=<names> and restored=1 when a failure before the
+# restart applied some migrations and put this folder back; restore_dump=<file>, the dump the way back
+# names after a failed restart. Each line is written as soon as it is true, so a run that is stopped halfway
+# still says how far it got. Nothing is written without FT_DEPLOY_REPORT, and a write that fails never stops
+# a deploy.
 report() {
   [ -n "${FT_DEPLOY_REPORT:-}" ] || return 0
   printf '%s=%s\n' "$1" "$2" >>"$FT_DEPLOY_REPORT" 2>/dev/null || true
 }
 
-# The migrations this deploy applied before it stopped, as server:migrate printed them, and what that
-# means for the way back. Staging migrates through a unit whose output only the journal has.
+# The migrations this deploy applied before it stopped, as server:migrate printed them (live only), space
+# separated, or nothing.
+applied_migrations() {
+  local applied
+  [ "$MIGRATE_RAN" = true ] && [ "$INSTANCE" = live ] && [ -f "$PREV_DIR/migrate.out" ] || return 0
+  applied=$(sed -n 's/^Applied \([0-9][0-9][0-9]_[a-z0-9_]*\.sql\)$/\1/p' "$PREV_DIR/migrate.out" | tr '\n' ' ')
+  printf '%s' "${applied% }"
+}
+
+# The migrations this deploy applied before it stopped, and what that means for the way back. Staging
+# migrates through a unit whose output only the journal has.
 migrations_note() {
-  local applied=""
+  local applied
   [ "$MIGRATE_RAN" = true ] || return 0
   if [ "$INSTANCE" = staging ]; then
     printf ' Migrations may have been applied (sudo journalctl -u %s -n 50 lists them); staging keeps no backups.' "${MIGRATE_SERVICE%.service}"
     return 0
   fi
-  [ ! -f "$PREV_DIR/migrate.out" ] ||
-    applied=$(sed -n 's/^Applied \([0-9][0-9][0-9]_[a-z0-9_]*\.sql\)$/\1/p' "$PREV_DIR/migrate.out" | tr '\n' ' ')
-  applied=${applied% }
+  applied=$(applied_migrations)
   [ -n "$applied" ] || return 0
   if [ -n "$BACKUP_FILE" ]; then
     printf ' Migrations applied in this run stay applied: %s. The backup from just before them is %s (docs/SERVER.md, "Restore a backup").' "$applied" "$BACKUP_FILE"
@@ -189,21 +205,44 @@ migrations_note() {
   fi
 }
 
-# The EXIT trap until the restart. On a failure before it (set -e or die alike), this puts the folder back
-# as the running server left it: the build from .deploy-prev and the commit that ran before (BEFORE).
-# Otherwise a restart that nobody started (a reboot, a crash, needrestart after a Node.js update) would
-# start half-built code, or new code against a database that was not migrated for it.
+# Whether build path $1 was part of the build the server runs (kept in .deploy-prev).
+was_kept() {
+  local k
+  for k in "${KEPT[@]}"; do [ "$k" != "$1" ] || return 0; done
+  return 1
+}
+
+# The EXIT trap until the restart. On a failure before it (set -e, die, or a stop that the TERM, INT and HUP
+# traps turn into an exit), this puts the folder back as the running server left it: the build from
+# .deploy-prev and the commit that ran before (BEFORE). Otherwise a restart that nobody started (a reboot, a
+# crash, needrestart after a Node.js update) would start half-built code, or new code against a database
+# that was not migrated for it.
 put_back() {
-  local rc=$? ok=true did=false p head before_sha note where
-  [ "$rc" -ne 0 ] || exit 0
+  local rc=$? build_ok=true code_ok=true did=false p head before_sha note where applied
+  # Armed only until the restart, and no successful path exits before it, so a status of 0 means a stop
+  # that cut a step short (bash can leave $? as the command before that step set it).
+  [ "$rc" -ne 0 ] || rc=1
+  # Putting back takes seconds; a second Ctrl-C or stop must not leave it half done. (systemd still kills it
+  # once TimeoutStopSec runs out.)
+  trap '' TERM INT HUP
   set +e
   # Read before the copy (which holds the migrate output) goes.
   note="$(migrations_note)${FT_PRIOR_BACKUP:+ An earlier try of this commit took $FT_PRIOR_BACKUP before its migrations.}"
+  applied=$(applied_migrations)
+  [ -z "$applied" ] || report applied "$applied"
   case "$SNAPSHOT" in
     done)
       for p in "${BUILD_PATHS[@]}"; do
-        rm -rf "${APP_DIR:?}/$p" || ok=false
-        if [ -e "$PREV_DIR/$p" ] || [ -L "$PREV_DIR/$p" ]; then mv "$PREV_DIR/$p" "$APP_DIR/$p" || ok=false; fi
+        if ! was_kept "$p"; then
+          # Not part of the build the server runs: whatever npm ci or the build made of it goes.
+          rm -rf "${APP_DIR:?}/$p" || build_ok=false
+        elif [ -e "$PREV_DIR/$p" ] || [ -L "$PREV_DIR/$p" ]; then
+          # -T, so the old copy never lands inside a folder of the same name that something made again.
+          rm -rf "${APP_DIR:?}/$p" && mv -T "$PREV_DIR/$p" "$APP_DIR/$p" || build_ok=false
+        else
+          # Kept, but no longer in the copy: what is in place may be all that is left of it, so it stays.
+          build_ok=false
+        fi
       done
       did=true
       ;;
@@ -219,26 +258,35 @@ put_back() {
         # A deploy by hand that pulled onto a branch: the branch keeps the new commits for the next try.
         [ -z "$BRANCH" ] || note="$note To try again: git switch $BRANCH && bash server/deploy/deploy.sh"
       else
-        ok=false
+        code_ok=false
       fi
     fi
   fi
-  if [ "$ok" != true ]; then
-    printf '\nNothing was restarted, but %s could not be put back as it was (see above): the build from before is in %s, and the commit that ran before is %s. Put it back before the server restarts.\n' \
-      "$APP_DIR" "$PREV_DIR" "${BEFORE:-unknown}" >&2
-  elif [ "$did" = true ]; then
-    rm -rf "$PREV_DIR"
-    if [ -n "$ARCHIVE" ]; then
-      where="the build in $APP_DIR was put back as it was (the files unpacked from $ARCHIVE stay)"
-    elif [ -n "$BEFORE" ]; then
-      where="$APP_DIR is back at $BEFORE with the build it had"
-    else
-      where="the build in $APP_DIR was put back as it was"
+  if [ "$build_ok" != true ]; then
+    # .pending stays with what is left, so the next deploy stops before it changes anything.
+    printf '\nNothing was restarted, but the build in %s could not be put back as it was (see above). What is left of the build the server runs is in %s (its .pending file lists the parts); move it back before the server restarts.%s\n' \
+      "$APP_DIR" "$PREV_DIR" "$([ "$code_ok" = true ] || printf ' git could not check out %s, the commit it came from, either.' "$BEFORE")" >&2
+  else
+    [ "$did" != true ] || rm -rf "$PREV_DIR"
+    if [ "$code_ok" != true ]; then
+      printf '\nNothing was restarted, and the build in %s was put back as it was, but git could not check out %s, the commit that build came from (see above). Check it out before anything else: git checkout --detach %s\n' \
+        "$APP_DIR" "$BEFORE" "$BEFORE" >&2
+    elif [ "$did" = true ]; then
+      if [ -n "$ARCHIVE" ]; then
+        where="the build in $APP_DIR was put back as it was (the files unpacked from $ARCHIVE stay)"
+      elif [ -n "$BEFORE" ] && [ "$BEFORE_BUILT" = true ]; then
+        where="$APP_DIR is back at $BEFORE with the build it had"
+      elif [ -n "$BEFORE" ]; then
+        # --no-pull by hand: BEFORE is the commit checked out for this deploy, not the one the build came from.
+        where="the build in $APP_DIR was put back as it was. It came from an earlier deploy and may not be built from the code checked out now ($BEFORE), so restart the server only after a deploy that finished"
+      else
+        where="the build in $APP_DIR was put back as it was"
+      fi
+      printf '\nNothing was restarted: the server still runs the version it already loaded, and %s.%s\n' "$where" "$note" >&2
     fi
-    printf '\nNothing was restarted: the server still runs the version it already loaded, and %s.%s\n' "$where" "$note" >&2
   fi
   # Code unpacked from an archive stays, so the folder is not back as it was.
-  [ "$ok" != true ] || [ -n "$ARCHIVE" ] || report restored 1
+  [ "$build_ok" != true ] || [ "$code_ok" != true ] || [ -n "$ARCHIVE" ] || report restored 1
   exit "$rc"
 }
 
@@ -250,21 +298,52 @@ if [ "${FT_DEPLOY_LOCK_HELD:-}" != 1 ]; then
 fi
 
 # The commit that runs now, for the way back. first-twenty-autoupdate checks out the new commit before it
-# runs this script, so it passes the commit that ran before.
+# runs this script, so it passes the commit that ran before. BEFORE_BUILT says whether the build in place
+# came from BEFORE; with --no-pull by hand, BEFORE is whatever was checked out for this deploy.
 BEFORE=""
 BRANCH=""
+BEFORE_BUILT=false
 if [ -d .git ] && command -v git >/dev/null 2>&1; then
   BEFORE=$(git rev-parse --short HEAD 2>/dev/null || true)
   BRANCH=$(git symbolic-ref -q --short HEAD 2>/dev/null || true)
+  [ "$PULL" = false ] || [ -n "$ARCHIVE" ] || BEFORE_BUILT=true
 fi
 if [[ ${FT_PREVIOUS_COMMIT:-} =~ ^[0-9a-f]{7,40}$ ]]; then
   BEFORE=${FT_PREVIOUS_COMMIT:0:12}
+  BEFORE_BUILT=true
 fi
 SNAPSHOT=none
 MIGRATE_RAN=false
 BACKUP_FILE=""
 report phase before-restart
+
+# A deploy killed before its restart and before it could put the folder back (the instance stopped, say)
+# leaves the build the server runs in .deploy-prev, marked .pending, and a half-made build in place. That
+# copy is the only one left, so this deploy keeps it as its own: a failure before the restart puts it back,
+# with the commit it came from. When part of it is gone (an earlier put-back stopped halfway, or someone
+# moved it by hand), putting it back would delete what is in place, so the deploy stops before it starts.
+if [ -f "$PREV_DIR/.pending" ]; then
+  pending_commit=$(sed -n 's/^commit=//p' "$PREV_DIR/.pending" | tail -n 1)
+  mapfile -t KEPT < <(sed -n 's/^kept=//p' "$PREV_DIR/.pending")
+  for p in "${KEPT[@]}"; do
+    case " ${BUILD_PATHS[*]} " in *" $p "*) found=true ;; *) found=false ;; esac
+    if [ "$found" != true ] || { [ ! -e "$PREV_DIR/$p" ] && [ ! -L "$PREV_DIR/$p" ]; }; then
+      die "A deploy that stopped before its restart left the build the server runs in $PREV_DIR, but part of it (${p:-a line of .pending}) is not there any more, so nothing was changed. Move what is left in $PREV_DIR back into $APP_DIR, in place of what is there${pending_commit:+, check out $pending_commit}, then rm -rf $PREV_DIR and deploy again."
+    fi
+  done
+  SNAPSHOT=done
+  if [[ $pending_commit =~ ^[0-9a-f]{7,40}$ ]]; then
+    BEFORE=$pending_commit
+    BEFORE_BUILT=true
+  fi
+fi
 trap put_back EXIT
+# A stop (systemctl stop, Ctrl-C, a dropped SSH session) ends the deploy through put_back with a status that
+# says so. Trapped like this, bash runs the trap once the step that is running has ended, so put_back never
+# works on the folder while npm or Vite is still writing to it.
+trap 'exit 143' TERM
+trap 'exit 130' INT
+trap 'exit 129' HUP
 
 if [ "$INSTANCE" = staging ]; then
   echo "Deploying First Twenty staging in $APP_DIR"
@@ -362,13 +441,25 @@ restore_steps() {
 EOF
 }
 
+# Whether some of the migrations this commit adds were applied before this run began, by an earlier try:
+# fewer are pending (PENDING, from the status check) than the commit adds ($2, a list of file names that
+# is complete when $1 is true). Yes when either number is unknown.
+earlier_try_migrated() {
+  local n=0 f
+  [ "$1" = true ] && [[ ${PENDING:-} =~ ^[0-9]+$ ]] || return 0
+  for f in $2; do
+    [[ ! $f =~ ^[0-9]{3}_[a-z0-9_]*\.sql$ ]] || n=$((n + 1))
+  done
+  [ "$PENDING" -lt "$n" ]
+}
+
 # Prints the way back after a deploy whose new server is not healthy. With a backup taken before
 # migrating, that means the previous code and the database as it was just before (docs/SERVER.md,
 # "Restore a backup", with the dump filled in). An earlier try of the same commit may have migrated
 # already: first-twenty-autoupdate then passes the dump that try took as FT_PRIOR_BACKUP, and whenever this
 # commit adds migration files that the previous one lacks, the hint never says the database needs no restore.
 rollback_hint() {
-  local code dump added="" auto=false
+  local code dump added="" added_ok=false auto=false
   ! auto_deployed || auto=true
   if [ "$INSTANCE" = staging ]; then
     printf '\nStaging keeps no backups and holds demo data only. To go back, pause automatic deploys\n'
@@ -384,13 +475,22 @@ rollback_hint() {
   else
     code="(put the previous code back, for example: tar -xzf <previous archive> -C $APP_DIR)"
   fi
-  # The dump from before the first try of this commit comes first: a later try's own dump already holds
-  # the migrations the first one applied.
-  dump=${FT_PRIOR_BACKUP:-$BACKUP_FILE}
-  if [ -n "$BEFORE" ]; then
-    added=$(git diff --name-only --diff-filter=A "$BEFORE" HEAD -- server/sql/ 2>/dev/null | sed 's#.*/##' | tr '\n' ' ' || true)
+  if [ -n "$BEFORE" ] && added=$(git diff --name-only --diff-filter=A "$BEFORE" HEAD -- server/sql/ 2>/dev/null); then
+    added_ok=true
+    added=$(printf '%s\n' "$added" | sed 's#.*/##' | tr '\n' ' ')
     added=${added% }
+  else
+    added=""
   fi
+  # The dump to restore is the one from before the first of this commit's migrations ran. An earlier try's
+  # dump comes first when this run took none, or when that try applied some of them (this run's own dump
+  # already holds those). Otherwise this run's dump, taken just before the only migrations that ran, loses
+  # less.
+  dump=$BACKUP_FILE
+  if [ -n "${FT_PRIOR_BACKUP:-}" ] && { [ -z "$BACKUP_FILE" ] || earlier_try_migrated "$added_ok" "$added"; }; then
+    dump=$FT_PRIOR_BACKUP
+  fi
+  [ -z "$dump" ] || report restore_dump "$dump"
   if [ -z "$dump" ] && [ "$MIGRATED" = true ]; then
     printf '\nMigrations ran without a fresh backup (--skip-backup). To go back, restore your newest backup as\n'
     printf 'in docs/SERVER.md, "Restore a backup", after putting the previous code back with: %s\n' "$code"
@@ -413,8 +513,12 @@ rollback_hint() {
     printf '\nMigrations ran for this commit, so the previous code may not work with the database as it is now.\n'
     printf 'To go back to the previous version and the database as it was just before them, run these in\n'
     printf '%s (docs/SERVER.md, "Restore a backup", explains each step):\n' "$APP_DIR"
-    [ -z "${FT_PRIOR_BACKUP:-}" ] ||
+    if [ -n "${FT_PRIOR_BACKUP:-}" ] && [ "$dump" = "$FT_PRIOR_BACKUP" ]; then
       printf '(%s was taken before an earlier try of this commit ran its migrations, so it is the dump to restore.)\n' "$FT_PRIOR_BACKUP"
+    elif [ -n "${FT_PRIOR_BACKUP:-}" ]; then
+      printf '(An earlier try of this commit took %s, but none of its migrations were applied before this run, so the dump\n' "$FT_PRIOR_BACKUP"
+      printf 'this run took just before them is the one to restore.)\n'
+    fi
   else
     # No dump from this run or an earlier try it knows of, yet this commit adds migrations: an earlier try
     # (or a deploy by hand) may have applied them.
@@ -496,20 +600,30 @@ if [ "$AVAIL_KB" -gt 0 ] && [ "$AVAIL_KB" -lt 1500000 ]; then
   warn "Less than 1.5 GB of memory and swap is free; the build may fail. Re-running setup-ec2.sh adds a 2 GB"
   warn "swap file on an instance with under 2 GB of memory (or pass --swap 2G)."
 fi
-# The build the server runs now, kept until the restart (see BUILD_PATHS). A copy left by an earlier deploy
-# that failed after its restart is out of date by now.
-rm -rf "$PREV_DIR"
-SNAPSHOT=started
-mkdir "$PREV_DIR"
-for p in "${BUILD_PATHS[@]}"; do
-  if [ "$p" = first-twenty.html ]; then
-    [ ! -e "$p" ] || cp -p "$p" "$PREV_DIR/"
-  elif [ -e "$p" ] || [ -L "$p" ]; then
-    cp -al "$p" "$PREV_DIR/"
-  fi
-done
-SNAPSHOT=done
-info "Kept the current build in $PREV_DIR, to put back if a step before the restart fails."
+# The build the server runs now, kept until the restart (see BUILD_PATHS), unless a deploy killed before its
+# restart already left it there (see above). A copy left after a restart (no .pending) is out of date.
+if [ "$SNAPSHOT" = done ]; then
+  info "Kept the build the server runs, which a deploy that stopped before its restart left in $PREV_DIR, to put back if a step before the restart fails."
+else
+  rm -rf "$PREV_DIR"
+  SNAPSHOT=started
+  mkdir "$PREV_DIR"
+  for p in "${BUILD_PATHS[@]}"; do
+    if [ "$p" = first-twenty.html ]; then
+      [ ! -e "$p" ] || { cp -p "$p" "$PREV_DIR/" && KEPT+=("$p"); }
+    elif [ -e "$p" ] || [ -L "$p" ]; then
+      cp -al "$p" "$PREV_DIR/"
+      KEPT+=("$p")
+    fi
+  done
+  # The copy is complete: what it holds, and the commit it came from when that is known.
+  {
+    printf 'commit=%s\n' "$([ "$BEFORE_BUILT" != true ] || printf '%s' "$BEFORE")"
+    for p in "${KEPT[@]}"; do printf 'kept=%s\n' "$p"; done
+  } >"$PREV_DIR/.pending"
+  SNAPSHOT=done
+  info "Kept the current build in $PREV_DIR, to put back if a step before the restart fails."
+fi
 if [ "$IGNORE_SCRIPTS" = true ]; then
   # The only install script in package-lock.json is esbuild's (for tsx, a development tool), and the build
   # does not need it: Vite, Tailwind and Lightning CSS find their native builds without install scripts.
@@ -582,12 +696,16 @@ else
     die "Migrations failed (output above). Each migration runs in its own transaction, so the one that failed left nothing behind. The server is still running the version it already loaded.${BACKUP_FILE:+ The backup from just before is $BACKUP_FILE (docs/SERVER.md, \"Restore a backup\").}"
   fi
   [ "$PENDING" = 0 ] || MIGRATED=true
+  # (first-twenty-autoupdate keeps this run's dump as the one from before the commit's migrations.)
+  [ "$MIGRATED" = false ] || report migrated 1
 fi
 
 # ------------------------------------------------------------------------------------------------
 # From here on the new code runs, so a failure no longer puts the old build back; the way back is printed
-# instead (rollback_hint). first-twenty-autoupdate never retries a live deploy that got this far.
-trap - EXIT
+# instead (rollback_hint). first-twenty-autoupdate never retries a live deploy that got this far. Without
+# .pending, the copy in .deploy-prev no longer counts as the build the server runs, so it goes first.
+rm -f "$PREV_DIR/.pending"
+trap - EXIT TERM INT HUP
 report phase restarted
 step "Restarting $SERVICE"
 if [ "$INSTANCE" = staging ]; then
@@ -635,6 +753,8 @@ if [ "$ok" != true ]; then
   exit 1
 fi
 info "Healthy: $body"
+# The deploy has done its job; what follows only checks Caddy and tidies up.
+report phase finished
 
 # Only an https PUBLIC_ORIGIN is the address people open through Caddy. Anything else (unset, the
 # placeholder, or http://localhost:8787 from testing through an SSH tunnel) would reach Node directly and

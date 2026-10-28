@@ -172,18 +172,35 @@ describe('the automatic deploy scripts (static checks)', () => {
   })
 
   it('agree on the report deploy.sh writes for the updater, and put the folder back only until the restart', () => {
-    for (const line of ['report phase before-restart', 'report phase restarted', 'report dump "$BACKUP_FILE"', 'report restored 1']) {
+    for (const line of [
+      'report phase before-restart',
+      'report phase restarted',
+      'report phase finished',
+      'report dump "$BACKUP_FILE"',
+      'report migrated 1',
+      'report applied "$applied"',
+      'report restored 1',
+      'report restore_dump "$dump"',
+    ]) {
       expect(deploy, line).toContain(line)
     }
-    for (const key of ['phase', 'restored', 'dump']) expect(autoUpdate, key).toContain(`sed -n 's/^${key}=//p' "$REPORT"`)
+    for (const key of ['phase', 'restored', 'dump', 'migrated', 'applied', 'restore_dump']) {
+      expect(autoUpdate, key).toContain(`sed -n 's/^${key}=//p' "$REPORT"`)
+    }
     expect(autoUpdate).toContain('FT_DEPLOY_REPORT="$REPORT"')
     expect(autoUpdate).toContain('FT_PRIOR_BACKUP="$PRIOR"')
-    const armed = deploy.indexOf('trap put_back EXIT')
-    const disarmed = deploy.indexOf('\ntrap - EXIT\n')
-    const restart = deploy.indexOf('step "Restarting $SERVICE"')
+    // A stop (systemctl stop, Ctrl-C, a dropped SSH session) goes through put_back with a status that says so.
+    const armed = deploy.indexOf("trap put_back EXIT\n# A stop (systemctl stop, Ctrl-C, a dropped SSH session)")
     expect(armed).toBeGreaterThan(0)
+    expect(deploy.slice(armed)).toMatch(/^trap put_back EXIT\n(?:#.*\n)+trap 'exit 143' TERM\ntrap 'exit 130' INT\ntrap 'exit 129' HUP\n/)
+    // The copy stops counting as the build the server runs (.pending), then everything is disarmed, before the restart.
+    const disarmed = deploy.indexOf('\nrm -f "$PREV_DIR/.pending"\n')
+    const restart = deploy.indexOf('step "Restarting $SERVICE"')
     expect(disarmed).toBeGreaterThan(armed)
-    expect(deploy.slice(disarmed, restart)).toBe('\ntrap - EXIT\nreport phase restarted\n')
+    expect(deploy.slice(disarmed, restart)).toBe('\nrm -f "$PREV_DIR/.pending"\ntrap - EXIT TERM INT HUP\nreport phase restarted\n')
+    // put_back never trusts a status of 0: the trap is armed only while the deploy is unfinished.
+    expect(shellFunction(deploy, 'put_back')).toContain('[ "$rc" -ne 0 ] || rc=1\n')
+    expect(shellFunction(deploy, 'put_back')).not.toContain('|| exit 0')
     // The copy of the old build sits in the code folder, so git must ignore it.
     expect(read('.gitignore').split('\n')).toContain('.deploy-prev/')
   })
@@ -258,6 +275,10 @@ describe('the staging units', () => {
     expect(values(stagingUnit, 'StartLimitIntervalSec')).toEqual(['0'])
     // setup-auto-deploy.sh installs the file as it is.
     expect(setup).toContain('put_if_changed "$UNIT_DIR/first-twenty-staging.service" 0644 root:root <"$SCRIPT_DIR/first-twenty-staging.service"')
+  })
+
+  it('give a stopped run time to put the folder back before systemd kills it', () => {
+    for (const unit of [updaterStaging, updaterLive]) expect(values(unit, 'TimeoutStopSec')).toEqual(['5min'])
   })
 
   it('protect the live server and Postgres from the staging build instead of capping the build', () => {
@@ -777,7 +798,10 @@ echo "--- fork"; REPO=someone/first-twenty render_live_unit
  * commit checked out (and FT_PRIOR_BACKUP when set), and writes the report deploy.sh writes
  * (FT_DEPLOY_REPORT). FAKE_DEPLOY decides how it ends: ok; fail (leaves the new commit checked out, as a
  * deploy.sh that was killed would); restored (fails before the restart and puts the previous commit back,
- * as deploy.sh does); after-restart (fails after the restart). FAKE_DUMP is the dump it reports.
+ * as deploy.sh does); after-restart (fails after the restart); finished-fail (fails after the new server
+ * reported healthy); silent (fails without writing anything, as a deploy.sh from before the report does).
+ * FAKE_DUMP is the dump it reports, FAKE_MIGRATED=1 says migrations were applied, FAKE_APPLIED names the
+ * ones a failure before the restart applied, and FAKE_RESTORE is the dump its way back names.
  */
 const autoUpdateHarness = `
 REAL_GIT=$(command -v git)
@@ -790,18 +814,27 @@ cat > "$work/origin/server/deploy/deploy.sh" <<'EOF'
 echo "deploy.sh $* lock=\${FT_DEPLOY_LOCK_HELD:-} previous=\${FT_PREVIOUS_COMMIT:-} head=$(git rev-parse HEAD)" >> "$CALLS"
 echo "during: $(grep '^failed=' "$FT_STATE_DIR/state" || echo 'failed=')" >> "$CALLS"
 [ -z "\${FT_PRIOR_BACKUP:-}" ] || echo "prior: $FT_PRIOR_BACKUP" >> "$CALLS"
+[ "\${FAKE_DEPLOY:-ok}" != silent ] || { echo "(stub) an older deploy.sh failed"; exit 1; }
 echo "phase=before-restart" >> "$FT_DEPLOY_REPORT"
 [ -z "\${FAKE_DUMP:-}" ] || echo "dump=$FAKE_DUMP" >> "$FT_DEPLOY_REPORT"
+[ -z "\${FAKE_MIGRATED:-}" ] || echo "migrated=1" >> "$FT_DEPLOY_REPORT"
 case "\${FAKE_DEPLOY:-ok}" in
-  ok) echo "phase=restarted" >> "$FT_DEPLOY_REPORT"; echo "(stub) deployed" ;;
+  ok) printf 'phase=restarted\\nphase=finished\\n' >> "$FT_DEPLOY_REPORT"; echo "(stub) deployed" ;;
   fail) echo "(stub) the build failed"; exit 1 ;;
   restored)
     git -c advice.detachedHead=false checkout --quiet --detach "$FT_PREVIOUS_COMMIT"
+    [ -z "\${FAKE_APPLIED:-}" ] || echo "applied=$FAKE_APPLIED" >> "$FT_DEPLOY_REPORT"
     echo "restored=1" >> "$FT_DEPLOY_REPORT"
     echo "(stub) the build failed; put back"
     exit 1
     ;;
-  after-restart) echo "phase=restarted" >> "$FT_DEPLOY_REPORT"; echo "(stub) not healthy"; exit 1 ;;
+  after-restart)
+    echo "phase=restarted" >> "$FT_DEPLOY_REPORT"
+    [ -z "\${FAKE_RESTORE:-}" ] || echo "restore_dump=$FAKE_RESTORE" >> "$FT_DEPLOY_REPORT"
+    echo "(stub) not healthy"
+    exit 1
+    ;;
+  finished-fail) printf 'phase=restarted\\nphase=finished\\n' >> "$FT_DEPLOY_REPORT"; echo "(stub) healthy, then the clean-up failed"; exit 1 ;;
 esac
 EOF
 cp "$DEPLOY/auto-update.sh" "$work/origin/server/deploy/auto-update.sh"
@@ -1286,25 +1319,28 @@ au l-killed-1 l-killed live 'FAKE_DEPLOY=fail FT_MAX_TRIES=2'
 au l-killed-2 l-killed live 'FAKE_DEPLOY=fail FT_MAX_TRIES=2'
 au l-killed-3 l-killed live 'FAKE_DEPLOY=fail FT_MAX_TRIES=2'
 
-# Failures before the restart that deploy.sh put back, the first after a backup: retried with that dump,
-# then given up. A success forgets the dump.
+# Failures before the restart that deploy.sh put back, the first after a backup and a migration that was
+# applied: retried with that dump, then given up. A success forgets the dump.
 DUMP1=/var/backups/first-twenty/first-twenty-20261027-120000Z.dump
 DUMP2=/var/backups/first-twenty/first-twenty-20261027-123000Z.dump
 newcase l-back "$C1"; deployed l-back "$C1"
 release l-back v2 unique-name27 false false; fx l-back commits/v2 200 '"t2"' "$C2"; checks l-back "$C2" completed '"success"'
-au l-back-1 l-back live "FAKE_DEPLOY=restored FAKE_DUMP=$DUMP1 FT_MAX_TRIES=2"
+au l-back-1 l-back live "FAKE_DEPLOY=restored FAKE_DUMP=$DUMP1 FAKE_APPLIED=002_next.sql FT_MAX_TRIES=2"
 au l-back-2 l-back live "FAKE_DEPLOY=restored FAKE_DUMP=$DUMP2 FT_MAX_TRIES=2"
 au l-back-3 l-back live 'FT_MAX_TRIES=2'
 newcase l-back-ok "$C1"; deployed l-back-ok "$C1"
 release l-back-ok v2 unique-name27 false false; fx l-back-ok commits/v2 200 '"t2"' "$C2"; checks l-back-ok "$C2" completed '"success"'
-au l-back-ok-1 l-back-ok live "FAKE_DEPLOY=restored FAKE_DUMP=$DUMP1"
+au l-back-ok-1 l-back-ok live "FAKE_DEPLOY=restored FAKE_DUMP=$DUMP1 FAKE_APPLIED=002_next.sql"
 au l-back-ok-2 l-back-ok live ''
 
-# A failure after the restart: never retried on live, the way back logged on every run; staging retries.
+# A failure after the restart: never retried on live, the way back logged on every run (paused too); staging
+# retries.
 newcase l-restart "$C1"; deployed l-restart "$C1"
 release l-restart v2 unique-name27 false false; fx l-restart commits/v2 200 '"t2"' "$C2"; checks l-restart "$C2" completed '"success"'
 au l-restart-1 l-restart live "FAKE_DEPLOY=after-restart FAKE_DUMP=$DUMP1"
 au l-restart-2 l-restart live ''
+: > "$work/cases/l-restart/etc/autodeploy.paused"
+au l-restart-3 l-restart live ''
 newcase s-restart "$C1"; deployed s-restart "$C1"
 fx s-restart commits/main 200 '"h2"' "$C2"; checks s-restart "$C2" completed '"success"'
 au s-restart-1 s-restart staging 'FAKE_DEPLOY=after-restart'
@@ -1406,6 +1442,15 @@ au l-sudo-none l-sudo live "FT_PAUSE_FILE=$work/cases/l-sudo/closed/autodeploy.p
     expect(callsOf(second)).toEqual(['curl releases/latest if-none-match="r-v2"'])
     const lines = outOf(second).split('\n')
     expect(lines[lines.length - 1]).toContain(why)
+    // Paused for the rollback: nothing is asked, and the way back stays the last line.
+    const paused = get('l-restart-3')
+    expect(paused).toContain('rc=0')
+    expect(callsOf(paused)).toEqual([])
+    const pausedLines = outOf(paused).split('\n')
+    expect(pausedLines[0]).toMatch(/paused \(\S+autodeploy\.paused exists\)/)
+    expect(pausedLines[pausedLines.length - 1]).toContain(`release v2 (${sha.C2.slice(0, 7)}) is not deployed: ${why}`)
+    // Paused with nothing failed, only the pause line.
+    expect(outOf(get('l-sudo-yes')).split('\n')).toHaveLength(1)
     // Staging (demo data) still retries after a failure after its restart.
     expect(deploys('s-restart-2')).toHaveLength(1)
     expect(outOf(get('s-restart-2'))).toContain('try 2 of 3')
@@ -1445,6 +1490,123 @@ au l-sudo-none l-sudo live "FT_PAUSE_FILE=$work/cases/l-sudo/closed/autodeploy.p
     expect(curls('l-sudo-none')).toEqual([])
     // A pause folder it can read needs no sudo at all.
     expect(callsOf(get('l-back-1')).filter((c) => c.startsWith('sudo '))).toEqual([])
+  })
+})
+
+describe.skipIf(!BASH || !hasGit)('auto-update.sh and what deploy.sh reported', () => {
+  let runs: Record<string, string> = {}
+  const sha: Record<string, string> = {}
+  const dump1 = '/var/backups/first-twenty/first-twenty-20261027-120000Z.dump'
+  const dump2 = '/var/backups/first-twenty/first-twenty-20261027-123000Z.dump'
+  beforeAll(() => {
+    // A spawn of its own, like the block above.
+    const r = bash(`${prelude}${autoUpdateHarness}
+DUMP1=${dump1}
+DUMP2=${dump2}
+# Try 1 took a dump, then its migration failed with nothing applied, and the folder was put back: its dump
+# is not the one to restore. Try 2 migrates, restarts and is not healthy: its own dump is.
+newcase l-noapply "$C1"; deployed l-noapply "$C1"
+release l-noapply v2 unique-name27 false false; fx l-noapply commits/v2 200 '"t2"' "$C2"; checks l-noapply "$C2" completed '"success"'
+au l-noapply-1 l-noapply live "FAKE_DEPLOY=restored FAKE_DUMP=$DUMP1"
+au l-noapply-2 l-noapply live "FAKE_DEPLOY=after-restart FAKE_DUMP=$DUMP2 FAKE_MIGRATED=1"
+
+# An earlier try's dump is on record, but deploy.sh's way back names this try's own dump: the log follows it.
+newcase l-own "$C1"; deployed l-own "$C1"
+release l-own v2 unique-name27 false false; fx l-own commits/v2 200 '"t2"' "$C2"; checks l-own "$C2" completed '"success"'
+echo "predump=$C2:$DUMP1" >> "$work/cases/l-own/state/state"
+au l-own l-own live "FAKE_DEPLOY=after-restart FAKE_DUMP=$DUMP2 FAKE_MIGRATED=1 FAKE_RESTORE=$DUMP2"
+
+# A deploy.sh that says nothing (a commit from before the report): not retried on live; staging retries.
+newcase l-silent "$C1"; deployed l-silent "$C1"
+release l-silent v2 unique-name27 false false; fx l-silent commits/v2 200 '"t2"' "$C2"; checks l-silent "$C2" completed '"success"'
+au l-silent-1 l-silent live 'FAKE_DEPLOY=silent'
+au l-silent-2 l-silent live ''
+newcase s-silent "$C1"; deployed s-silent "$C1"
+fx s-silent commits/main 200 '"h2"' "$C2"; checks s-silent "$C2" completed '"success"'
+au s-silent s-silent staging 'FAKE_DEPLOY=silent'
+
+# Healthy, then deploy.sh failed in the clean-up: deployed.
+newcase l-fin "$C1"; deployed l-fin "$C1"
+release l-fin v2 unique-name27 false false; fx l-fin commits/v2 200 '"t2"' "$C2"; checks l-fin "$C2" completed '"success"'
+au l-fin l-fin live 'FAKE_DEPLOY=finished-fail'
+
+# Runs stopped in the middle (TimeoutStartSec, systemctl stop) left their reports: after the new server
+# reported healthy (deployed), and before deploy.sh said anything (not retried on live).
+newcase l-left-fin "$C1"; deployed l-left-fin "$C1"
+release l-left-fin v2 unique-name27 false false; fx l-left-fin commits/v2 200 '"t2"' "$C2"; checks l-left-fin "$C2" completed '"success"'
+echo "failed=$C2:1" >> "$work/cases/l-left-fin/state/state"
+printf 'target=%s\\nphase=before-restart\\nphase=restarted\\nphase=finished\\n' "$C2" > "$work/cases/l-left-fin/state/deploy-report"
+au l-left-fin l-left-fin live ''
+newcase l-left-none "$C1"; deployed l-left-none "$C1"
+release l-left-none v2 unique-name27 false false; fx l-left-none commits/v2 200 '"t2"' "$C2"; checks l-left-none "$C2" completed '"success"'
+printf 'target=%s\\n' "$C2" > "$work/cases/l-left-none/state/deploy-report"
+au l-left-none l-left-none live ''
+`)
+    expect(r.stderr).toBe('')
+    runs = sections(r.stdout)
+    for (const line of (runs.shas ?? '').split('\n')) {
+      const m = /^(\w+)=([0-9a-f]{40})$/.exec(line)
+      if (m) sha[m[1]] = m[2]
+    }
+    expect(Object.keys(sha).sort()).toEqual(['C1', 'C2', 'CSIDE'])
+  }, LONG_MS)
+
+  const get = (name: string) => {
+    const s = runs[name]
+    expect(s, name).toBeDefined()
+    return s
+  }
+  const deploys = (name: string) => callsOf(get(name)).filter((c) => c.startsWith('deploy.sh '))
+
+  it('live: keeps the dump of a try only when that try applied migrations, or may have', () => {
+    const first = get('l-noapply-1')
+    expect(first).toContain('rc=1')
+    expect(first).not.toContain('state: predump=')
+    const second = get('l-noapply-2')
+    expect(callsOf(second).filter((c) => c.startsWith('prior: '))).toEqual([])
+    expect(outOf(second)).toContain(`restoring ${dump2} (the dump taken before its migrations)`)
+    expect(outOf(second)).not.toContain(dump1)
+    // deploy.sh's choice of dump wins over the one on record.
+    expect(callsOf(get('l-own'))).toContain(`prior: ${dump1}`)
+    expect(outOf(get('l-own'))).toContain(`restoring ${dump2} (the dump taken before its migrations)`)
+  })
+
+  it('live: does not retry a deploy whose deploy.sh did not say how far it got, and says to check the server', () => {
+    const first = get('l-silent-1')
+    expect(first).toContain('rc=1')
+    expect(deploys('l-silent-1')).toHaveLength(1)
+    const out = outOf(first)
+    expect(out).toContain('deploy.sh did not say how far its deploy got')
+    expect(out).toContain('sudo systemctl status first-twenty')
+    expect(out).toContain(`roll back to ${sha.C1.slice(0, 7)}`)
+    expect(out).not.toContain('may be half built')
+    expect(out).not.toContain('trying again')
+    expect(first).toContain(`state: skip_failed=${sha.C2}@7`)
+    const second = get('l-silent-2')
+    expect(second).toContain('rc=1')
+    expect(deploys('l-silent-2')).toEqual([])
+    expect(outOf(second)).toContain('deploy.sh did not say how far its deploy got')
+    // Staging (demo data) still tries again.
+    expect(outOf(get('s-silent'))).toContain('trying again next run')
+    // A run stopped before deploy.sh said anything counts the same.
+    expect(get('l-left-none')).toContain('rc=1')
+    expect(deploys('l-left-none')).toEqual([])
+    expect(outOf(get('l-left-none'))).toContain('deploy.sh did not say how far its deploy got')
+  })
+
+  it('counts a deploy as done once the new server reported healthy, even when the run ended badly after that', () => {
+    const fin = get('l-fin')
+    expect(fin).toContain('rc=0')
+    expect(fin).toContain(`state: deployed_sha=${sha.C2}`)
+    expect(fin).not.toContain('state: skip_sha=')
+    expect(outOf(fin)).toContain('after the new server of release v2')
+    expect(outOf(fin)).toContain('counts as deployed')
+    const left = get('l-left-fin')
+    expect(left).toContain('rc=0')
+    expect(deploys('l-left-fin')).toEqual([])
+    expect(left).toContain(`state: deployed_sha=${sha.C2}`)
+    expect(left).toContain('state: failed=\n')
+    expect(outOf(left)).toContain('stopped after the new server reported healthy; recorded it as deployed')
   })
 })
 
@@ -1626,11 +1788,13 @@ run bad-instance '' --instance demo
  * The stub npm behaves like the real commands where it matters here: npm ci removes everything in
  * node_modules before it installs (FAKE_CI=fail stops it halfway), the build empties dist-server and
  * dist-single and writes first-twenty.html in place, as copyFileSync does (FAKE_BUILD=fail stops it before
- * the server bundle), and server:migrate applies 002 (FAKE_MIGRATE=fail fails after that). The stub
- * systemctl writes a dump for the backup service and answers ActiveState "activating" for FAKE_ACTIVE,
- * FAKE_ACTIVE_POLLS times. `run <name> <commit> "<VAR=value ...>" [deploy.sh options]` deploys a fresh copy
- * of the checkout at <commit> and prints its section, with the report (report: lines), HEAD and the build
- * files after the run.
+ * the server bundle; FAKE_BUILD=term sends deploy.sh SIGTERM, as systemctl stop does, and dies of it too),
+ * and server:migrate applies 002 (FAKE_MIGRATE=fail fails after that; FAKE_PENDING=0 has nothing pending,
+ * FAKE_PENDING=unknown prints no Pending line). The stub systemctl writes a dump for the backup service
+ * and answers ActiveState "activating" for FAKE_ACTIVE, FAKE_ACTIVE_POLLS times.
+ * `run <name> <commit> "<VAR=value ...>" [deploy.sh options]` deploys a fresh copy of the checkout at
+ * <commit> and prints its section, with the report (report: lines), HEAD and the build files after the
+ * run. With PREP=<function> set, that function gets the copy's folder first.
  */
 const gitDeployHarness = `
 REAL_GIT=$(command -v git)
@@ -1677,12 +1841,17 @@ case "$*" in
     mkdir -p dist-server dist-single
     echo new-single > dist-single/index.html
     echo new-app > first-twenty.html
+    if [ "\${FAKE_BUILD:-ok}" = term ]; then kill -TERM "$PPID"; command -p sleep 1; exit 143; fi
     [ "\${FAKE_BUILD:-ok}" = ok ] || { echo 'error during build' >&2; exit 1; }
     echo new-bundle > dist-server/server.mjs
     ;;
   'run server:migrate -- --status')
     echo 'Applied (1): 001_init.sql'
-    if [ "\${FAKE_PENDING:-1}" = 0 ]; then echo 'Pending (0): none'; else echo 'Pending (1): 002_next.sql'; fi
+    case "\${FAKE_PENDING:-1}" in
+      0) echo 'Pending (0): none' ;;
+      unknown) ;;
+      *) echo 'Pending (1): 002_next.sql' ;;
+    esac
     ;;
   'run server:migrate')
     [ "\${FAKE_PENDING:-1}" = 0 ] || echo 'Applied 002_next.sql'
@@ -1736,6 +1905,7 @@ run() { # run <name> <commit> "<VAR=value ...>" [deploy.sh options]
   mkdir -p "$dir/backups"
   cp -R "$tpl" "$app"
   g "$app" checkout -q --detach "$commit"
+  [ -z "\${PREP:-}" ] || "$PREP" "$app"
   printf 'PORT=8787\\nBACKUP_DIR=%s\\n' "$dir/backups" > "$dir/env"
   : > "$dir/calls"
   (cd "$app" && env FAKE_WORKDIR="$app" CALLS="$dir/calls" FAKE_BACKUP_DIR="$dir/backups" FAKE_ACTIVE_COUNT="$dir/active-count" \\
@@ -1815,6 +1985,9 @@ INSTANCE=staging PAUSE_FILE=/etc/first-twenty-staging/autodeploy.paused manual_d
     expect(outOf(migrate)).toMatch(/Migrations applied in this run stay applied: 002_next\.sql\. The backup from just before them is \S+\/first-twenty-20261027-120000Z\.dump \(docs\/SERVER\.md, "Restore a backup"\)\./)
     expect(reportOf('a-migrate').filter((l) => l.startsWith('dump='))).toHaveLength(1)
     expect(reportOf('a-migrate').find((l) => l.startsWith('dump='))).toMatch(/\/first-twenty-20261027-120000Z\.dump$/)
+    // The updater learns which migrations stayed applied, so it keeps that dump for the next try.
+    expect(reportOf('a-migrate')).toContain('applied=002_next.sql')
+    expect(reportOf('a-ci').filter((l) => l.startsWith('applied='))).toEqual([])
   })
 
   it('keeps the new build, and removes the copy of the old one, after a deploy that finished', () => {
@@ -1825,7 +1998,7 @@ INSTANCE=staging PAUSE_FILE=/etc/first-twenty-staging/autodeploy.paused manual_d
       expect(s, file).toContain(`file: ${file}\n`)
     }
     expect(s).not.toContain('prev=left')
-    expect(reportOf('a-ok')).toEqual(['phase=before-restart', expect.stringMatching(/^dump=\S+\.dump$/), 'phase=restarted'])
+    expect(reportOf('a-ok')).toEqual(['phase=before-restart', expect.stringMatching(/^dump=\S+\.dump$/), 'migrated=1', 'phase=restarted', 'phase=finished'])
     expect(outOf(s)).toContain('Deploy finished.')
   })
 
@@ -1892,6 +2065,148 @@ INSTANCE=staging PAUSE_FILE=/etc/first-twenty-staging/autodeploy.paused manual_d
     expect(outOf(limit)).toContain('WARNING: first-twenty-autoupdate-staging is still running after 15 seconds; building anyway.')
     // Run by the updater (FT_DEPLOY_LOCK_HELD=1), it never asks: the updater already waited.
     expect(callsOf(get('a-ok')).filter((c) => c.includes('ActiveState'))).toEqual([])
+  })
+})
+
+describe.skipIf(!BASH || !hasGit)('deploy.sh stopped halfway, a copy left behind, and the dump it names', () => {
+  let runs: Record<string, string> = {}
+  const sha: Record<string, string> = {}
+  const prior = '/var/backups/first-twenty/first-twenty-20261020-010000Z.dump'
+  beforeAll(() => {
+    // A spawn of its own: each run takes seconds in Git Bash, and one spawn gets LONG_MS.
+    const r = bash(`${prelude}${gitDeployHarness}
+U="FT_DEPLOY_LOCK_HELD=1 FT_PREVIOUS_COMMIT=$OLD"
+# A deploy killed during npm ci: the build the server runs in .deploy-prev with .pending, half a build in
+# place, HEAD at the new commit.
+leftover() {
+  mkdir "$1/.deploy-prev"
+  mv "$1/node_modules" "$1/dist-server" "$1/dist-single" "$1/.deploy-prev/"
+  cp -p "$1/first-twenty.html" "$1/.deploy-prev/"
+  printf 'commit=%s\\nkept=node_modules\\nkept=dist-server\\nkept=dist-single\\nkept=first-twenty.html\\n' "\${OLD:0:12}" > "$1/.deploy-prev/.pending"
+  mkdir -p "$1/node_modules/partial" "$1/dist-server"
+  echo half-app > "$1/first-twenty.html"
+}
+# The same, after a put-back that stopped halfway: dist-server is back in place, gone from the copy.
+halfway() {
+  leftover "$1"
+  rm -rf "$1/dist-server"
+  mv "$1/.deploy-prev/dist-server" "$1/dist-server"
+}
+# A copy left after a restart (no .pending): out of date.
+stale() {
+  mkdir -p "$1/.deploy-prev/node_modules/fastify"
+  echo stale-module > "$1/.deploy-prev/node_modules/fastify/index.js"
+}
+# Stopped (SIGTERM) while the build runs: the step before it left $? at 0.
+run t-term "$NEW" "$U FAKE_BUILD=term" --no-pull
+PREP=leftover run p-left "$NEW" "$U FAKE_CI=fail" --no-pull
+PREP=leftover run p-left-ok "$NEW" "$U" --no-pull
+PREP=halfway run p-halfway "$NEW" "$U" --no-pull
+PREP=stale run p-stale "$NEW" "$U FAKE_CI=fail" --no-pull
+# A rollback by hand with --no-pull: the build in place came from an earlier deploy, not from this commit.
+run m-hand "$NEWER" "FT_DEPLOY_LOCK_HELD=1 FAKE_CI=fail" --no-pull
+# An earlier try's dump, and this run's own: as many migrations pending as the commit adds, so this run's
+# dump is the one to restore; with the count unknown, the earlier one.
+run b-prior-own "$NEW" "$U FAKE_HEALTH=fail FT_PRIOR_BACKUP=${prior}" --no-pull
+run b-prior-unknown "$NEW" "$U FAKE_PENDING=unknown FAKE_HEALTH=fail FT_PRIOR_BACKUP=${prior}" --no-pull
+${['earlier_try_migrated'].map((n) => shellFunction(deploy, n)).join('\n')}
+echo "--- earlier"
+for c in 'true|1|002_next.sql' 'true|1|002_next.sql 003_more.sql' 'true|0|002_next.sql' 'true||002_next.sql' 'false|1|002_next.sql' 'true|1|README.md'; do
+  IFS='|' read -r ok PENDING added <<<"$c"
+  if earlier_try_migrated "$ok" "$added"; then echo "$c=yes"; else echo "$c=no"; fi
+done
+`)
+    expect(r.stderr).toBe('')
+    runs = sections(r.stdout)
+    for (const line of (runs.shas ?? '').split('\n')) {
+      const m = /^(\w+)=([0-9a-f]{40})$/.exec(line)
+      if (m) sha[m[1]] = m[2]
+    }
+    expect(Object.keys(sha).sort()).toEqual(['NEW', 'NEWER', 'OLD'])
+  }, LONG_MS)
+
+  const get = (name: string) => {
+    const s = runs[name]
+    expect(s, name).toBeDefined()
+    return s
+  }
+  const reportOf = (name: string) => linesOf(get(name), 'report: ')
+  const oldBuild = ['node_modules/fastify/index.js=old-module', 'dist-server/server.mjs=old-bundle', 'dist-single/index.html=old-single', 'first-twenty.html=old-app']
+
+  it('puts the build and the commit back when it is stopped while a step runs', () => {
+    const s = get('t-term')
+    // 143: ended by SIGTERM, after the build step it interrupted had ended.
+    expect(s).toContain('rc=143')
+    expect(callsOf(s).filter((c) => /restart/.test(c))).toEqual([])
+    expect(s).toContain(`head=${sha.OLD}`)
+    for (const file of oldBuild) expect(s, file).toContain(`file: ${file}\n`)
+    expect(s).not.toContain('prev=left')
+    expect(reportOf('t-term')).toEqual(['phase=before-restart', 'restored=1'])
+    expect(outOf(s)).toContain(`is back at ${sha.OLD.slice(0, 12)} with the build it had.`)
+  })
+
+  it('keeps the build a killed deploy left in .deploy-prev, and puts it back when it fails too', () => {
+    const s = get('p-left')
+    expect(s).toContain('rc=1')
+    expect(outOf(s)).toContain('Kept the build the server runs, which a deploy that stopped before its restart left in')
+    expect(s).toContain(`head=${sha.OLD}`)
+    for (const file of oldBuild) expect(s, file).toContain(`file: ${file}\n`)
+    expect(s).not.toContain('partial=left')
+    expect(s).not.toContain('prev=left')
+    expect(reportOf('p-left')).toContain('restored=1')
+    // A deploy that finishes builds over the half-made tree and removes the copy.
+    const ok = get('p-left-ok')
+    expect(ok).toContain('rc=0')
+    expect(ok).toContain('file: dist-server/server.mjs=new-bundle\n')
+    expect(ok).not.toContain('prev=left')
+    // A copy without .pending was left after a restart: replaced by a fresh copy of the build in place.
+    const stale = get('p-stale')
+    expect(stale).toContain('rc=1')
+    expect(outOf(stale)).toContain('Kept the current build in')
+    for (const file of oldBuild) expect(stale, file).toContain(`file: ${file}\n`)
+  })
+
+  it('changes nothing when part of the copy a killed deploy left is gone, and says how to put it back', () => {
+    const s = get('p-halfway')
+    expect(s).toContain('rc=1')
+    expect(callsOf(s).filter((c) => c.startsWith('npm '))).toEqual([])
+    const out = outOf(s)
+    expect(out).toContain('part of it (dist-server) is not there any more, so nothing was changed')
+    expect(out).toContain(`check out ${sha.OLD.slice(0, 12)}`)
+    // What is in place stays: dist-server put back by hand, the rest still in the copy.
+    expect(s).toContain('file: dist-server/server.mjs=old-bundle\n')
+    expect(s).toContain('file: first-twenty.html=half-app\n')
+    expect(s).toContain('prev=left')
+    expect(reportOf('p-halfway')).not.toContain('restored=1')
+  })
+
+  it('does not say a rollback by hand is back at a commit its build did not come from', () => {
+    const out = outOf(get('m-hand'))
+    expect(get('m-hand')).toContain('rc=1')
+    expect(out).toContain(`It came from an earlier deploy and may not be built from the code checked out now (${sha.NEWER.slice(0, 7)})`)
+    expect(out).not.toContain('with the build it had')
+    expect(get('m-hand')).toContain('file: node_modules/fastify/index.js=old-module\n')
+  })
+
+  it("names this run's dump unless an earlier try applied some of the commit's migrations", () => {
+    const own = get('b-prior-own')
+    expect(own).toContain('rc=1')
+    const ownOut = outOf(own)
+    expect(ownOut).toMatch(/sudo install -m 600 -o postgres -g postgres \S+\/first-twenty-20261027-120000Z\.dump \/var\/tmp\/ft-restore\.dump/)
+    expect(ownOut).toContain(`An earlier try of this commit took ${prior}, but none of its migrations were applied before this run`)
+    expect(reportOf('b-prior-own').find((l) => l.startsWith('restore_dump='))).toMatch(/\/first-twenty-20261027-120000Z\.dump$/)
+    const unknown = outOf(get('b-prior-unknown'))
+    expect(unknown).toContain(`sudo install -m 600 -o postgres -g postgres ${prior} /var/tmp/ft-restore.dump`)
+    expect(unknown).toContain(`(${prior} was taken before an earlier try of this commit ran its migrations, so it is the dump to restore.)`)
+    expect(reportOf('b-prior-unknown')).toContain(`restore_dump=${prior}`)
+    expect(runs.earlier.trim().split('\n')).toEqual([
+      'true|1|002_next.sql=no',
+      'true|1|002_next.sql 003_more.sql=yes',
+      'true|0|002_next.sql=yes',
+      'true||002_next.sql=yes',
+      'false|1|002_next.sql=yes',
+      'true|1|README.md=no',
+    ])
   })
 })
 

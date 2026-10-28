@@ -21,10 +21,11 @@
 # migrations, health checks and the way back on failure. A deploy that fails before its restart puts the
 # folder back (deploy.sh does) and is tried again on the next runs, 3 times in all (a try counts when it
 # starts, so a run that is stopped or killed counts too); a newer commit or release starts over. A live
-# deploy that fails (or is stopped) after the restart is not tried again: every later run logs the way back instead, with
-# the previous commit and the dump taken before its migrations. While the newest release is one that
-# failed, each live run exits 1, so first-twenty-autoupdate-live stays failed. Staging also refuses to
-# deploy while Caddy's admin API answers on 127.0.0.1:2019, where code from main could reach it.
+# deploy that fails (or is stopped) after the restart, or whose deploy.sh does not say how far it got, is
+# not tried again: every later run logs the way back instead, with the previous commit and the dump taken
+# before its migrations. While the newest release is one that failed, each live run exits 1, so
+# first-twenty-autoupdate-live stays failed. Staging also refuses to deploy while Caddy's admin API answers
+# on 127.0.0.1:2019, where code from main could reach it.
 #
 # GitHub's API is called without a token, which allows 60 requests an hour from this instance's address.
 # Each run sends the ETag of the last answer (If-None-Match), so an unchanged answer is a short 304; it
@@ -219,6 +220,11 @@ case "$paused" in
   no) ;;
   yes)
     log "paused ($PAUSE_FILE exists); nothing checked. Remove that file to resume."
+    # Rolling back starts with a pause (docs/SERVER.md, "Roll back"), so while the newest live release seen is
+    # one that is not tried again, its reason and way back stay the last thing this log says.
+    if [ "$CHANNEL" = live ] && [ -n "${STATE[skip_failed]:-}" ] && [ "${STATE[skip_failed]}" = "${STATE[release_sha]:-}@${STATE[release_id]:-}" ]; then
+      log "release ${STATE[release_tag]:-?} ($(short "${STATE[release_sha]}")) is not deployed: ${STATE[skip_why]:-see the earlier runs}."
+    fi
     exit 0
     ;;
   *)
@@ -425,9 +431,10 @@ if [ "${STATE[skip_sha]:-}" = "$SKIP_KEY" ]; then
   exit 0
 fi
 
-# predump=<sha>:<file> is the dump deploy.sh took before the first try of that commit ran its migrations. It
-# is kept until that commit deploys or another one is the newest, and later tries get it as FT_PRIOR_BACKUP,
-# so every way back printed for this commit names the dump from before any of its migrations.
+# predump=<sha>:<file> is the dump deploy.sh took before the first try of that commit that applied (or may
+# have applied) some of its migrations. It is kept until that commit deploys or another one is the newest,
+# and later tries get it as FT_PRIOR_BACKUP, so every way back printed for this commit names the dump from
+# before any of its migrations.
 PRIOR=""
 case "${STATE[predump]:-}" in
   "$TARGET":/*) PRIOR=${STATE[predump]#*:} ;;
@@ -435,30 +442,66 @@ case "${STATE[predump]:-}" in
 esac
 
 # What deploy.sh reports about how far it got (report() in deploy.sh), in a file this script starts with
-# the commit it is for: phase=before-restart or restarted, restored=1, dump=<file>. Later lines win.
+# the commit it is for: phase=before-restart, restarted or finished, dump=<file>, migrated=1,
+# applied=<names>, restored=1, restore_dump=<file>. Later lines win.
 REPORT=$STATE_DIR/deploy-report
 read_report() {
   phase=$(sed -n 's/^phase=//p' "$REPORT" | tail -n 1)
   restored=$(sed -n 's/^restored=//p' "$REPORT" | tail -n 1)
   dump=$(sed -n 's/^dump=//p' "$REPORT" | tail -n 1)
+  migrated=$(sed -n 's/^migrated=//p' "$REPORT" | tail -n 1)
+  applied=$(sed -n 's/^applied=//p' "$REPORT" | tail -n 1)
+  restore_dump=$(sed -n 's/^restore_dump=//p' "$REPORT" | tail -n 1)
   [[ $dump =~ ^/[A-Za-z0-9._/-]+$ ]] || dump=""
-  if [ -n "$dump" ] && [ -z "$PRIOR" ]; then
+  [[ $restore_dump =~ ^/[A-Za-z0-9._/-]+$ ]] || restore_dump=""
+  # A try's dump is the one from before this commit's migrations when that try applied some of them, or may
+  # have: it migrated, it named the ones it applied, or it ended without saying it put the folder back. A try
+  # whose migrations all failed left the database as it was, so a later try's own dump loses less.
+  if [ -n "$dump" ] && [ -z "$PRIOR" ] && { [ -n "$migrated" ] || [ -n "$applied" ] || [ -z "$restored" ]; }; then
     PRIOR=$dump
     STATE[predump]=$TARGET:$dump
   fi
 }
 
-# A live deploy that failed after its restart is not tried again: the new code already ran, a retry would
-# restart it again, and its way back would no longer name the dump from before the migrations. The reason,
-# with that way back, is logged on every later run (the skip above), so it stays at the bottom of this log.
-# $1 says how the deploy ended, $2 is the commit that ran before.
-skip_after_restart() {
+# Records TARGET as deployed, logs $1 and ends the run.
+record_success() {
+  STATE[deployed_sha]=$TARGET
+  STATE[deployed_at]=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  set_fail_count "$TARGET" 0
+  unset 'STATE[predump]'
+  save_state
+  log "$1"
+  if ! cmp -s "${BASH_SOURCE[0]}" "$APP_DIR/server/deploy/auto-update.sh"; then
+    log "NOTE: this version changes server/deploy/auto-update.sh. Install it with: sudo bash $APP_DIR/server/deploy/setup-auto-deploy.sh"
+  fi
+  exit 0
+}
+
+# A live deploy that may have restarted the server is not tried again: the new code may already have run,
+# a retry would restart it again, and its way back would no longer name the dump from before the
+# migrations. The reason $1, with that way back, is logged on every later run (the skip above), so it stays
+# at the bottom of this log, and the live unit stays failed.
+skip_for_good() {
   STATE[skip_sha]=$SKIP_KEY
   STATE[skip_failed]=$SKIP_KEY
-  STATE[skip_why]="its deploy $1 after the new server was started, so it is not tried again. Roll back to the previous commit $(short "${2:-unknown}") as in docs/SERVER.md \"Roll back\"${PRIOR:+, restoring $PRIOR (the dump taken before its migrations)}"
+  STATE[skip_why]=$1
   save_state
   log "$WHAT is not deployed: ${STATE[skip_why]}."
   exit 1
+}
+
+# After the restart: $1 says how the deploy ended, $2 is the commit that ran before. The dump is the one
+# deploy.sh named in its way back, else the one from before the first try that migrated.
+skip_after_restart() {
+  local restore=${restore_dump:-$PRIOR}
+  skip_for_good "its deploy $1 after the new server was started, so it is not tried again. Roll back to the previous commit $(short "${2:-unknown}") as in docs/SERVER.md \"Roll back\"${restore:+, restoring $restore (the dump taken before its migrations)}"
+}
+
+# deploy.sh said nothing about how far it got (a release of a commit whose deploy.sh is older than this
+# updater, or a run stopped before deploy.sh began), so the server may or may not have been restarted.
+# $1 is the commit that ran before.
+skip_unknown() {
+  skip_for_good "deploy.sh did not say how far its deploy got (its commit may be older than this updater), so it is not tried again. Check whether the server was restarted (sudo systemctl status first-twenty) and the deploy.sh output in this log, then roll back to $(short "${1:-unknown}") or record what runs, as in docs/SERVER.md \"Roll back\""
 }
 
 # A report still here was left by a run that was stopped in the middle of a deploy (TimeoutStartSec, or out
@@ -466,11 +509,19 @@ skip_after_restart() {
 phase=""
 restored=""
 dump=""
+migrated=""
+applied=""
+restore_dump=""
 if [ -f "$REPORT" ]; then
   if [ "$(sed -n 's/^target=//p' "$REPORT" | head -n 1)" = "$TARGET" ]; then
     read_report
     rm -f "$REPORT"
-    [ "$CHANNEL" != live ] || [ "$phase" != restarted ] || skip_after_restart "was stopped" "$DEPLOYED"
+    # Stopped after the new server reported healthy (in the Caddy check or the clean-up): it is deployed.
+    [ "$phase" != finished ] || record_success "$WHAT was deployed by a run that was stopped after the new server reported healthy; recorded it as deployed."
+    if [ "$CHANNEL" = live ]; then
+      [ "$phase" != restarted ] || skip_after_restart "was stopped" "$DEPLOYED"
+      [ -n "$phase" ] || skip_unknown "$DEPLOYED"
+    fi
   fi
   rm -f "$REPORT"
 fi
@@ -627,11 +678,13 @@ PREVIOUS=${DEPLOYED:-$(git -C "$APP_DIR" rev-parse -q --verify 'HEAD^{commit}' 2
 printf 'target=%s\n' "$TARGET" >"$REPORT"
 log "deploying $WHAT (try $TRY of $MAX_TRIES; deployed now: $(short "${DEPLOYED:-none}"))."
 rc=0
+ran=false
 if ! git -C "$APP_DIR" -c advice.detachedHead=false checkout --quiet --detach "$TARGET"; then
   # git checks before it changes anything, so the code in place is as it was.
   log "git could not check out $(short "$TARGET") in $APP_DIR (see above; most likely untracked files in the way)."
   rc=1
 else
+  ran=true
   (cd "$APP_DIR" && FT_DEPLOY_LOCK_HELD=1 FT_PREVIOUS_COMMIT="$PREVIOUS" FT_DEPLOY_REPORT="$REPORT" \
     FT_AUTODEPLOY_STATE="$STATE_FILE" FT_PRIOR_BACKUP="$PRIOR" bash server/deploy/deploy.sh "${DEPLOY_ARGS[@]}") || rc=$?
 fi
@@ -640,21 +693,21 @@ read_report
 rm -f "$REPORT"
 
 if [ "$rc" -eq 0 ]; then
-  STATE[deployed_sha]=$TARGET
-  STATE[deployed_at]=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  set_fail_count "$TARGET" 0
-  unset 'STATE[predump]'
-  save_state
-  log "deployed $WHAT."
-  if ! cmp -s "${BASH_SOURCE[0]}" "$APP_DIR/server/deploy/auto-update.sh"; then
-    log "NOTE: this version changes server/deploy/auto-update.sh. Install it with: sudo bash $APP_DIR/server/deploy/setup-auto-deploy.sh"
-  fi
-  exit 0
+  record_success "deployed $WHAT."
+fi
+# The new server reported healthy, and only the Caddy check or the clean-up after it went wrong.
+if [ "$phase" = finished ]; then
+  log "deploy.sh ended with an error after the new server of $WHAT reported healthy (output above), so it counts as deployed."
+  record_success "deployed $WHAT."
 fi
 
 if [ "$CHANNEL" = live ] && [ "$phase" = restarted ]; then
   log "deploy of $WHAT failed after the restart (try $TRY of $MAX_TRIES, output above)."
   skip_after_restart failed "$PREVIOUS"
+fi
+if [ "$CHANNEL" = live ] && [ "$ran" = true ] && [ -z "$phase" ]; then
+  log "deploy of $WHAT failed (try $TRY of $MAX_TRIES, output above)."
+  skip_unknown "$PREVIOUS"
 fi
 
 save_state

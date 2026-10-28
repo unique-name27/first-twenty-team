@@ -30,6 +30,9 @@ Environment=HOME=/var/lib/first-twenty-staging
 Environment=FT_PORT=8788
 Environment=FT_PUBLIC_ORIGIN=https://staging.example.com
 TimeoutStartSec=45min
+# A run that is stopped (systemctl stop, or TimeoutStartSec) gets this long to end: deploy.sh first puts the
+# folder back when it had not restarted the server yet.
+TimeoutStopSec=5min
 UMask=0027
 Nice=10
 CPUWeight=20
