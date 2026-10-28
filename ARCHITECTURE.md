@@ -45,8 +45,7 @@ src/
               by main.tsx behind import.meta.env.DEV (guard.test.ts checks it). Guide: docs/DEV.md
   sim/        tests and tools only, never the app (guard.test.ts checks it): generated companies, built
               through the same steps the screens take (generate.ts, actions.ts, scenarios.ts), and the time
-              machine that lives a workspace's next days the same way (advance.ts), and the move of a
-              generated company to another week (shift.ts). Guide: docs/DEV.md
+              machine that lives a workspace's next days the same way (advance.ts). Guide: docs/DEV.md
 scripts/dev/  npm run stack: the dev stack runner, its database setup and the Vite dev sign-in endpoint;
               npm run sql: read-only SQL on the stack's database; npm run sim: generated companies in the
               stack, the time machine and saves

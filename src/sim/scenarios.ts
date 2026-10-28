@@ -7,6 +7,12 @@ import type { ISODate } from '@/lib/dates'
 
 export type ScenarioName = 'ledgerlark' | 'blank' | 'seed-8' | 'cross-15' | 'full-20' | 'payroll-edge' | 'pipeline-heavy' | 'stress'
 
+/**
+ * A day of a pay period, for things that must sit at a certain place in one on any as-of date: the day-th
+ * day (1 is the first) of the period `periodsBack` periods before the one that holds the as-of date.
+ */
+export type PayPeriodDay = { periodsBack: number; day: number }
+
 /** One hire the company makes: the job, who leads it and when the person starts. */
 export type RolePlan = {
   /** The role template the New job sheet starts from (src/data/starterRoleTemplates.ts). */
@@ -18,15 +24,15 @@ export type RolePlan = {
   departmentId?: ID
   /** The office the job is at, when not headquarters. */
   locationId?: ID
-  /** Days before the as-of date the person starts (negative: after it, so the job is still open then). */
+  /** Days before the as-of date the person starts (negative: after it, so the job is still open then). startsOn, when set, gives the day instead. */
   startsDaysBeforeAsOf: number
   /**
    * For a job still open on the as-of date: the day it opens, in days before the as-of date (default: about
    * seven weeks before the start). It makes no offer by the as-of date.
    */
   opensDaysBeforeAsOf?: number
-  /** Start on exactly that day (the offer builder's date field), not the Monday on or after it. */
-  exactStart?: boolean
+  /** Start on exactly this day of a pay period, or the next business day (the offer builder's date field), not on a Monday. */
+  startsOn?: PayPeriodDay
   /** Leads report to the founder, head their department and are the hiring manager for the rest of it. */
   lead?: boolean
   /** An hourly job: hours a week, full or part time, and the posted hourly range. Its band makes it non-exempt (setup.bands). */
@@ -39,10 +45,10 @@ export type RolePlan = {
 
 /** Things that happen to people after they are hired, in days relative to the as-of date. */
 export type LifeEvents = {
-  /** A protected leave for the person hired in roles[role]. */
-  leave?: { role: number; kind: 'bonding' | 'cfra' | 'pdl'; requestedDaysBeforeAsOf: number; startsDaysBeforeAsOf: number; returnsDaysAfterAsOf: number }
-  /** The person hired in roles[role] is let go; the last day falls inside a pay period. */
-  termination?: { role: number; lastDayDaysBeforeAsOf: number; reason: string }
+  /** A protected leave for the person hired in roles[role], starting on a day of a pay period. */
+  leave?: { role: number; kind: 'bonding' | 'cfra' | 'pdl'; requestedDaysBeforeAsOf: number; startsOn: PayPeriodDay; returnsDaysAfterAsOf: number }
+  /** The person hired in roles[role] is let go, with the last day on a day of a pay period. */
+  termination?: { role: number; lastDayOn: PayPeriodDay; reason: string }
 }
 
 export type CompanyPlan = {
@@ -269,9 +275,9 @@ export const SCENARIOS: Record<ScenarioName, Scenario> = {
           levelId: 'lv-l1',
           hourly: { hoursPerWeek: 40, partTime: false, range: [28, 34] },
           noEquity: true,
-          // A Wednesday in the middle of the second-half pay period.
+          // The middle of the pay period before the as-of date's (2026-09-23 as of 2026-10-09).
           startsDaysBeforeAsOf: 16,
-          exactStart: true,
+          startsOn: { periodsBack: 1, day: 8 },
         },
       ],
       pipeline: [8, 12],
@@ -284,9 +290,10 @@ export const SCENARIOS: Record<ScenarioName, Scenario> = {
         ],
       },
       life: {
-        leave: { role: 2, kind: 'bonding', requestedDaysBeforeAsOf: 35, startsDaysBeforeAsOf: 17, returnsDaysAfterAsOf: 70 },
-        // A Thursday, the second day of the second-half pay period.
-        termination: { role: 4, lastDayDaysBeforeAsOf: 22, reason: 'Performance' },
+        // From 2026-09-22 as of 2026-10-09.
+        leave: { role: 2, kind: 'bonding', requestedDaysBeforeAsOf: 35, startsOn: { periodsBack: 1, day: 7 }, returnsDaysAfterAsOf: 70 },
+        // The second day of the pay period before the as-of date's (2026-09-17 as of 2026-10-09).
+        termination: { role: 4, lastDayOn: { periodsBack: 1, day: 2 }, reason: 'Performance' },
       },
     },
   },

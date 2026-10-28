@@ -1,11 +1,14 @@
 // The pure parts of `npm run sim` (scripts/dev/sim.ts, docs/DEV.md "Simulate a company"): the command line,
-// how long an advance runs, the week shift that puts a generated company on today's date, the company's date
-// between commands, the cache key and the names of saves. No file, network or database access (the cache key
-// reads files through a function the caller passes), so tests import it directly.
+// how long an advance runs, the company reset puts on today's date, the company's date between commands,
+// the cache key and the names of saves. No file, network or database access (the cache key reads files, and
+// reset gets its generated company, through functions the caller passes), so tests import it directly.
 import { createHash } from 'node:crypto'
 import path from 'node:path'
-import { addDays, addMonths, daysBetween, type ISODate, isUsableDate } from '../../src/lib/dates'
-import { type PolicyName, POLICIES } from '../../src/sim/advance'
+import type { DB } from '../../src/domain/types'
+import { addDays, addMonths, daysBetween, getClockOverride, type ISODate, isUsableDate, setClockOverride } from '../../src/lib/dates'
+import { num } from '../../src/lib/format'
+import { advance, type PolicyName, POLICIES } from '../../src/sim/advance'
+import { lawCoverage } from '../../src/sim/generate'
 import { SCENARIO_NAMES, SCENARIOS, type ScenarioName } from '../../src/sim/scenarios'
 import { MAX_OFFSET } from './stack-lib.mjs'
 
@@ -21,7 +24,7 @@ export const USAGE = `Usage: npm run sim -- <command> [options]
   run <scenario>                       generate a scenario and print its summary
       [--seed N] [--as-of YYYY-MM-DD]  another seed or as-of date than the scenario's own
       [--out file.json]                also write the workspace, as Settings > Data > Import reads it
-  reset <scenario> [--seed N]          replace the stack's company with the scenario, moved to today
+  reset <scenario> [--seed N]          replace the stack's company with the scenario, on today's date
       [--as-of YYYY-MM-DD] [--no-shift]  (--no-shift keeps it on its as-of date)
   advance <30d|12w|3m|YYYY-MM-DD>      live the stack's company through the next days
       [--policy quiet|normal|busy] [--seed N]
@@ -157,31 +160,66 @@ export function advanceTarget(duration: Duration, from: ISODate): ISODate {
 }
 
 export type WeekShift = {
-  /** Whole weeks, in days: the move from the as-of date to the latest same weekday on or before today. */
+  /** Whole weeks, in days: from the as-of date to the latest same weekday on or before today. */
   days: number
-  /** The as-of date after the move. */
+  /** The as-of date reset generates the scenario on: that weekday. */
   movedAsOf: ISODate
   /** Days from there to today (0 to 6), which reset lives through with the time machine. */
   rest: number
 }
 
 /**
- * How reset moves a company generated as of `asOf` (founded on `foundedOn`) so its date is `today`: whole
- * weeks to the latest same weekday on or before today, then the rest of the way lived day by day. Law values
- * stay on their own dates, so a move that carries the founding date before the law coverage, or today past
- * it, is refused: the company would meet law tables and holidays nobody checked.
+ * The date reset generates a scenario on so that the company's date can be `today`: the latest day on or
+ * before today with the as-of date's weekday, whole weeks away, so the plan's weekdays keep their names.
+ * Today past the dates the built-in rules cover is refused.
  */
-export function weekShift(input: { asOf: ISODate; foundedOn: ISODate; today: ISODate; coverage: { from: ISODate; to: ISODate } }): WeekShift {
-  const { asOf, foundedOn, today, coverage } = input
+export function weekShift(input: { asOf: ISODate; today: ISODate; coverage: { from: ISODate; to: ISODate } }): WeekShift {
+  const { asOf, today, coverage } = input
   const gap = daysBetween(asOf, today)
   const days = Math.floor(gap / 7) * 7
-  const movedFounding = addDays(foundedOn, days)
   const rules = `the dates the built-in rules cover (${coverage.from} to ${coverage.to}: the law tables and the holiday list)`
-  if (today > coverage.to) throw new Error(`Today, ${today}, is after ${rules}, so reset cannot move a company to today. Use --no-shift to load it on its as-of date.`)
-  if (movedFounding < coverage.from) {
-    throw new Error(`Moved to today, the company would be founded on ${movedFounding}, before ${rules}. Use --no-shift to load it on its as-of date.`)
-  }
+  if (today > coverage.to) throw new Error(`Today, ${today}, is after ${rules}, so reset cannot put a company on today. Use --no-shift to load it on its as-of date.`)
   return { days, movedAsOf: addDays(asOf, days), rest: gap - days }
+}
+
+/** A generated company as reset receives it (sim.ts reads it from its cache or generates it). */
+export type Generated = { db: DB; summary: string; cached: boolean; ms: number }
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+/**
+ * The company reset loads for a generated scenario (not the sample as the app loads it), its date and a line
+ * that says how it got there. With `shift`, the company's date is `today`: the scenario is generated as of
+ * the date weekShift picks, so every date rule holds as it does for any as-of date (business days and
+ * holidays, plan quarters, pay periods: scenario plans are written relative to the as-of date), then lived
+ * through the 0 to 6 days left with the time machine at the normal policy. The story is never moved after
+ * it is made. Without `shift`, the scenario is on its own as-of date. `generate` gives the scenario as of
+ * a date. The clock override is left as it was.
+ */
+export function resetCompany(
+  input: { scenario: ScenarioName; seed: number; asOf: ISODate; shift: boolean; today: ISODate },
+  generate: (asOf: ISODate) => Generated,
+): { db: DB; companyDate: ISODate; generated: Generated; note: string } {
+  const { scenario, seed, asOf, today } = input
+  if (!input.shift) {
+    const generated = generate(asOf)
+    const note = `Kept on its as-of date, ${asOf} (--no-shift). The app shows it on today's date; Settings > Data > Pretend today is shows ${asOf}.`
+    return { db: generated.db, companyDate: asOf, generated, note }
+  }
+  const plan = weekShift({ asOf, today, coverage: lawCoverage() })
+  const generated = generate(plan.movedAsOf)
+  const on =
+    plan.days === 0 ? `On its as-of date, ${asOf}` : `Generated as of ${plan.movedAsOf}, the last ${WEEKDAYS[new Date(`${asOf}T12:00:00Z`).getUTCDay()]} on or before today`
+  if (plan.rest === 0) return { db: generated.db, companyDate: today, generated, note: `${on}: today.` }
+  const previous = getClockOverride()
+  setClockOverride(plan.movedAsOf)
+  try {
+    const lived = advance(generated.db, { to: today, seed: `reset ${scenario} ${seed}`, policy: 'normal' })
+    const days = `${plan.rest} day${plan.rest === 1 ? '' : 's'}`
+    return { db: lived.db, companyDate: today, generated, note: `${on}, then lived ${days} to today, ${today} (normal policy, ${num(lived.report.actions)} actions).` }
+  } finally {
+    setClockOverride(previous)
+  }
 }
 
 /** What reset and advance remember between commands: the company's date, for the history the server gave its last replace. */

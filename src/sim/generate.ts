@@ -29,7 +29,7 @@ import {
 import { makeRng, type Rng } from '@/data/seed/hiring/rng'
 import { DEFAULT_ROLE_TEMPLATES } from '@/data/starterRoleTemplates'
 import { businessDayOnOrAfter, closeOutMessage, dbHolidays, defaultStartDate, effectiveBand, mondayOnOrAfter, nextStage, stageById } from '@/domain/hiring'
-import { payCalendar } from '@/domain/payrun/calendar'
+import { payCalendar, periodContaining } from '@/domain/payrun/calendar'
 import { isEmployedOn } from '@/domain/people'
 import type { Candidate, DB, ID, OutcomeReason, Rating, Role } from '@/domain/types'
 import { proposedSlots } from '@/features/hiring/interviews/conflicts'
@@ -37,7 +37,7 @@ import { defaultStepFor, formatForStage } from '@/features/hiring/interviews/log
 import { addBusinessDays, addDays, addMonths, getClockOverride, type ISODate, isUsableDate, pacificDateOf, setClockOverride } from '@/lib/dates'
 import { withRunContext } from '@/lib/runContext'
 import { type ActionName, type ArgsOf, applyAction, type ResultOf, type SimState, type TraceLine } from './actions'
-import { type CompanyPlan, type RolePlan, SCENARIOS, type Scenario, type ScenarioName } from './scenarios'
+import { type CompanyPlan, type PayPeriodDay, type RolePlan, SCENARIOS, type Scenario, type ScenarioName } from './scenarios'
 import { summarize } from './summary'
 
 export type GenerateOptions = {
@@ -111,6 +111,14 @@ export function generateCompany(options: GenerateOptions): GeneratedCompany {
   } finally {
     setClockOverride(previous)
   }
+}
+
+/** The date a PayPeriodDay names for a company as of `asOf`, by its pay schedule (the last day of a short period at most). */
+function payPeriodDay(db: DB, asOf: ISODate, at: PayPeriodDay): ISODate {
+  let period = periodContaining(db, asOf)
+  for (let k = 0; k < at.periodsBack; k++) period = periodContaining(db, addDays(period.start, -1))
+  const day = addDays(period.start, at.day - 1)
+  return day > period.end ? period.end : day
 }
 
 /** The founding date: `ageMonths` before the as-of date, on a business day. */
@@ -260,8 +268,7 @@ class World {
     this.roles = plan.roles.map((p, index) => {
       const template = DEFAULT_ROLE_TEMPLATES.find((t) => t.id === p.template)
       if (!template) throw new Error(`${scenario.name}: no role template ${p.template}.`)
-      const target = addDays(asOf, -p.startsDaysBeforeAsOf)
-      const plannedStart = businessDayOnOrAfter(p.exactStart ? target : mondayOnOrAfter(target), this.holidays)
+      const plannedStart = businessDayOnOrAfter(p.startsOn ? payPeriodDay(db, asOf, p.startsOn) : mondayOnOrAfter(addDays(asOf, -p.startsDaysBeforeAsOf)), this.holidays)
       return { index, plan: p, departmentId: p.departmentId ?? template.departmentId, profile: profileFor(p), plannedStart }
     })
   }
@@ -405,14 +412,14 @@ class World {
           personId,
           kind: l.kind,
           requestedOn,
-          startDate: addDays(this.asOf, -l.startsDaysBeforeAsOf),
+          startDate: payPeriodDay(this.db, this.asOf, l.startsOn),
           expectedReturn: addDays(this.asOf, l.returnsDaysAfterAsOf),
         })
       })
     }
     if (life?.termination) {
       const t = life.termination
-      const lastDay = addDays(this.asOf, -t.lastDayDaysBeforeAsOf)
+      const lastDay = payPeriodDay(this.db, this.asOf, t.lastDayOn)
       this.at(lastDay, '10:30', () => {
         const personId = this.roles[t.role]?.personId
         if (!personId || !this.employed(personId, this.day)) throw new Error(`${this.scenario.name}: nobody from role ${t.role} is employed to let go on ${this.day}.`)

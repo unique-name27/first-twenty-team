@@ -1,19 +1,24 @@
-// The pure parts of npm run sim: the command line, durations, the week shift to today, the company's date
-// between commands, the cache key and save names; that it runs in California time on every computer; and
-// that npm run sim only ever talks to this computer.
+// The pure parts of npm run sim: the command line, durations, the company reset puts on today, the
+// company's date between commands, the cache key and save names; that it runs in California time on every
+// computer; and that npm run sim only ever talks to this computer.
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { pacificDateOf } from '@/domain/hiring/util'
+import { integrityProblems } from '@/domain/integrity'
+import { periodContaining } from '@/domain/payrun'
 import { parseBackup } from '@/features/settings/logic'
-import { today } from '@/lib/dates'
+import { getClockOverride, quarterOf, today } from '@/lib/dates'
 import { generateCompany } from '@/sim/generate'
 import {
   advanceTarget,
   cacheFileName,
   cachePrefix,
   companyDateFor,
+  type Generated,
   parseDuration,
   parseSimArgs,
+  resetCompany,
   saveNameProblem,
   scenarioLines,
   sourceHash,
@@ -99,25 +104,58 @@ describe('weekShift', () => {
   const coverage = { from: '2025-01-01', to: '2026-12-31' }
   const weekday = (d: string) => new Date(`${d}T12:00:00Z`).getUTCDay()
 
-  it('moves whole weeks to the same weekday on or before today, and lives the rest', () => {
+  it('picks the same weekday on or before today, whole weeks away, and the days left', () => {
     // 2026-10-09 is a Friday; 2026-10-28 a Wednesday.
-    expect(weekShift({ asOf: '2026-10-09', foundedOn: '2025-03-10', today: '2026-10-28', coverage })).toEqual({ days: 14, movedAsOf: '2026-10-23', rest: 5 })
-    expect(weekShift({ asOf: '2026-10-09', foundedOn: '2025-03-10', today: '2026-10-30', coverage })).toEqual({ days: 21, movedAsOf: '2026-10-30', rest: 0 })
-    expect(weekShift({ asOf: '2026-10-09', foundedOn: '2025-03-10', today: '2026-10-09', coverage })).toEqual({ days: 0, movedAsOf: '2026-10-09', rest: 0 })
+    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-28', coverage })).toEqual({ days: 14, movedAsOf: '2026-10-23', rest: 5 })
+    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-30', coverage })).toEqual({ days: 21, movedAsOf: '2026-10-30', rest: 0 })
+    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-09', coverage })).toEqual({ days: 0, movedAsOf: '2026-10-09', rest: 0 })
     // Today before the as-of date: back to the Friday before today.
-    expect(weekShift({ asOf: '2026-10-09', foundedOn: '2025-03-10', today: '2026-10-01', coverage })).toEqual({ days: -14, movedAsOf: '2026-09-25', rest: 6 })
+    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-01', coverage })).toEqual({ days: -14, movedAsOf: '2026-09-25', rest: 6 })
     for (const today of ['2026-10-10', '2026-11-03', '2026-12-31', '2026-08-14']) {
-      const s = weekShift({ asOf: '2026-10-09', foundedOn: '2025-03-10', today, coverage })
+      const s = weekShift({ asOf: '2026-10-09', today, coverage })
       expect(s.days % 7 === 0, today).toBe(true)
       expect(weekday(s.movedAsOf), today).toBe(weekday('2026-10-09'))
       expect(s.rest >= 0 && s.rest <= 6, today).toBe(true)
     }
   })
 
-  it('refuses a move past the law coverage either way', () => {
-    expect(() => weekShift({ asOf: '2026-10-09', foundedOn: '2025-03-10', today: '2027-01-04', coverage })).toThrow(/2027-01-04, is after the dates the built-in rules cover \(2025-01-01 to 2026-12-31/)
-    expect(() => weekShift({ asOf: '2026-10-09', foundedOn: '2025-01-06', today: '2026-09-20', coverage })).toThrow(/founded on 2024-12-16, before/)
-    expect(() => weekShift({ asOf: '2026-10-09', foundedOn: '2025-01-06', today: '2026-10-28', coverage })).not.toThrow()
+  it('refuses a today past the law coverage', () => {
+    expect(() => weekShift({ asOf: '2026-10-09', today: '2027-01-04', coverage })).toThrow(/2027-01-04, is after the dates the built-in rules cover \(2025-01-01 to 2026-12-31/)
+  })
+})
+
+describe('reset', () => {
+  /** What sim.ts passes resetCompany: the scenario generated as of a date (here without the cache). */
+  const generate = (scenario: 'payroll-edge' | 'seed-8', seed: number) => (asOf: string): Generated => {
+    const g = generateCompany({ scenario, seed, asOf })
+    return { db: g.db, summary: g.summary, cached: false, ms: 0 }
+  }
+
+  it('generates the scenario on the date that puts it on today, so holidays, plan quarters and pay periods hold', () => {
+    // Moving the company made for 2026-10-09 two weeks on put interviews on Labor Day, Thanksgiving and
+    // Memorial Day, and left a plan line in 2026-Q3 with a start in October.
+    const r = resetCompany({ scenario: 'payroll-edge', seed: 7070, asOf: '2026-10-09', shift: true, today: '2026-10-28' }, generate('payroll-edge', 7070))
+    expect(r.companyDate).toBe('2026-10-28')
+    expect(r.generated.summary).toContain('Seed 7070, as of 2026-10-23.')
+    expect(r.note).toMatch(/^Generated as of 2026-10-23, the last Friday on or before today, then lived 5 days to today, 2026-10-28 \(normal policy, \d+ actions\)\.$/)
+    const { db } = r
+    const holidays = new Set(db.holidays.map((h) => h.date))
+    expect(db.interviews.filter((i) => holidays.has(pacificDateOf(i.startsAt))).map((i) => i.startsAt)).toEqual([])
+    expect(db.people.filter((p) => holidays.has(p.startDate)).map((p) => p.startDate)).toEqual([])
+    expect(db.plan.filter((s) => s.quarter !== quarterOf(s.targetStart)).map((s) => `${s.title} ${s.targetStart} ${s.quarter}`)).toEqual([])
+    // payroll-edge's last day still falls inside a pay period, not on its first day.
+    const lastDay = db.people.find((p) => p.separation?.type === 'terminated')?.separation?.lastDay as string
+    expect(lastDay > periodContaining(db, lastDay).start).toBe(true)
+    expect(integrityProblems(db)).toEqual([])
+    expect(getClockOverride()).toBeNull()
+  })
+
+  it('keeps the scenario on its as-of date with --no-shift, and lives no days when today is that weekday', () => {
+    const kept = resetCompany({ scenario: 'seed-8', seed: 8008, asOf: '2026-10-09', shift: false, today: '2026-10-28' }, generate('seed-8', 8008))
+    expect([kept.companyDate, kept.note]).toEqual(['2026-10-09', expect.stringMatching(/^Kept on its as-of date, 2026-10-09 \(--no-shift\)/)])
+    const friday = resetCompany({ scenario: 'seed-8', seed: 8008, asOf: '2026-10-09', shift: true, today: '2026-10-30' }, generate('seed-8', 8008))
+    expect([friday.companyDate, friday.note]).toEqual(['2026-10-30', 'Generated as of 2026-10-30, the last Friday on or before today: today.'])
+    expect(friday.db).toBe(friday.generated.db)
   })
 })
 

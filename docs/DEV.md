@@ -425,7 +425,7 @@ so you can try the app on a company of 8, 15 or 20 people instead of the sample.
 | --- | --- |
 | `npm run sim -- list` | The scenarios, one line each |
 | `npm run sim -- run full-20` | Generates a scenario and prints its summary. `--seed N` and `--as-of YYYY-MM-DD` pick another seed or date; `--out co.json` also writes it as a backup that Settings > Data > Import reads. Needs no stack |
-| `npm run sim -- reset full-20` | Replaces the stack's company with the scenario, moved to today (below). Takes `--seed`, `--as-of` and `--no-shift` |
+| `npm run sim -- reset full-20` | Replaces the stack's company with the scenario, on today's date (below). Takes `--seed`, `--as-of` and `--no-shift` |
 | `npm run sim -- advance 30d` | Lives the stack's company through the next 30 days: `12w`, `3m` or a date work too. `--policy quiet`, `normal` (the default) or `busy`; `--seed N` (default 1) |
 | `npm run sim -- save before-payroll` | Keeps a copy of the stack's company in `.data/dev/saves` |
 | `npm run sim -- restore before-payroll` | Puts that copy back |
@@ -448,17 +448,16 @@ it was replaced with another copy of it. With no stack running, `npm run sim` ta
 (`.data/dev/stack.pid`: `npm run stack` refuses to start meanwhile and says why) and writes to the database
 folder itself. Ctrl+C then waits until the write is done, because a write cut short can damage the folder.
 
-**Moved to today.** The app shows a company on today's date, so reset moves the generated story by whole
-weeks, the way the sample moves itself on load: weekdays keep their names, so interviews stay on weekdays and
-starts on Mondays. It moves to the last day on or before today that falls on the as-of date's weekday, then
-lives the 0 to 6 days left with the time machine (normal policy), so the company's date is today. Law values,
-the holiday list, time off policies and checklist templates stay on their own dates; only the company's story
-moves. Pay periods follow the calendar, so pay runs are marked again for the periods the moved story covers.
-Because the law values do not move, a move can carry part of the story across January 1 into the next year's
-values, and reset refuses a move that would put the founding date before 2025-01-01 or today after 2026-12-31
-(the dates the built-in rules cover). `--no-shift` loads the company on its as-of date instead: the app still
-shows today, and Settings > Data > Pretend today is shows the as-of date. `ledgerlark` is the sample as the app
-loads it, moved by the app's own rule. Tests never move a company: they use the fixed as-of date.
+**On today's date.** The app shows a company on today's date, so reset generates the scenario as of the last
+day on or before today that falls on its as-of date's weekday (scenario plans are written relative to the
+as-of date), then lives the 0 to 6 days left with the time machine (normal policy), so the company's date is
+today. Because the company is generated for that date, rather than made for another date and moved, every
+date rule holds as it does in the app: starts and interviews skip company holidays, plan lines sit in the
+quarter of their target start, pay runs follow the real pay periods, and payroll-edge's start, leave and last
+day fall inside pay periods. The summary reset prints names the as-of date it used. Today after 2026-12-31
+(the dates the built-in rules cover) is refused. `--no-shift` loads the scenario on its own as-of date instead:
+the app still shows today, and Settings > Data > Pretend today is shows the as-of date. `ledgerlark` is the
+sample as the app loads it, moved by the app's own rule.
 
 **The company's date.** advance starts from the company's date: the day the last reset, advance or restore
 left it on, kept in `.data/dev/sim-date.json` for the copy the server holds (edits in the app keep it; any
@@ -480,15 +479,16 @@ app treats it as another copy of that company, or as another company when the st
 
 **The cache.** Generated companies are kept in `.data/dev/scenarios`, by scenario, seed, as-of date and a hash
 of every source file generation reaches (the generator, the domain rules, the law tables, the name pools), so
-a repeat reset takes about a second and any change to that code generates again. Delete the folder whenever
-you like. `npm run stack -- --fresh` deletes the whole data folder, saves and cache included.
+a repeat reset in the same week takes about a second and any change to that code generates again. Delete the
+folder whenever you like. `npm run stack -- --fresh` deletes the whole data folder, saves and cache included.
 
 **File a bug as scenario, seed and as-of date.** "full-20, seed 2020, as of 2026-10-09: the second pay run of
 November leaves out the person on leave." Anyone can rebuild that company exactly, with
 `npm run sim -- run full-20 --seed 2020 --as-of 2026-10-09 --out co.json` or `generateCompany` in a test. If
-you saw it in the stack, add the day you ran reset (the move to today depends on it) and each advance in
-order, with its policy and seed: "reset on 2026-10-28, then advance 30d --policy busy --seed 1". Best of all,
-write it as a failing test on the fixed as-of date: a generated company, `advance` if needed, and the check.
+you saw it in the stack, take the as-of date from the summary reset printed, and add the day you ran reset
+(it lived the days from that date to today) and each advance in order, with its policy and seed: "full-20,
+seed 2020, as of 2026-10-23, reset on 2026-10-28, then advance 30d --policy busy --seed 1". Best of all, write
+it as a failing test on a fixed as-of date: a generated company, `advance` if needed, and the check.
 
 `server/src/sim/smoke.test.ts` (server tier, on CI) generates every scenario but `stress`, loads it into the
 server as an Import would, advances it 90 days at the normal policy (the last week runs into January 2027 on

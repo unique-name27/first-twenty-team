@@ -174,8 +174,9 @@ describe('each scenario is what it says', () => {
     expect(db.levels.find((l) => l.id === 'lv-l6')).toMatchObject({ code: 'L6', order: 6 })
   })
 
-  it('payroll-edge has hourly staff, a hire mid period, a leave and a termination inside pay periods', () => {
-    const { db, asOf } = generated('payroll-edge')
+  /** payroll-edge's cases: hourly staff, and a start, a leave and a last day inside pay periods. Returns the latest start. */
+  function payrollEdgeCases(g: GeneratedCompany): string {
+    const { db, asOf } = g
     const people = employedOn(db, asOf)
     expect(people.filter((p) => p.employmentType === 'part_time' && p.flsa === 'non_exempt').map((p) => p.hoursPerWeek)).toEqual([24])
     expect(people.filter((p) => p.employmentType === 'full_time' && p.flsa === 'non_exempt')).toHaveLength(1)
@@ -186,7 +187,6 @@ describe('each scenario is what it says', () => {
       return d > p.start && d < p.end
     }
     const latest = [...people].sort((a, b) => (a.startDate < b.startDate ? 1 : -1))[0]
-    expect(latest.startDate).toBe('2026-09-23')
     expect(midPeriod(latest.startDate)).toBe(true)
     const leave = db.leaveCases.find((l) => !l.returnedOn)
     expect(leave && midPeriod(leave.startDate) && leave.startDate <= asOf && (leave.expectedReturn ?? '') > asOf).toBe(true)
@@ -194,6 +194,17 @@ describe('each scenario is what it says', () => {
     expect(gone.map((p) => p.separation?.type)).toEqual(['terminated'])
     expect(midPeriod(gone[0].separation?.lastDay as string)).toBe(true)
     expect(working(db, asOf)).toBe(6)
+    return latest.startDate
+  }
+
+  it('payroll-edge has hourly staff, a hire mid period, a leave and a termination inside pay periods', () => {
+    expect(payrollEdgeCases(generated('payroll-edge'))).toBe('2026-09-23')
+  })
+
+  it('payroll-edge keeps those cases inside pay periods as of another date, as reset generates it', () => {
+    const later = generateCompany({ scenario: 'payroll-edge', asOf: '2026-10-23' })
+    expect(payrollEdgeCases(later)).toBe('2026-10-08')
+    expect(integrityProblems(later.db)).toEqual([])
   })
 
   it('pipeline-heavy has about 300 candidates and three jobs open with full pipelines', () => {

@@ -2,7 +2,7 @@
 //
 //   npm run sim -- list                              the scenarios
 //   npm run sim -- run full-20 [--out co.json]       generate one, print its summary, write it for Import
-//   npm run sim -- reset full-20                     replace the stack's company with one, moved to today
+//   npm run sim -- reset full-20                     replace the stack's company with one, on today's date
 //   npm run sim -- advance 30d                       live the stack's company through the next 30 days
 //   npm run sim -- save <name> | restore <name> | saves
 //   npm run sim -- --help                            everything else
@@ -35,9 +35,8 @@ import { type ISODate, setClockOverride, today } from '../../src/lib/dates'
 import { num } from '../../src/lib/format'
 import { newId } from '../../src/lib/id'
 import { advance } from '../../src/sim/advance'
-import { generateCompany, lawCoverage } from '../../src/sim/generate'
+import { generateCompany } from '../../src/sim/generate'
 import { SCENARIOS, type ScenarioName } from '../../src/sim/scenarios'
-import { shiftCompany } from '../../src/sim/shift'
 import { loadSample, migrate as upgradeStored } from '../../src/store/db'
 import {
   advanceTarget,
@@ -46,13 +45,14 @@ import {
   type CompanyDate,
   companyDateFor,
   DEFAULT_ADVANCE_SEED,
+  type Generated,
   parseDuration,
   parseSimArgs,
+  resetCompany,
   type SimArgs,
   scenarioLines,
   sourceHash,
   USAGE,
-  weekShift,
   workspaceJson,
 } from './sim-lib'
 import { probe, readSecret } from './stack-api'
@@ -230,7 +230,6 @@ function rememberDate(offset: number, value: CompanyDate): void {
   writeAtomically(dateFile(offset), `${JSON.stringify(value, null, 2)}\n`)
 }
 
-type Generated = { db: DB; summary: string; cached: boolean; ms: number }
 type CacheEntry = { scenario: ScenarioName; seed: number; asOf: ISODate; sourceHash: string; summary: string; db: DB }
 
 /**
@@ -289,8 +288,6 @@ async function reset(args: SimArgs): Promise<void> {
   const scenario = SCENARIOS[args.scenario as ScenarioName]
   if (scenario.target !== 'browser') throw new Error(`${scenario.name} is too big for a browser, so it is never loaded into the stack. npm run sim -- run ${scenario.name} --out file.json writes it.`)
   const realToday = today()
-  const seed = args.seed ?? scenario.seed
-  const asOf = args.asOf ?? scenario.asOf
   const lines: string[] = []
   let db: DB
   let companyDate: ISODate
@@ -302,27 +299,12 @@ async function reset(args: SimArgs): Promise<void> {
     companyDate = realToday
     lines.push(`Scenario ledgerlark: ${db.company.name}, the sample as the app loads it, moved to this week.`)
   } else {
-    const g = generated(args.offset, scenario.name, seed, asOf)
-    lines.push(g.summary, `${g.cached ? 'From the cache' : 'Generated'} in ${secs(g.ms)}.`)
-    db = g.db
-    companyDate = asOf
-    if (args.shift) {
-      const plan = weekShift({ asOf, foundedOn: db.company.foundedOn, today: realToday, coverage: lawCoverage() })
-      db = shiftCompany(db, plan.days, asOf)
-      const weeks = Math.abs(plan.days / 7)
-      const moved = plan.days === 0 ? `Kept on ${asOf}` : `Moved ${weeks} week${weeks === 1 ? '' : 's'} ${plan.days > 0 ? 'later' : 'earlier'}, to ${plan.movedAsOf}`
-      if (plan.rest > 0) {
-        setClockOverride(plan.movedAsOf)
-        try {
-          const lived = advance(db, { to: realToday, seed: `reset ${scenario.name} ${seed}`, policy: 'normal' })
-          db = lived.db
-          lines.push(`${moved}, then lived ${plan.rest} day${plan.rest === 1 ? '' : 's'} to today, ${realToday} (normal policy, ${num(lived.report.actions)} actions).`)
-        } finally {
-          setClockOverride(null)
-        }
-      } else lines.push(`${moved}: today, ${realToday}.`)
-      companyDate = realToday
-    } else lines.push(`Kept on its as-of date, ${asOf} (--no-shift). The app shows it on today's date; Settings > Data > Pretend today is shows ${asOf}.`)
+    // Generated on the date that puts it on today (sim-lib.ts resetCompany), never moved after it is made.
+    const seed = args.seed ?? scenario.seed
+    const r = resetCompany({ scenario: scenario.name, seed, asOf: args.asOf ?? scenario.asOf, shift: args.shift, today: realToday }, (asOf) => generated(args.offset, scenario.name, seed, asOf))
+    lines.push(r.generated.summary, `${r.generated.cached ? 'From the cache' : 'Generated'} in ${secs(r.generated.ms)}.`, r.note)
+    db = r.db
+    companyDate = r.companyDate
   }
   // A new identity every reset: a browser that syncs takes it whole, as another company, never merged with what it had.
   db = { ...db, meta: { ...db.meta, workspaceId: newId('ws') } as DB['meta'] }
