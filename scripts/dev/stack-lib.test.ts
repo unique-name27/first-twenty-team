@@ -131,6 +131,13 @@ describe('a stack left behind', () => {
     expect(isStackCommandLine(['node', '/usr/lib/node_modules/npm/bin/npm-cli.js', 'run', 'stack', ''].join('\0'))).toBe(false)
     expect(isStackCommandLine('')).toBe(false)
   })
+
+  it('counts npm run sim, which holds the folder while it writes to it with no stack running', () => {
+    expect(isStackCommandLine(['node', '--require', '/repo/node_modules/tsx/dist/preflight.cjs', 'scripts/dev/sim.ts', 'reset', 'full-20', ''].join('\0'))).toBe(true)
+    expect(isStackCommandLine(['C:\\node.exe', 'E:\\repo\\scripts\\dev\\sim.ts', 'restore', 'x'].join('\0'))).toBe(true)
+    expect(isStackCommandLine(['node', 'scripts/dev/sql.ts', 'hires', ''].join('\0'))).toBe(false)
+    expect(isStackCommandLine(['sh', '-c', 'tsx scripts/dev/sim.ts reset full-20', ''].join('\0'))).toBe(false)
+  })
 })
 
 describe('the dev server never serves .data/', () => {

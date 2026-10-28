@@ -1,14 +1,16 @@
 // Whether a stack still runs on a data folder, for `npm run stack` (scripts/dev/stack.mjs: one stack per
-// folder) and `npm run sql` (scripts/dev/sql.ts: it opens the database itself only when no stack holds
-// it). Reads the stack's pid file and asks the system about that process. Types are in stack-process.d.mts.
+// folder), `npm run sql` (scripts/dev/sql.ts: it opens the database itself only when no stack holds it) and
+// `npm run sim` (scripts/dev/sim.ts: it takes the same pid file while it writes to a folder no stack holds).
+// Reads the pid file and asks the system about that process. Types are in stack-process.d.mts.
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { isStackCommandLine } from './stack-lib.mjs'
 
 /**
- * The stack's pid file ({pid, startedAt, ports}), or null when it is missing or unreadable.
+ * The stack's pid file ({pid, startedAt, ports}, or {pid, startedAt, holder: 'npm run sim'} while npm run sim
+ * holds the folder), or null when it is missing or unreadable.
  * @param {string} pidFile
- * @returns {{ pid: number, startedAt?: string } | null}
+ * @returns {{ pid: number, startedAt?: string, holder?: string } | null}
  */
 export function readStackPid(pidFile) {
   if (!existsSync(pidFile)) return null

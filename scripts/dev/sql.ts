@@ -11,7 +11,7 @@
 // STATEMENT_TIMEOUT_MS, then deletes the copy. Either way the statement runs in
 // server/src/dev/readonly.ts: one statement, read only, rolled back. It never reads DATABASE_URL or a .env
 // file, and never connects anywhere but this computer's dev stack. The pure parts are in sql-lib.ts.
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Worker } from 'node:worker_threads'
@@ -32,6 +32,7 @@ import {
   WORKSPACE_LOOKUP_SQL,
 } from './sql-lib'
 import type { FromWorker, ToWorker, WorkerData } from './sql-worker'
+import { probe, readSecret } from './stack-api'
 import { DEV_TOOLS_FILE, devDirName, stackPorts } from './stack-lib.mjs'
 import { isStackProcess, readStackPid } from './stack-process.mjs'
 
@@ -53,29 +54,6 @@ type Runner = {
   where: string
   run(request: SqlRequest): Promise<SqlAnswer>
   close(): Promise<void>
-}
-
-/** The secret in the stack's dev-tools.json, or null when the file is missing or not one of ours. */
-function readSecret(file: string): string | null {
-  try {
-    const parsed = JSON.parse(readFileSync(file, 'utf8')) as { secret?: unknown }
-    return typeof parsed.secret === 'string' && parsed.secret.length >= 32 ? parsed.secret : null
-  } catch {
-    return null
-  }
-}
-
-const refused = (err: unknown) => (err as { cause?: { code?: string } } | null)?.cause?.code === 'ECONNREFUSED'
-
-/** Whether anything listens on 127.0.0.1:port: 'nothing' only when the connection is refused. */
-async function probe(port: number): Promise<'answers' | 'nothing'> {
-  try {
-    await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(2000) })
-    return 'answers'
-  } catch (err) {
-    // No answer in time still means something holds the port: a busy API, most likely.
-    return refused(err) ? 'nothing' : 'answers'
-  }
 }
 
 /** Asks the running stack's API (server/src/dev/routes.ts). */
@@ -223,6 +201,7 @@ async function connect(offset: number): Promise<Runner> {
   }
   const stack = readStackPid(path.join(dir, 'stack.pid'))
   if (stack && isStackProcess(stack.pid)) {
+    if (stack.holder === 'npm run sim') throw new Error(`npm run sim is writing to ${devDir} (pid ${stack.pid}). Try again when it has finished.`)
     throw new Error(`A stack is starting on ${devDir} (pid ${stack.pid}) and holds its database. Wait for "First Twenty is running", then try again.`)
   }
   const pgDir = path.join(dir, 'pg')

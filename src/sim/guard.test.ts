@@ -1,6 +1,7 @@
 // src/sim generates companies for tests and tools. The app must never import it, or the generator, its
-// scenarios and the name pools would ship in the build: only files inside src/sim and test files may. This
-// reads the source instead of building (a build is slow), the way src/sync/testing/guard.test.ts does.
+// scenarios and the name pools would ship in the build: only files inside src/sim and test files may (and
+// tools outside src, such as npm run sim in scripts/dev). This reads the source instead of building (a build
+// is slow), the way src/sync/testing/guard.test.ts does.
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'

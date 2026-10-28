@@ -128,7 +128,9 @@ describe('problemText', () => {
 })
 
 describe('npm run sql stays on this computer', () => {
-  const sources = ['scripts/dev/sql.ts', 'scripts/dev/sql-worker.ts', 'scripts/dev/sql-lib.ts', 'scripts/dev/sql-copy.ts'].map((file) => [file, readFileSync(file, 'utf8')] as const)
+  const sources = ['scripts/dev/sql.ts', 'scripts/dev/sql-worker.ts', 'scripts/dev/sql-lib.ts', 'scripts/dev/sql-copy.ts', 'scripts/dev/stack-api.ts'].map(
+    (file) => [file, readFileSync(file, 'utf8')] as const,
+  )
 
   it('never reads DATABASE_URL, a .env file or the server settings', () => {
     for (const [file, code] of sources) {
@@ -139,8 +141,7 @@ describe('npm run sql stays on this computer', () => {
   })
 
   it('only ever calls 127.0.0.1', () => {
-    const [, sql] = sources[0]
-    const urls = [...sql.matchAll(/`(\w+:\/\/[^`]*)`/g)].map((m) => m[1])
-    expect(urls).toEqual(['http://127.0.0.1:${port}/api/health', 'http://127.0.0.1:${port}${DEV_SQL_PATH}'])
+    const urls = sources.flatMap(([, code]) => [...code.matchAll(/`(\w+:\/\/[^`]*)`/g)].map((m) => m[1]))
+    expect(urls.sort()).toEqual(['http://127.0.0.1:${port}${DEV_SQL_PATH}', 'http://127.0.0.1:${port}/api/health'])
   })
 })

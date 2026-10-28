@@ -80,6 +80,9 @@ function portFree(port) {
 }
 
 const running = runningStack()
+if (running?.holder === 'npm run sim') {
+  die(`npm run sim is writing to this data folder (pid ${running.pid}). Start the stack again when it has finished.`)
+}
 if (running) {
   die(
     `a stack is already running on this data folder (pid ${running.pid}, started ${running.startedAt}).\n` +
@@ -267,6 +270,7 @@ if (!stopping) {
       `  API       http://127.0.0.1:${ports.api} (Vite passes /api through to it)`,
       `  Data      ${devDir} (npm run stack${offsetFlag ? `${offsetFlag} --fresh` : ' -- --fresh'} starts over)`,
       `  SQL       npm run sql${offsetFlag ? `${offsetFlag}` : ' --'} hires (read only; docs/DEV.md)`,
+      `  Simulate  npm run sim${offsetFlag ? `${offsetFlag}` : ' --'} reset full-20 (another company; docs/DEV.md)`,
       '  Stop      Ctrl+C',
       '',
     ].join('\n'),
