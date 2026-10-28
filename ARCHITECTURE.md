@@ -44,6 +44,8 @@ src/
 scripts/dev/  npm run stack: the dev stack runner, its database setup and the Vite dev sign-in endpoint
 server/       optional API server (Fastify + Postgres, PGlite in development and tests), SQL migrations,
               EC2 deploy kit (server/deploy). Built separately: npm run server:build. Guide: docs/SERVER.md
+              The read model (server/src/readmodel) generates SQL views for reading the data with plain
+              SQL, v_integrity_problems among them (the checks of src/domain/integrity.ts). Guide: docs/DEV.md
               One login belongs to one company (workspace); SIGNUP_MODE=open makes it a public demo where
               anyone can create a company (held to the demo limits), and CAREERS_HOSTS serves the careers
               page of every company that has it on.
