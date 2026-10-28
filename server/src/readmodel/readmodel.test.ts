@@ -386,6 +386,8 @@ describe('the sample, loaded through replaceWorkspace', () => {
     for (const view of ['v_current_job', 'v_hire_journey']) {
       const [small, large] = [await work(view, 'w-hires-x4'), await work(view, 'w-hires-x8')]
       expect(large / small, `${view}: ${small} then ${large}`).toBeLessThan(2.5)
+      // The workspace filter reaches the tables: a new company's few records take a fraction of the work.
+      expect(await work(view, 'w-blank'), view).toBeLessThan(small / 10)
     }
     const [n] = await rows<{ n: number }>(`SELECT count(*)::int AS n FROM v_hire_journey WHERE workspace_id = 'w-hires-x8'`)
     expect(n.n).toBe(9 * sample.applications.filter((a) => a.status === 'hired').length)
