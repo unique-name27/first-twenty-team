@@ -78,7 +78,8 @@ type Stack = {
   /** Where the company was read or written, for the line that says so. */
   where: string
   read(): Promise<StackWorkspace>
-  replace(db: DB): Promise<StackReplaced>
+  /** `expected`: the copy an advance read (history and seq), so an edit synced since is never replaced. */
+  replace(db: DB, expected?: { historyId: string; seq: number }): Promise<StackReplaced>
   close(): Promise<void>
 }
 
@@ -99,6 +100,9 @@ function apiStack(port: number, secret: string, devDir: string, restart: string)
     }
     const parsed = (await res.json().catch(() => null)) as Record<string, unknown> | null
     if (res.status === 200 && parsed) return parsed as T
+    if (res.status === 409 && parsed?.error === 'changed_meanwhile') {
+      throw new Error("The stack's company changed after npm run sim read it (an edit the app synced, most likely), so nothing was replaced. Run the command again.")
+    }
     if (res.status === 404) {
       throw new Error(`The stack's API did not take the request: it started before npm run sim existed, or ${devDir}/${DEV_TOOLS_FILE} is from another run. Restart it (${restart}) and try again.`)
     }
@@ -108,7 +112,7 @@ function apiStack(port: number, secret: string, devDir: string, restart: string)
   return {
     where: `through the running stack's API (127.0.0.1:${port})`,
     read: () => call<StackWorkspace>('GET'),
-    replace: (db) => call<StackReplaced>('POST', { workspaceId: STACK_WORKSPACE, db }),
+    replace: (db, expected) => call<StackReplaced>('POST', { workspaceId: STACK_WORKSPACE, db, ...(expected ? { expected } : {}) }),
     async close() {},
   }
 }
@@ -188,9 +192,9 @@ async function folderStack(dir: string, devDir: string, restart: string): Promis
   return {
     where: `in ${devDir}/pg (no stack is running)`,
     read: () => readStackWorkspace(open()),
-    async replace(next) {
+    async replace(next, expected) {
       unlessStopping()
-      const done = await replaceStackWorkspace(open(), next)
+      const done = await replaceStackWorkspace(open(), next, STACK_WORKSPACE, expected)
       await open().close()
       db = null
       unlessStopping()
@@ -344,13 +348,13 @@ async function replaceAndSay(offset: number, db: DB, companyDate: ISODate, after
 }
 
 /** The stack's company as the app would load it, its date, and the stack (still open, for the replace). */
-async function readCompany(offset: number): Promise<{ stack: Stack; db: DB; historyId: string; date: ISODate }> {
+async function readCompany(offset: number): Promise<{ stack: Stack; db: DB; historyId: string; seq: number; date: ISODate }> {
   const stack = await openStack(offset)
   try {
     const ws = await stack.read()
     if (ws.empty) throw new Error(`The stack has no company yet. npm run sim -- ${offset ? `--offset ${offset} ` : ''}reset seed-8 loads one.`)
     const remembered = readJson<CompanyDate>(dateFile(offset))
-    return { stack, db: upgradeStored(ws.db as unknown as DB), historyId: ws.historyId, date: companyDateFor(remembered, ws.historyId, today()) }
+    return { stack, db: upgradeStored(ws.db as unknown as DB), historyId: ws.historyId, seq: ws.seq, date: companyDateFor(remembered, ws.historyId, today()) }
   } catch (err) {
     await stack.close()
     throw err
@@ -358,7 +362,7 @@ async function readCompany(offset: number): Promise<{ stack: Stack; db: DB; hist
 }
 
 async function advanceStack(args: SimArgs): Promise<void> {
-  const { stack, db, date: from } = await readCompany(args.offset)
+  const { stack, db, historyId, seq: readSeq, date: from } = await readCompany(args.offset)
   try {
     const to = advanceTarget(parseDuration(args.duration as string), from)
     const seed = args.seed ?? DEFAULT_ADVANCE_SEED
@@ -374,7 +378,8 @@ async function advanceStack(args: SimArgs): Promise<void> {
     console.log(`Lived ${num(result.report.days)} days in ${secs(Date.now() - started)}.`)
     console.log(integrityLines(result.db).join('\n'))
     const replaced = Date.now()
-    const done = await stack.replace(result.db)
+    // Only while the stack still holds the copy that was read: an edit the app synced meanwhile is never replaced.
+    const done = await stack.replace(result.db, { historyId, seq: readSeq })
     rememberDate(args.offset, { historyId: done.historyId, date: to })
     console.log(`Replaced the stack's company ${stack.where}: ${num(done.records)} records, in ${secs(Date.now() - replaced)}.`)
     const real = today()

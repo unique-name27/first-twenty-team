@@ -4,6 +4,7 @@
 //   POST /__dev/sql         one read-only statement (readonly.ts)
 //   GET  /__dev/workspace   the stack's company, whole (workspace.ts), for npm run sim save and advance
 //   POST /__dev/workspace   replaces the stack's company as the app's Import does, for reset, advance and restore
+//                           (an advance sends the history and seq it read, and gets 409 if the company changed)
 // Only the development entry (server/src/dev/index.ts, which npm run stack starts) registers these routes;
 // server/src/index.ts and app.ts never import this folder (structure.test.ts checks).
 //
@@ -69,6 +70,13 @@ export function stackWorkspaceOf(requested: unknown, own: string): string | null
   return requested === own ? own : null
 }
 
+/** The body's `expected` copy ({ historyId, seq }), undefined when it names none, or null when it is not one. */
+export function expectedCopyOf(value: unknown): { historyId: string; seq: number } | undefined | null {
+  if (value === undefined) return undefined
+  if (!isPlainObject(value) || typeof value.historyId !== 'string' || !Number.isSafeInteger(value.seq)) return null
+  return { historyId: value.historyId, seq: value.seq as number }
+}
+
 /**
  * Registers the dev routes on `app` (before it listens), answering with `db`, for holders of `secret` only.
  * `workspaceId`: the stack's own company (default: the one npm run stack makes its dev login in).
@@ -102,8 +110,11 @@ export async function registerDevRoutes(app: FastifyInstance, deps: { db: Db; se
     }
     const workspaceId = stackWorkspaceOf(body.workspaceId, own)
     if (!workspaceId) return otherWorkspace(reply)
-    // A workspace the server refuses (a missing company, a duplicate id) is a 400 with the reason (app.ts error handler).
-    return replaceStackWorkspace(deps.db, body.db, workspaceId)
+    const expected = expectedCopyOf(body.expected)
+    if (expected === null) return reply.code(400).send({ error: 'refused', detail: 'expected is {"historyId": "...", "seq": 12}: the copy the company was read as.' })
+    // A workspace the server refuses (a missing company, a duplicate id) is a 400 with the reason, and a company
+    // that changed since the copy in `expected` a 409 (app.ts error handler).
+    return replaceStackWorkspace(deps.db, body.db, workspaceId, expected)
   })
 
   app.post(

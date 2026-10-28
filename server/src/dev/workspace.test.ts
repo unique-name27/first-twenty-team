@@ -180,6 +180,7 @@ describe('a browser that syncs with the stack', () => {
     return {
       st: () => status.getState(),
       db: () => store.getState().db,
+      edit: (label: string, recipe: (d: DB) => void) => store.getState().mutate(label, recipe),
       sync: async () => {
         await engine.syncNow()
         await engine.whenIdle()
@@ -204,5 +205,27 @@ describe('a browser that syncs with the stack', () => {
     await browser.sync()
     expect(browser.db().people.map((p) => p.id)).toContain('p-new')
     expect(browser.st()).toMatchObject({ replacedRemotely: null, restoredRemotely: { at: expect.any(String) } })
+  })
+
+  it('keeps an edit the app synced after an advance read the company: that replace gets 409 and changes nothing', async () => {
+    const browser = await connectedBrowser(company('Acme', 'ws-acme'))
+    const first = (await read()).json()
+    const lived = first.db as DB
+    lived.people.push(makePerson('p-new', { startDate: '2026-11-02' }))
+    // The app syncs an edit while npm run sim lives the days.
+    browser.edit('Rename the company', (d) => {
+      d.company.name = 'Acme Rockets'
+    })
+    await browser.sync()
+    const stale = await replace({ db: lived, expected: { historyId: first.historyId, seq: first.seq } })
+    expect(stale.statusCode, stale.body).toBe(409)
+    expect(stale.json().error).toBe('changed_meanwhile')
+    expect((await read()).json().db.company.name).toBe('Acme Rockets')
+    // Read again, and a replace that sends what it read goes through.
+    const second = (await read()).json()
+    expect((await replace({ db: second.db, expected: { historyId: second.historyId, seq: second.seq } })).statusCode).toBe(200)
+    for (const expected of [{ historyId: second.historyId }, { historyId: 7, seq: 1 }, 'latest']) {
+      expect((await replace({ db: second.db, expected })).statusCode, JSON.stringify(expected)).toBe(400)
+    }
   })
 })

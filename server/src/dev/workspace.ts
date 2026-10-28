@@ -6,7 +6,7 @@
 // the new copy the way it takes one from another computer: the history changes, its next pull resyncs, and
 // it shows the server's copy with a notice (src/sync/engine.ts, rebaseOnSnapshot).
 import type { Db } from '../db'
-import { replaceWorkspace, snapshot } from '../repo'
+import { type ExpectedCopy, replaceWorkspace, snapshot } from '../repo'
 import { WORKSPACE_ID } from '../sqlgen'
 import { parseWorkspace } from '../validate'
 
@@ -27,9 +27,13 @@ export async function readStackWorkspace(db: Db, workspaceId = STACK_WORKSPACE):
   return { empty: false, workspaceId, historyId: snap.historyId, seq: snap.seq, db: snap.db }
 }
 
-/** Replaces the stack's company with `workspace` (a whole DB, as an Import sends it). Throws a 400 HttpError for one the server refuses. */
-export async function replaceStackWorkspace(db: Db, workspace: unknown, workspaceId = STACK_WORKSPACE): Promise<StackReplaced> {
+/**
+ * Replaces the stack's company with `workspace` (a whole DB, as an Import sends it). Throws a 400 HttpError for
+ * one the server refuses. With `expected` (the history and seq of the copy an advance read), a 409
+ * 'changed_meanwhile' HttpError when the company changed since, an edit the app synced, say: nothing is lost.
+ */
+export async function replaceStackWorkspace(db: Db, workspace: unknown, workspaceId = STACK_WORKSPACE, expected?: ExpectedCopy): Promise<StackReplaced> {
   const input = parseWorkspace({ db: workspace, confirmReplace: true })
-  const result = await replaceWorkspace(db, input, null, workspaceId)
+  const result = await replaceWorkspace(db, input, null, workspaceId, expected ? { expected } : {})
   return { workspaceId, historyId: result.historyId, seq: result.seq, records: input.collections.reduce((n, c) => n + c.ids.length, 0) }
 }

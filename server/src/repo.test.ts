@@ -40,6 +40,19 @@ describe('repo', () => {
     expect(page3).toEqual({ historyId: expect.any(String), seq: seq + 5, changes: [expect.objectContaining({ id: 'j-5' })] })
   })
 
+  it('replaces only the copy the caller read when it says which (expected), else 409 changed_meanwhile', async () => {
+    const replaceAll = () => parseWorkspace({ db: workspace0(), confirmReplace: true })
+    const first = await replaceWorkspace(db, workspace(), null)
+    const read = { historyId: first.historyId, seq: first.seq }
+    await applyChanges(db, parseChanges({ changes: [job('j-1')] }), null)
+    await expect(replaceWorkspace(db, replaceAll(), null, undefined, { expected: read })).rejects.toMatchObject({ statusCode: 409, code: 'changed_meanwhile' })
+    expect((await snapshot(db))?.db.jobs).toHaveLength(1)
+    const now = await snapshot(db)
+    const again = await replaceWorkspace(db, replaceAll(), null, undefined, { expected: { historyId: now?.historyId as string, seq: now?.seq as number } })
+    // Another history: what was read before it no longer matches either.
+    await expect(replaceWorkspace(db, replaceAll(), null, undefined, { expected: { historyId: now?.historyId as string, seq: again.seq } })).rejects.toMatchObject({ code: 'changed_meanwhile' })
+  })
+
   it('keeps versions growing across delete and re-create, so echoes are recognizable', async () => {
     await replaceWorkspace(db, workspace(), null)
     const a = await applyChanges(db, parseChanges({ changes: [job('j-1')] }), null)
