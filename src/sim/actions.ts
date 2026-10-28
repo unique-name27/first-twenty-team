@@ -339,7 +339,17 @@ const newJob = action({
     let job: Job = jobFromTemplate(db, template, {
       date: ctx.day,
       hiringManagerId: a.hiringManagerId,
-      ...(slot ? { title: slot.title, familyId: slot.familyId, levelId: slot.levelId, departmentId: slot.departmentId, planSlotId: slot.id, targetStart: slot.targetStart } : {}),
+      ...(slot
+        ? {
+            title: slot.title,
+            familyId: slot.familyId,
+            levelId: slot.levelId,
+            departmentId: slot.departmentId,
+            planSlotId: slot.id,
+            targetStart: slot.targetStart,
+            ...(slot.isBackfill ? { isBackfill: true, backfillForPersonId: slot.backfillForPersonId ?? null } : {}),
+          }
+        : {}),
     })
     // The sheet's family and level pickers move the posted range to the band (and the team to the family's).
     if ((a.familyId && a.familyId !== job.familyId) || (a.levelId && a.levelId !== job.levelId)) {
