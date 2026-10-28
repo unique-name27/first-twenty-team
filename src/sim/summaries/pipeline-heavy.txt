@@ -1,5 +1,5 @@
 Scenario pipeline-heavy: A small company hiring hard: about 300 candidates, three jobs open with full pipelines.
-Seed 3030, as of 2026-10-09. 1,612 actions.
+Seed 3030, as of 2026-10-09. 1,513 actions.
 Company: Pebblecrest, founded 2025-08-11; Adaeze Obi, Founder and CEO.
 Headcount on 2026-10-09: 6 employed, 0 starting later, 0 former.
 Departments: Engineering 3, Executive 1, Go to market 1, Product and design 1.
@@ -8,12 +8,12 @@ Starts by month: 2025-11 1, 2026-03 1, 2026-05 1, 2026-07 1, 2026-08 1.
 Separations: none.
 Open leave cases: none.
 Jobs: filled 5, open 3.
-Open role: Customer success manager (23 active: New 3, Intro call 10, Technical 4, Onsite 6).
-Open role: Ops and people generalist (25 active: New 11, Intro call 6, Technical 8).
-Open role: Full-stack engineer (17 active: New 10, Intro call 7).
-Candidates: 315. Applications: rejected 228, active 65, withdrawn 17, hired 5.
-Interviews: completed 258, scheduled 41, cancelled 16. Scorecards: 258 submitted, 41 owed.
+Open role: Customer success manager (19 active: New 4, Intro call 7, Technical 3, Onsite 5).
+Open role: Ops and people generalist (29 active: New 15, Intro call 8, Technical 5, Onsite 1).
+Open role: Full-stack engineer (16 active: New 12, Intro call 4).
+Candidates: 313. Applications: rejected 234, active 64, withdrawn 10, hired 5.
+Interviews: completed 231, scheduled 36, cancelled 15. Scorecards: 231 submitted, 36 owed.
 Offers: accepted 5. Grants: promised 5.
 Pay runs submitted: 28, periods 2025-08-01 to 2026-09-30; first payroll 2025-08-15.
 Checklists: 6 (onboarding 5, change 1); open tasks 4, due by 2026-10-09: 0.
-Records: 3,537, activity rows 2,077.
+Records: 3,605, activity rows 2,205.

@@ -18,10 +18,8 @@ import { buildSampleDB, SAMPLE_ANCHOR } from '@/data/seed'
 import {
   bayAreaPlaces,
   firstNames,
-  inboundBoards,
   lastNames,
   otherCaliforniaPlaces,
-  outboundChannels,
   outOfStatePlaces,
   type ProfileKey,
   profile,
@@ -367,7 +365,14 @@ class World {
         typicalMaxOnSite: 5,
       })
     }
-    for (const b of setup.bands ?? []) this.act(founder, '09:10', 'saveBand', b)
+    for (const b of setup.bands ?? []) {
+      // The band's edit sheet starts from its current values; the scenario changes the ones it names.
+      const current = this.db.bands.find((x) => x.familyId === b.familyId && x.levelId === b.levelId)
+      const start = current
+        ? { min: current.min, mid: current.mid, max: current.max, equityMinPct: current.equityMinPct, equityMaxPct: current.equityMaxPct, ...(current.variablePct ? { variablePct: current.variablePct } : {}) }
+        : {}
+      this.act(founder, '09:10', 'saveBand', { ...start, ...b } as ArgsOf<'saveBand'>)
+    }
     this.act(founder, '09:30', 'changeJobOrPay', {
       personId: FOUNDER,
       change: { effectiveOn: this.foundedOn, reason: 'market', salary: this.plan.founderSalary, flsa: 'exempt', exemptionBasis: 'executive' },
@@ -483,7 +488,7 @@ class World {
       planSlotId,
       ...(p.locationId ? { locationIds: [p.locationId] } : {}),
       ...(p.hourly
-        ? { employmentType: p.hourly.partTime ? ('part_time' as const) : ('full_time' as const), flsa: 'non_exempt' as const, payMin: p.hourly.range[0], payMax: p.hourly.range[1] }
+        ? { employmentType: p.hourly.partTime ? ('part_time' as const) : ('full_time' as const), payMin: p.hourly.range[0], payMax: p.hourly.range[1] }
         : {}),
     })
     this.act(founder, '09:05', 'markPosted', { jobId })
@@ -560,14 +565,8 @@ class World {
       ['agency', 0.1],
     ])
     const referrers = source === 'referral' ? this.db.people.filter((p) => isEmployedOn(p, this.day)) : []
-    const detail =
-      source === 'inbound'
-        ? r.pick(inboundBoards(role.profile))
-        : source === 'outbound'
-          ? r.pick(outboundChannels())
-          : source === 'agency'
-            ? r.pick(['Lanternfish Talent', 'Bramblegate Search'])
-            : undefined
+    // Quick add keeps a source detail only for an agency: its name.
+    const detail = source === 'agency' ? r.pick(['Lanternfish Talent', 'Bramblegate Search']) : undefined
     const added = this.act({ id: FOUNDER, as: 'admin' }, this.time, 'addCandidate', {
       candidate: {
         firstName: first,
@@ -694,6 +693,9 @@ class World {
     if (!job || !next) return
     if (next.kind === 'offer') {
       if (exit) return this.close(role, appId, { ...exit, stage: 'onsite' })
+      // A job the plan keeps open on the as-of date makes its offer after that date, however fast its
+      // interviews went: on the day, the one who will be hired is part way through like the rest.
+      if (role.plan.opensDaysBeforeAsOf != null) return
       return this.offer(role, appId, next.id)
     }
     this.moveAndSchedule(role, appId, next.id, exit)

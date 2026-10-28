@@ -146,6 +146,74 @@ describe('applyAction', () => {
     expect(sim.db.applications[0]).toMatchObject({ status: 'rejected', notifiedOn: '2026-03-09' })
   })
 
+  it('rejects as the reject flow does: a reason chip closes the application, then Mark told records the note', () => {
+    const sim = fresh()
+    const told = (appId: string) => sim.db.activity.filter((a) => a.entityId === appId && ['rejected', 'withdrawn', 'notified'].includes(a.kind)).map((a) => a.text)
+    inRun(() => {
+      const jobId = postedJob(sim)
+      const ids = ['noor', 'remy', 'ines'].map(
+        (first) => applyAction(sim, 'addCandidate', { candidate: { ...NOOR, firstName: first[0].toUpperCase() + first.slice(1), email: `${first}@example.com` }, jobId }, ADMIN).applicationId as string,
+      )
+      applyAction(sim, 'rejectApplication', { applicationId: ids[0], reason: 'skills_gap', notified: true }, ADMIN)
+      applyAction(sim, 'rejectApplication', { applicationId: ids[1], reason: 'withdrew', withdraw: true, notified: true }, ADMIN)
+      applyAction(sim, 'rejectApplication', { applicationId: ids[2], reason: 'timing' }, ADMIN)
+      expect(told(ids[0])).toEqual(['Rejected Noor Lindqvist (skills gap)', 'Notified Noor Lindqvist'])
+      expect(told(ids[1])).toEqual(['Remy Lindqvist withdrew', 'Notified Remy Lindqvist'])
+      expect(told(ids[2])).toEqual(['Rejected Ines Lindqvist (timing)'])
+      expect(sim.db.applications.filter((a) => ids.includes(a.id)).map((a) => [a.status, a.notifiedOn ?? null])).toEqual([
+        ['rejected', '2026-03-09'],
+        ['withdrawn', '2026-03-09'],
+        ['rejected', null],
+      ])
+    })
+  })
+
+  it('keeps a source detail for an agency only, as Quick add does', () => {
+    const sim = fresh()
+    inRun(() => {
+      const jobId = postedJob(sim)
+      expect(() => applyAction(sim, 'addCandidate', { candidate: { ...NOOR, sourceDetail: 'A job board' }, jobId }, ADMIN)).toThrow(/the args do not fit \(candidate\.sourceDetail: /)
+      const { candidateId } = applyAction(sim, 'addCandidate', { candidate: { ...NOOR, source: 'agency', sourceDetail: ' Lanternfish Talent ' }, jobId }, ADMIN)
+      expect(sim.db.candidates.find((c) => c.id === candidateId)).toMatchObject({ source: 'agency', sourceDetail: 'Lanternfish Talent' })
+    })
+  })
+
+  it("takes a job's FLSA status from its band, as New job does: no job screen has an FLSA field", () => {
+    const sim = fresh()
+    inRun(() => {
+      expect(() => applyAction(sim, 'createJob', { templateId: 'rt-ops-people', hiringManagerId: 'p-founder', flsa: 'non_exempt' } as never, ADMIN)).toThrow(/the args do not fit/)
+      const band = sim.db.bands.find((b) => b.familyId === 'f-ops' && b.levelId === 'lv-l1')
+      if (!band) throw new Error('The defaults have an Operations L1 band.')
+      const before = applyAction(sim, 'createJob', { templateId: 'rt-ops-people', hiringManagerId: 'p-founder', familyId: 'f-ops', levelId: 'lv-l1' }, ADMIN)
+      const { min, mid, max, equityMinPct, equityMaxPct } = band
+      applyAction(sim, 'saveBand', { familyId: 'f-ops', levelId: 'lv-l1', min, mid, max, equityMinPct, equityMaxPct, flsaDefault: 'non_exempt' }, ADMIN)
+      const planSlotId = applyAction(sim, 'addPlanLine', { title: 'Office coordinator', departmentId: 'd-ops', familyId: 'f-ops', levelId: 'lv-l1', targetStart: '2026-05-04' }, ADMIN)
+      const after = applyAction(sim, 'createJob', { templateId: 'rt-ops-people', hiringManagerId: 'p-founder', planSlotId }, ADMIN)
+      expect([before, after].map((id) => sim.db.jobs.find((j) => j.id === id)?.flsa)).toEqual(['exempt', 'non_exempt'])
+    })
+  })
+
+  it('hands off what a leaver holds to their manager, as the Offboard wizard does by default', () => {
+    const sim = fresh()
+    inRun(() => {
+      const jobId = postedJob(sim)
+      const appId = applyAction(sim, 'addCandidate', { candidate: NOOR, jobId }, ADMIN).applicationId as string
+      applyAction(sim, 'moveApplication', { applicationId: appId, toStageId: 'offer' }, ADMIN)
+      const offerId = applyAction(sim, 'createOffer', { applicationId: appId, edits: { startDate: '2026-03-23' } }, ADMIN)
+      applyAction(sim, 'markSent', { offerId }, ADMIN)
+      applyAction(sim, 'markAccepted', { offerId }, ADMIN)
+      const personId = applyAction(sim, 'hireFromOffer', { offerId }, ADMIN)
+      const later = { ...ADMIN, day: '2026-04-06' }
+      // The new engineer hires for the next role, then resigns with the job still open.
+      const second = applyAction(sim, 'createJob', { templateId: 'rt-fullstack', hiringManagerId: personId, title: 'Second engineer' }, later)
+      applyAction(sim, 'offboardPerson', { personId, type: 'resigned_notice', reason: 'New job', lastDay: '2026-04-17', noticeGivenOn: '2026-04-06', rehireEligible: true }, later)
+      const leaver = sim.db.people.find((p) => p.id === personId)
+      expect(leaver?.separation?.handoffs).toEqual([{ kind: 'job', id: second, toId: 'p-founder' }])
+      const tasks = sim.db.checklists.find((c) => c.personId === personId && c.kind === 'offboarding')?.tasks ?? []
+      expect(tasks.find((t) => t.templateTaskId === 'off-handoff-roles')).toMatchObject({ dueOn: '2026-04-17', status: 'open' })
+    })
+  })
+
   it('requests time off as the sheet sends it: Admin approves their own on save unless they switch it off', () => {
     const sim = fresh()
     const days = { personId: 'p-founder', policyId: 'pol-vacation', startDate: '2026-03-16', endDate: '2026-03-17' }

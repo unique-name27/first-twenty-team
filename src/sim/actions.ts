@@ -14,7 +14,7 @@ import { type Draft, enablePatches, original, type Patch, produceWithPatches } f
 import { z } from 'zod'
 import { DEFAULT_ROLE_TEMPLATES } from '@/data/starterRoleTemplates'
 import { setTaskStatus } from '@/domain/checklists/actions'
-import { applyDueHandoffs } from '@/domain/handoff'
+import { applyDueHandoffs, leaverRoles, recordHandoffs } from '@/domain/handoff'
 import {
   addCandidate,
   approveOffer,
@@ -54,11 +54,11 @@ import { applyInboxOp, type InboxOp } from '@/domain/inbox'
 import { markPayRunSubmitted } from '@/domain/payrun/records'
 import { founder } from '@/domain/people'
 import { approveAsUnpaid, approveRequest, createRequest, policiesFor, serviceWait, workdays } from '@/domain/timeoff'
-import type { Band, DB, Department, ID, Job, Level, Location, Offer, Role } from '@/domain/types'
+import type { Band, DB, Department, Handoff, ID, Job, Level, Location, Offer, Role } from '@/domain/types'
 import { guessTimezone } from '@/features/hiring/logic'
 import { prepareBackfillSlot } from '@/features/people/helpers'
 import { markReturned } from '@/features/timeoff/logic'
-import { type ISODate, nowISO, quarterOf, setClockOverride } from '@/lib/dates'
+import { addDays, type ISODate, nowISO, quarterOf, setClockOverride } from '@/lib/dates'
 import { newId } from '@/lib/id'
 import { activeRun, updateRun } from '@/lib/runContext'
 import { logActivity } from '@/store/draft'
@@ -316,7 +316,8 @@ const planLine = action({
 /**
  * Hiring, New job (NewJobSheet.tsx): the role template prefills the job (jobFromTemplate), the person
  * changes what the sheet lets them change, and Create saves a draft with the hiring manager on the panel
- * and running each interview step until interviewers are picked in Edit.
+ * and running each interview step until interviewers are picked in Edit. The sheet has no FLSA field: the
+ * job takes its band's FLSA default (Comp and plan > Bands), as jobFromTemplate sets it.
  */
 const newJob = action({
   name: 'createJob',
@@ -330,7 +331,6 @@ const newJob = action({
     workMode: workMode.optional(),
     locationIds: z.array(id).min(1).optional(),
     employmentType: employmentType.optional(),
-    flsa: flsa.optional(),
     /** The posted range; under $1,000 it is an hourly range. */
     payMin: money.nullable().optional(),
     payMax: money.nullable().optional(),
@@ -369,7 +369,6 @@ const newJob = action({
     if (a.workMode) job.workMode = a.workMode
     if (a.locationIds) job.locationIds = [...a.locationIds]
     if (a.employmentType) job.employmentType = a.employmentType
-    if (a.flsa) job.flsa = a.flsa
     if (a.payMin !== undefined) job.payMin = a.payMin
     if (a.payMax !== undefined) job.payMax = a.payMax
     if (a.backgroundCheck !== undefined) job.backgroundCheck = a.backgroundCheck
@@ -417,19 +416,22 @@ const quickAdd = action({
       currentTitle: z.string().optional(),
       currentCompany: z.string().optional(),
       source: z.enum(['inbound', 'referral', 'outbound', 'agency']),
+      /** The agency's name: the sheet asks for it, and keeps it, only when the source is an agency. */
       sourceDetail: z.string().optional(),
       referrerId: id.optional(),
       desiredPay: money.optional(),
       desiredPayUnit: z.enum(['year', 'hour']).optional(),
       sponsorship: z.enum(['yes', 'no', 'unknown']).optional(),
-    }),
+    }).refine((c) => c.source === 'agency' || c.sourceDetail === undefined, { path: ['sourceDetail'], message: 'Quick add keeps a source detail (the agency) for an agency only.' }),
     jobId: id.optional(),
   }),
   run(d, a, ctx) {
     const job = a.jobId ? must(d.jobs.find((j) => j.id === a.jobId), `No job ${a.jobId}.`) : undefined
     if (a.candidate.source === 'referral' && !a.candidate.referrerId) throw new Error('Pick who referred them.')
-    const timezone = guessTimezone(a.candidate.location)
-    return addCandidate(d, { ...a.candidate, ...(timezone ? { timezone } : {}) }, { date: ctx.day, ...(job ? { jobId: job.id, ownerId: job.hiringManagerId } : {}) })
+    const { sourceDetail, ...candidate } = a.candidate
+    const agency = sourceDetail?.trim()
+    const timezone = guessTimezone(candidate.location)
+    return addCandidate(d, { ...candidate, ...(agency ? { sourceDetail: agency } : {}), ...(timezone ? { timezone } : {}) }, { date: ctx.day, ...(job ? { jobId: job.id, ownerId: job.hiringManagerId } : {}) })
   },
 })
 
@@ -472,14 +474,18 @@ const scorecard = action({
   },
 })
 
-/** The reject flow, a reason chip and then Copy note or Mark told (RejectFlow.tsx); withdraw for a candidate who pulled out. */
+/**
+ * The reject flow (RejectFlow.tsx): a reason chip closes the application, then Copy note or Mark told
+ * records that the candidate was told (markNotified), when `notified`. withdraw for a candidate who pulled out.
+ */
 const reject = action({
   name: 'rejectApplication',
   args: z.strictObject({ applicationId: id, reason: outcomeReason, note: z.string().optional(), notified: z.boolean().optional(), withdraw: z.boolean().optional() }),
   run(d, a, ctx) {
-    const opts = { date: ctx.day, nowISO: nowISO(), ...(a.note?.trim() ? { note: a.note.trim() } : {}), ...(a.notified ? { notified: true } : {}) }
+    const opts = { date: ctx.day, nowISO: nowISO(), ...(a.note?.trim() ? { note: a.note.trim() } : {}) }
     const closed = a.withdraw ? withdrawApplication(d, a.applicationId, a.reason, opts) : rejectApplication(d, a.applicationId, a.reason, opts)
     must(closed, `Could not close ${a.applicationId}.`)
+    if (a.notified) markNotified(d, a.applicationId, { date: ctx.day })
   },
 })
 
@@ -631,8 +637,9 @@ const leave = action({
 })
 
 /**
- * A person's Offboard wizard, Confirm (OffboardSheet.tsx): the separation, then the leaver's reports to their
- * manager (else the founder), as the wizard defaults. The simulator offboards people who hand off no roles.
+ * A person's Offboard wizard, Confirm (OffboardSheet.tsx): the separation, then the leaver's reports and the
+ * roles they hold (leaverRoles: live jobs, next steps, interviews after the last day, contractors, teams) to
+ * their manager (else the founder), as the wizard defaults. The hand-offs land on the last day.
  */
 const offboard = action({
   name: 'offboardPerson',
@@ -646,10 +653,15 @@ const offboard = action({
   }),
   run(d, a, ctx) {
     const { personId, ...sep } = a
+    const db = before(d)
     const person = must(d.people.find((p) => p.id === personId), `No person ${personId}.`)
-    const defaultManager = person.managerId && person.managerId !== personId ? person.managerId : (founder(before(d))?.id ?? '')
+    const defaultManager = person.managerId && person.managerId !== personId ? person.managerId : (founder(db)?.id ?? '')
+    // What the wizard lists before Confirm: roles that run past the last day (or past today, once it has come).
+    const roles = leaverRoles(db, personId, a.lastDay <= ctx.day ? addDays(ctx.day, -1) : a.lastDay)
     const result = offboardPerson(d, personId, sep, { date: ctx.day, actorId: ctx.actorId })
     reassignReportsAtExit(d, personId, a.lastDay, () => defaultManager, { date: ctx.day, actorId: ctx.actorId, approvedById: ctx.actorId, checklistId: result.checklistId })
+    const handoffs: Handoff[] = roles.map((r) => ({ kind: r.kind, id: r.id, toId: defaultManager })).filter((h) => !!h.toId && h.toId !== personId)
+    if (handoffs.length) recordHandoffs(d, personId, handoffs, { date: ctx.day, actorId: ctx.actorId, checklistId: result.checklistId })
     return result.checklistId
   },
 })

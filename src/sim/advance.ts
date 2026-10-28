@@ -24,10 +24,8 @@ import { DEFAULT_ROLE_TEMPLATES } from '@/data/starterRoleTemplates'
 import {
   bayAreaPlaces,
   firstNames,
-  inboundBoards,
   lastNames,
   otherCaliforniaPlaces,
-  outboundChannels,
   outOfStatePlaces,
   type ProfileKey,
   profile,
@@ -594,8 +592,8 @@ class TimeMachine {
       ['agency', 0.1],
     ])
     const referrers = source === 'referral' ? this.staff() : []
-    const detail =
-      source === 'inbound' ? r.pick(inboundBoards(key)) : source === 'outbound' ? r.pick(outboundChannels()) : source === 'agency' ? r.pick(['Lanternfish Talent', 'Bramblegate Search']) : undefined
+    // Quick add keeps a source detail only for an agency: its name.
+    const detail = source === 'agency' ? r.pick(['Lanternfish Talent', 'Bramblegate Search']) : undefined
     this.act(this.admin, '09:40', 'addCandidate', {
       candidate: {
         firstName: first,

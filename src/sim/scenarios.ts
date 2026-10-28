@@ -20,13 +20,16 @@ export type RolePlan = {
   locationId?: ID
   /** Days before the as-of date the person starts (negative: after it, so the job is still open then). */
   startsDaysBeforeAsOf: number
-  /** For a job still open on the as-of date: the day it opens, in days before the as-of date (default: about seven weeks before the start). */
+  /**
+   * For a job still open on the as-of date: the day it opens, in days before the as-of date (default: about
+   * seven weeks before the start). It makes no offer by the as-of date.
+   */
   opensDaysBeforeAsOf?: number
   /** Start on exactly that day (the offer builder's date field), not the Monday on or after it. */
   exactStart?: boolean
   /** Leads report to the founder, head their department and are the hiring manager for the rest of it. */
   lead?: boolean
-  /** An hourly, non-exempt job: hours a week, full or part time, and the posted hourly range. */
+  /** An hourly job: hours a week, full or part time, and the posted hourly range. Its band makes it non-exempt (setup.bands). */
   hourly?: { hoursPerWeek: number; partTime: boolean; range: [number, number] }
   /** No options in the offer (otherwise the midpoint of the band's guideline, as the offer builder starts). */
   noEquity?: boolean
@@ -59,7 +62,8 @@ export type CompanyPlan = {
     levels?: Array<{ id: ID; code: string; name: string; track: 'ic' | 'manager' | 'executive'; order: number; description?: string }>
     /** California offices. The minimum wage comes from src/data/law.ts, as the location sheet prefills it. */
     locations?: Array<{ id: ID; name: string; city: string }>
-    bands?: Array<{ familyId: ID; levelId: ID; min: number; mid: number; max: number; equityMinPct: number; equityMaxPct: number; variablePct?: number; flsaDefault: 'exempt' | 'non_exempt' }>
+    /** Bands saved on the Bands tab: a band that exists keeps the values a row leaves out, as its edit sheet starts from them. */
+    bands?: Array<{ familyId: ID; levelId: ID; min?: number; mid?: number; max?: number; equityMinPct?: number; equityMaxPct?: number; variablePct?: number; flsaDefault: 'exempt' | 'non_exempt' }>
   }
   life?: LifeEvents
 }
@@ -272,6 +276,13 @@ export const SCENARIOS: Record<ScenarioName, Scenario> = {
       ],
       pipeline: [8, 12],
       managersDraftOffers: false,
+      // The hourly jobs' bands are non-exempt, so New job makes them non-exempt (the job sheets have no FLSA field).
+      setup: {
+        bands: [
+          { familyId: 'f-ops', levelId: 'lv-l1', flsaDefault: 'non_exempt' },
+          { familyId: 'f-gtm', levelId: 'lv-l1', flsaDefault: 'non_exempt' },
+        ],
+      },
       life: {
         leave: { role: 2, kind: 'bonding', requestedDaysBeforeAsOf: 35, startsDaysBeforeAsOf: 17, returnsDaysAfterAsOf: 70 },
         // A Thursday, the second day of the second-half pay period.
