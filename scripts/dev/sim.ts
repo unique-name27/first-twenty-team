@@ -12,7 +12,8 @@
 // port, with the secret the stack wrote to <data folder>/dev-tools.json. advance reads the company, lives the
 // days in this process (src/sim/advance.ts) and replaces it. The app takes a replaced company the way it
 // takes one another computer sent. With no stack running, they take the stack's lock (its pid file, which
-// npm run stack and npm run sql check first) and open <data folder>/pg themselves.
+// npm run stack and npm run sql check first) and work on a copy of <data folder>/pg, which a replace swaps in
+// (pg-swap.mjs): the folder itself is never written in place, so a command stopped on the way cannot damage it.
 //
 // Generated companies are cached in <data folder>/scenarios, keyed by scenario, seed, as-of date and a hash
 // of the source files generation runs on. The company's date between commands is kept in <data folder>/
@@ -55,9 +56,10 @@ import {
   USAGE,
   workspaceJson,
 } from './sim-lib'
+import { copyToWork, discardWork, recoverSimFolders, swapIn } from './pg-swap.mjs'
 import { probe, readSecret } from './stack-api'
 import { DEV_TOOLS_FILE, devDirName, stackPorts } from './stack-lib.mjs'
-import { isStackProcess, readStackPid } from './stack-process.mjs'
+import { createPidFile, isStackProcess, readStackPid } from './stack-process.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 /** What npm run sim writes as `holder` in the stack's pid file while it holds the folder. */
@@ -112,76 +114,90 @@ function apiStack(port: number, secret: string, devDir: string, restart: string)
 }
 
 /**
- * Takes the stack's lock: its pid file, written only if there is none (a file left by a stack or a sim that
- * stopped without cleaning up is removed first). npm run stack refuses to start while it is held. Returns
- * the function that lets it go, which removes the file only while it is still this process's.
+ * Takes the stack's lock: its pid file, created only if there is none (a file left by a stack or a sim that
+ * stopped without cleaning up is removed first), the same way npm run stack creates it, so only one of them
+ * can hold the folder. npm run stack refuses to start while it is held. Returns the function that lets it
+ * go, which removes the file only while it is still this process's.
  */
 function takeLock(dir: string, devDir: string): () => void {
   const pidFile = path.join(dir, 'stack.pid')
-  const mine = JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), holder: SIM_HOLDER })
+  const mine = { pid: process.pid, startedAt: new Date().toISOString(), holder: SIM_HOLDER }
+  const stale = `If it is not running any more, delete ${devDir}/stack.pid and try again.`
   for (let attempt = 0; ; attempt++) {
-    try {
-      writeFileSync(pidFile, mine, { flag: 'wx' })
-      break
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
-      const held = readStackPid(pidFile)
-      if (held && held.pid !== process.pid && isStackProcess(held.pid)) {
-        throw new Error(
-          held.holder === SIM_HOLDER
-            ? `Another npm run sim is writing to ${devDir} (pid ${held.pid}). Try again when it has finished.`
-            : `A stack is starting on ${devDir} (pid ${held.pid}) and holds its database. Wait for "First Twenty is running", then try again.`,
-        )
-      }
-      if (attempt > 0) throw new Error(`Something else took ${devDir}/stack.pid just now. Try again.`)
-      rmSync(pidFile, { force: true })
+    const taken = createPidFile(pidFile, mine)
+    if (!taken) break
+    const held = taken.held
+    if (held && held.pid !== process.pid && isStackProcess(held.pid)) {
+      throw new Error(
+        held.holder === SIM_HOLDER
+          ? `Another npm run sim is writing to ${devDir} (pid ${held.pid}). Try again when it has finished. ${stale}`
+          : `A stack is running or starting on ${devDir} (pid ${held.pid}) and holds its database. Wait for "First Twenty is running", then try again. ${stale}`,
+      )
     }
+    if (attempt > 0) throw new Error(`Something else took ${devDir}/stack.pid just now. Try again.`)
+    rmSync(pidFile, { force: true })
   }
   return () => {
     if (readStackPid(pidFile)?.pid === process.pid) rmSync(pidFile, { force: true })
   }
 }
 
-/** Opens <data folder>/pg itself, holding the stack's lock until close. Ctrl+C waits until then: a write cut short can damage the folder. */
-async function folderStack(dir: string, devDir: string, port: number, restart: string): Promise<Stack> {
-  const pgDir = path.join(dir, 'pg')
-  if (!existsSync(path.join(pgDir, 'PG_VERSION'))) throw new Error(`There is no database in ${devDir} yet. Run ${restart} once to make it.`)
+/**
+ * The stack's database folder with no stack running, holding the stack's lock until close. It never writes
+ * <data folder>/pg in place: it opens a copy, and a replace closes the copy and swaps it in (pg-swap.mjs). So
+ * Ctrl+C, or a crash, at any point leaves the folder as it was; Ctrl+C stops the command before the swap.
+ */
+async function folderStack(dir: string, devDir: string, restart: string): Promise<Stack> {
   const release = takeLock(dir, devDir)
-  const wait = () => console.error('sim: still working on the database; it stops as soon as that is done.')
+  let stopping = false
+  const stop = () => {
+    if (!stopping) console.error("sim: stopping. The stack's database stays as it was.")
+    stopping = true
+  }
   const signals = ['SIGINT', 'SIGTERM', ...(process.platform === 'win32' ? ['SIGBREAK'] : [])] as NodeJS.Signals[]
-  for (const s of signals) process.on(s, wait)
-  const letGo = () => {
-    for (const s of signals) process.off(s, wait)
-    release()
+  for (const s of signals) process.on(s, stop)
+  let db: Db | null = null
+  const finish = async () => {
+    try {
+      await db?.close()
+    } finally {
+      db = null
+      discardWork(dir, process.pid)
+      for (const s of signals) process.off(s, stop)
+      release()
+    }
   }
-  let db: Db
-  try {
-    // A stack that started between the first look and the lock would be answering by now.
-    if ((await probe(port)) === 'answers') throw new Error(`A stack started on ${devDir} meanwhile. Run the command again: it will go through the stack.`)
-    db = await openPGlite(pgDir)
-  } catch (err) {
-    letGo()
-    throw err
+  const unlessStopping = () => {
+    if (stopping) throw new Error("Stopped (Ctrl+C) before anything was written: the stack's company is as it was.")
   }
   try {
-    // What the stack does on start (MIGRATE_ON_START), so the folder is in the shape the code expects.
+    // Under the lock: put right what an npm run sim stopped on the way left behind.
+    for (const line of recoverSimFolders(dir)) console.error(`sim: ${line}.`)
+    if (!existsSync(path.join(dir, 'pg', 'PG_VERSION'))) throw new Error(`There is no database in ${devDir} yet. Run ${restart} once to make it.`)
+    db = await openPGlite(copyToWork(dir, process.pid))
+    // What the stack does on start (MIGRATE_ON_START), so the copy is in the shape the code expects.
     await migrateDatabase(db)
   } catch (err) {
-    await db.close()
-    letGo()
+    await finish()
     throw err
+  }
+  const open = () => {
+    if (!db) throw new Error('The database copy is already closed.')
+    return db
   }
   return {
     where: `in ${devDir}/pg (no stack is running)`,
-    read: () => readStackWorkspace(db),
-    replace: (next) => replaceStackWorkspace(db, next),
-    async close() {
-      try {
-        await db.close()
-      } finally {
-        letGo()
-      }
+    read: () => readStackWorkspace(open()),
+    async replace(next) {
+      unlessStopping()
+      const done = await replaceStackWorkspace(open(), next)
+      await open().close()
+      db = null
+      unlessStopping()
+      swapIn(dir, process.pid)
+      return done
     },
+    close: finish,
   }
 }
 
@@ -199,7 +215,7 @@ async function openStack(offset: number): Promise<Stack> {
         `or npm run server:dev. Restart the stack (${restart}), or stop what runs on that port.`,
     )
   }
-  return folderStack(dir, devDir, port, restart)
+  return folderStack(dir, devDir, restart)
 }
 
 // ------------------------------------------------------------------------------------------------

@@ -259,8 +259,20 @@ describe('the time zone', () => {
   })
 })
 
+describe("the stack's database folder", () => {
+  it('is opened only as a copy, never written in place (pg-swap.mjs swaps the copy in)', () => {
+    const code = readFileSync('scripts/dev/sim.ts', 'utf8')
+    expect([...code.matchAll(/openPGlite\((\w+)/g)].map((m) => m[1])).toEqual(['copyToWork'])
+  })
+
+  it('is left to a process that hears Ctrl+C itself: npm runs node, not the tsx command, which force-stops its child', () => {
+    const scripts = (JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> }).scripts
+    expect(scripts.sim).toBe('node --import tsx scripts/dev/sim.ts')
+  })
+})
+
 describe('npm run sim stays on this computer', () => {
-  const sources = ['scripts/dev/sim.ts', 'scripts/dev/sim-lib.ts', 'scripts/dev/sim-zone.ts', 'scripts/dev/stack-api.ts'].map((file) => [file, readFileSync(file, 'utf8')] as const)
+  const sources =['scripts/dev/sim.ts', 'scripts/dev/sim-lib.ts', 'scripts/dev/sim-zone.ts', 'scripts/dev/stack-api.ts'].map((file) => [file, readFileSync(file, 'utf8')] as const)
 
   it('never reads DATABASE_URL, a .env file or the server settings', () => {
     for (const [file, code] of sources) {

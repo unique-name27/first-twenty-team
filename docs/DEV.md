@@ -445,8 +445,11 @@ same server function as the app's Import, so the app takes it the way it takes a
 sent: on its next sync (within 30 seconds, or when its tab gets focus) it shows the new company with a notice
 that the server's workspace was replaced. After an advance or a restore of the same company, the notice says
 it was replaced with another copy of it. With no stack running, `npm run sim` takes the stack's lock
-(`.data/dev/stack.pid`: `npm run stack` refuses to start meanwhile and says why) and writes to the database
-folder itself. Ctrl+C then waits until the write is done, because a write cut short can damage the folder.
+(`.data/dev/stack.pid`: `npm run stack` refuses to start meanwhile and says why) and works on a copy of the
+database folder, which it swaps in with two renames when the replace is done (`scripts/dev/pg-swap.mjs`). The
+folder itself is never written in place, so Ctrl+C (which stops the command before the swap) or a crash at
+any point leaves the stack's company as it was; the next `npm run sim` or `npm run stack` clears up the copy
+left behind.
 
 **On today's date.** The app shows a company on today's date, so reset generates the scenario as of the last
 day on or before today that falls on its as-of date's weekday (scenario plans are written relative to the
@@ -547,7 +550,9 @@ inside the codespace with its settings. Stop it and start it with `npm run stack
 
 **"could not open the database: Aborted()".** The stack was stopped hard (its process was killed, or the
 computer stopped) while PGlite was writing, and the folder is damaged. Stop the stack with Ctrl+C next time.
-`npm run stack -- --fresh` makes a new database (it deletes the old one and the dev login).
+`npm run stack -- --fresh` makes a new database (it deletes the old one and the dev login). It also deletes
+the saves `npm run sim` keeps in the data folder: to keep them, delete only `.data/dev/pg` instead, start the
+stack (it makes a new database with the sample company), then `npm run sim -- restore <name>`.
 
 **npm run sql: "Something answers on 127.0.0.1:8787, but .data/dev/dev-tools.json is missing".** A stack
 started before `npm run sql` existed, or `npm run server:dev`, holds the port. Stop it and start
@@ -556,9 +561,10 @@ started before `npm run sql` existed, or `npm run server:dev`, holds the port. S
 **npm run sql: "The stack's API did not take the request".** The running stack's secret does not match the
 one in `.data/dev/dev-tools.json` (usually a stack started before `npm run sql` existed). Restart the stack.
 
-**"npm run sim is writing to this data folder".** `npm run sim` holds the folder while it writes to it with
+**"npm run sim is writing to this data folder".** `npm run sim` holds the folder while it works on it with
 no stack running. Wait a few seconds and start the stack again. If no `npm run sim` is running, the stack
-removes the file it left behind by itself.
+usually removes the file it left behind by itself. On Windows it can only tell that some node process has
+that number, so if it still refuses, delete `.data/dev/stack.pid` and try again.
 
 **npm run sql: "No answer from the stack's API".** A statement is still running in the stack's API, which
 PGlite cannot interrupt. Wait, or stop the stack with Ctrl+C and start it again.
