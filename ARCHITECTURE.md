@@ -26,7 +26,8 @@ src/
   app/        shell: App, Shell (rail, top bar), router, nav, routes, CommandPalette, useViewer
   ui/         shared UI kit (Button, Badge, Avatar, Field controls, Panel, Sheet, Modal, Tabs, DataTable,
               charts, Tally, Toast). Import from '@/ui'. Add new shared primitives here, not in features.
-  lib/        dates (today(), business days, formatting), format (money, pct, plural), id (newId)
+  lib/        dates (today(), business days, formatting), format (money, pct, plural), id (newId),
+              runContext (withRunContext: the same ids, times and actor on every run, for simulations and journeys)
   domain/     types.ts (THE data contract) + pure logic, one file or folder per area, each with tests
               (payrun/: pay calendar, schedule checks, pay run prep, CSV exports and Mark submitted, imported from '@/domain/payrun')
   store/      db.ts (the one store: useDB, mutate, undo, persistence), prefs.ts (per-device prefs)

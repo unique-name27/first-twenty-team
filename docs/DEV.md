@@ -217,7 +217,7 @@ Add a `*.test.ts` file in `server/src/e2e` and start it from the kit, `server/sr
 | --- | --- |
 | `startJourney()` | A fresh server for the file: an in-memory database, the real app with the careers pages on, and the admin's browser connected to the uploaded Ledgerlark sample. The day is 2026-10-09 (the sample's own day) unless `start` says another |
 | `j.step(name, fn)` | Runs one part of the story under a name. When it fails, the failure dump is printed and the error names the step |
-| `j.act(browser, label, recipe)` | One change, as the app makes it: the browser store's `mutate(label, recipe)`, then a sync. The recipe calls the domain function the screen calls, with the same arguments and label (copy them from the feature, for example `src/features/hiring/actions.ts`) |
+| `j.act(browser, label, recipe)` | One change, as the app makes it: the browser store's `mutate(label, recipe)`, then a sync. The recipe calls the domain function the screen calls, with the same arguments and label (copy them from the feature, for example `src/features/hiring/actions.ts`). It runs inside `withRunContext` (`src/lib/runContext.ts`): at noon in California on the journey's day, as the browser's Viewing as |
 | `j.apply({ job, fields })` | Sends the careers form the way a candidate's browser does: the list page, the job's page, its form. Gives back the status, the page and whether it was sent |
 | `j.advanceTo(date)` | Moves the day forward with the app's clock override (`setClockOverride`), which every date in the domain reads. Never backwards |
 | `j.sql(text, params)` | A read-only query as the server's role, with the read model's today on the journey's day |
@@ -264,8 +264,10 @@ The rules that keep a journey honest:
 - **Take only the steps the screen offers.** Start from what the screen starts with (the schedule sheet's
   first proposed time, the offer builder's defaults), and where a button shows only in some states, check
   it the way the journey checks the offer card's Mark sent with `offerActionPlan`.
-- **One fixed clock.** Move it with `j.advanceTo`. Never assert on a time of day (activity times and approvals
-  keep the real time of day on the journey's date) or on a generated id: compare ids with the records that hold them.
+- **One fixed clock.** Move it with `j.advanceTo`. What the browsers change (`j.act`, and the changes the app makes
+  on load) happens at noon in California on the journey's day (`JOURNEY_TIME_OF_DAY`), and the careers form's
+  clock is 19:00 UTC on it, so activity times and approvals are the same on every run. Never assert on a generated
+  id (the careers form's are random): compare ids with the records that hold them.
 - **Check what the server holds** with `j.sql` over the read model's views ("Query the data with SQL" above),
   and the browser's copy where that is the point.
 - **Keep it quick**: one `startJourney` per file, in `beforeAll`, and as many steps as the story needs.
