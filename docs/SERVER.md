@@ -456,9 +456,13 @@ dump's file name; if the backup fails it stops before changing anything. When th
 checked but a later step failed (the copy to S3, with `BACKUP_S3_URI` set), it goes on with that local
 dump and warns, pointing to `sudo journalctl -u first-twenty-backup`. Then it applies the migrations,
 restarts the service and checks `/api/health` locally and through Caddy. If any step fails it stops
-there, and the running server keeps the version it already loaded. It checks Caddy only when
-`PUBLIC_ORIGIN` is an `https://` address, and warns when it is not (still the placeholder, or
-`http://localhost:8787` from testing through an SSH tunnel).
+there, and the running server keeps the version it already loaded. A step that fails before the restart
+also puts the folder back as that version left it (the build it had, kept with hard links in
+`.deploy-prev` until the deploy is done, and the commit that ran before), so a later restart starts the
+same version. Migrations that were applied stay applied; the script names them and the backup taken just
+before. With automatic deploys set up, a deploy started by hand first waits while the other channel is
+building. It checks Caddy only when `PUBLIC_ORIGIN` is an `https://` address, and warns when it is not
+(still the placeholder, or `http://localhost:8787` from testing through an SSH tunnel).
 
 `deploy.sh` refuses to run from any other folder than the one the service runs its code from
 (`/opt/first-twenty`). Run from an old copy such as `~/first-twenty`, it would migrate the database and
@@ -518,7 +522,7 @@ HTTPS, with no token and no deploy key, so SSH stays open to the product owner's
 | | Staging | Live |
 |---|---|---|
 | Address | `https://staging-77-112-161-54.sslip.io` (change it with `--staging-domain`) | your domain, as before |
-| What it deploys | the newest commit on `main`, once its `verify` check passed | the newest GitHub release published by `unique-name27`, once the `verify` check of its commit passed |
+| What it deploys | the newest commit on `main`, once its `verify` check passed | the newest GitHub release created and published by `unique-name27`, once the `verify` check of its commit passed |
 | Runs as | `first-twenty-staging`, a system user with no login | the login that owns `/opt/first-twenty` (ubuntu), as `deploy.sh` always has |
 | Code and settings | `/opt/first-twenty-staging`, `/etc/first-twenty-staging/env` | `/opt/first-twenty`, `/etc/first-twenty/env` |
 | Server | `first-twenty-staging` on 127.0.0.1:8788 | `first-twenty` on 127.0.0.1:8787 |
@@ -551,10 +555,14 @@ rm -rf ~/ft-setup
   It backs the Caddyfile up first, checks the result with `caddy validate`, reloads Caddy, and puts
   everything back if Caddy does not take it. Then it starts the first staging deploy, and only once nothing
   answers on 127.0.0.1:2019;
+- also for staging: gives the live server and Postgres a memory reserve (`MemoryLow=` drop-ins for
+  `first-twenty.service`, the Postgres cluster's unit and `system.slice`), so a staging build gives up its
+  memory first; it changes neither unit file;
 - for live: switches the origin of `/opt/first-twenty` to `https://github.com/unique-name27/first-twenty-team.git`
-  (the old address stays as the remote `previous-origin`, which no branch follows), records the commit
-  checked out there now as deployed (so nothing happens until a newer release exists), and turns on the live
-  timer.
+  (the old address stays as the remote `previous-origin`, which no branch follows), moves HEAD off its branch
+  without changing a file (the branch is kept as `previous-origin-main`, with no upstream, so `git switch
+  main` cannot bring the old code back), records the commit checked out there now as deployed (so nothing
+  happens until a newer release exists), and turns on the live timer.
 
 `--staging-only` or `--live-only` sets up one of the two. `--release-author` names another GitHub login
 whose releases go live, and `--deploy-user` another login for the live channel. It never touches the live
@@ -564,6 +572,12 @@ the updater, the units or `staging.caddy`; the updater's log says when.
 
 Only publish releases of commits that include this kit. An older commit's `deploy.sh` does not know that
 the updater already holds the deploy lock, so it stops at once, 3 times, without changing anything.
+
+Until the live server runs a release that includes this kit, `/opt/first-twenty` holds the older
+`setup-ec2.sh`. Run `setup-ec2.sh` only from a fresh clone of `main` (as above) until then, never from
+`/opt/first-twenty`: the older script rewrites `/etc/caddy/Caddyfile` without the admin and import lines
+this setup adds, and then cannot reload Caddy. Setup prints this warning at the end for as long as the live
+checkout holds the older kit.
 
 ### Staging: main after CI
 
@@ -585,7 +599,9 @@ the live server wins when the instance is busy, and the two channels never build
 
 ### Live: the product owner's releases
 
-To release, publish a GitHub release (the product owner, `unique-name27`):
+To release, publish a GitHub release (the product owner, `unique-name27`, creates it from start to finish:
+GitHub counts whoever created a release as its author, so a draft someone else created never deploys,
+even when the product owner publishes it):
 
 1. On GitHub, open the repo, then **Releases** > **Draft a new release**.
 2. **Choose a tag**: type a new one, such as `v2026.11.04`, with **Target** `main`. Tags use letters,
@@ -598,7 +614,7 @@ that exact commit, checks it out detached and runs `deploy.sh`: the backup befor
 migrations, the restart, the health checks, and the way back printed if the new server is not healthy. It
 deploys a release only when all of these hold:
 
-- it was published by `unique-name27` (a release by anyone else is logged and skipped);
+- it was created by `unique-name27` (a release anyone else created is logged and skipped);
 - it is not a draft or a prerelease;
 - the tagged commit is on `main`, so it went through a reviewed pull request;
 - the tagged commit was made before the release was published, so the tag was not moved afterwards and the
@@ -620,11 +636,19 @@ any branch can report a check by that name for any commit.
 ### Pauses, retries and GitHub's limits
 
 Pause a channel by creating its pause file (the commands are in the table above); remove the file to resume.
-A paused channel asks GitHub nothing. A commit or release that fails to deploy is tried again on the next
-runs, 3 times in all; after that the channel waits for a newer commit or release. A try counts when it
-starts, so a run that systemd stops (it gets 45 minutes on staging, 60 on live) or that runs out of memory
-counts too. Each failed run leaves its unit marked failed (`systemctl --failed` lists it). Nobody is told
-otherwise, so look at the live channel's log after publishing a release.
+A paused channel asks GitHub nothing. The pause file is read when a run starts, so it does not stop a run
+already going (`sudo systemctl stop first-twenty-autoupdate-live`, or `-staging`, does).
+
+A deploy that fails before its restart (npm could not be reached, the build ran out of memory, a migration
+failed) changes nothing the server runs: `deploy.sh` puts the build and the commit back, and the log says
+so. It is tried again on the next runs, 3 times in all; after that the channel waits for a newer commit or
+release. A try counts when it starts, so a run that systemd stops (it gets 45 minutes on staging, 60 on
+live) or that runs out of memory counts too, and so does how far it got. A live deploy that fails (or is
+stopped) after its restart, say because the new server is not healthy, is not tried again: every run after
+it ends its log with the previous commit to go back to and, when migrations ran, the dump taken before
+them (see [Roll back](#roll-back)). Each failed run leaves its unit marked failed (`systemctl --failed`
+lists it), and the live unit stays failed for as long as the newest release is one that failed. Nobody is
+told otherwise, so look at the live channel's log after publishing a release.
 
 GitHub allows 60 requests an hour from one address without a token, shared by both channels. Each run sends
 the ETag of the last answer, so an unchanged answer is a short 304. A normal run sends one request, and
@@ -635,9 +659,9 @@ When GitHub says the limit is used up, the channel waits for the reset. `git fet
 Each channel keeps a small state file: `/var/lib/first-twenty-autoupdate/state` (live) and
 `/var/lib/first-twenty-staging/autoupdate/state` (staging), with the deployed commit, the commits that
 failed and how often, and the ETags. To try the same release again after 3 failures (say npm could not be
-reached), delete its `failed=` line, as the deploy login: `sed -i '/^failed=/d' /var/lib/first-twenty-autoupdate/state`.
-Do not delete the whole file after a failed deploy: the live channel would then count the failed commit,
-which is still checked out, as deployed.
+reached), delete its `failed=` line, as the deploy login: `sed -i '/^failed=/d' /var/lib/first-twenty-autoupdate/state`
+(after a failure after the restart, also the `skip_` lines). Do not delete the whole file after a failed
+deploy: the live channel would then count the commit checked out, which may be the failed one, as deployed.
 
 ### Logs
 
@@ -651,16 +675,25 @@ sudo journalctl -u first-twenty-staging -n 100                # the staging serv
 
 ### Roll back
 
-**Live.** When the new server is not healthy, `deploy.sh` prints the way back in the live channel's log,
-with the previous commit and, when migrations ran, the backup it took just before.
+**Live.** A deploy that fails before the restart needs nothing from you: `deploy.sh` puts the build and
+the commit back, and the server never stopped running the previous version. When the new server is not
+healthy after the restart, `deploy.sh` prints the way back in the live channel's log, with the previous
+commit and, when migrations ran, the backup taken just before them. The release is not tried again, and
+the last line of the log on every run after that names the previous commit and that dump.
 
-1. Pause the channel, so it stops retrying: `sudo touch /etc/first-twenty/autodeploy.paused`.
-2. Follow the steps from the log (`sudo journalctl -u first-twenty-autoupdate-live -n 200`). With no
-   migration: `cd /opt/first-twenty && git checkout --detach <previous commit> && bash server/deploy/deploy.sh --no-pull`.
+1. Pause both channels and stop any run in progress (the pause file is read only when a run starts):
+
+   ```bash
+   sudo touch /etc/first-twenty/autodeploy.paused /etc/first-twenty-staging/autodeploy.paused
+   sudo systemctl stop first-twenty-autoupdate-live first-twenty-autoupdate-staging
+   ```
+
+2. Follow the steps from the log (`sudo journalctl -u first-twenty-autoupdate-live -n 200`; the last line
+   names the previous commit and the dump). With no migration: `cd /opt/first-twenty && git checkout --detach <previous commit> && bash server/deploy/deploy.sh --no-pull`.
    With migrations, add the restore from [Restore a backup](#restore-a-backup) with the dump it names.
 3. Record what runs now: `first-twenty-autoupdate live --record-deployed` (as the deploy login).
-4. Delete the bad release on GitHub (its page > **Delete**), or publish a fixed one, then remove the pause
-   file. While the bad release is the latest one, the channel would deploy it again.
+4. Delete the bad release on GitHub (its page > **Delete**), or publish a fixed one, then remove both pause
+   files. While the bad release is the latest one, the live unit stays failed.
 
 To go back later, after a release that seemed fine, do the same: pause, check out the commit you want, run
 `deploy.sh --no-pull`, record it, and delete the releases after it.
@@ -688,6 +721,13 @@ on the same instance as the live server, so the kit keeps it away from what coul
 - **Postgres**: the staging roles reach `first_twenty_staging` only, and only from this instance; the live
   roles cannot reach it.
 - **Files**: the staging user cannot read `/opt/first-twenty`, `/etc/first-twenty` or the backups.
+
+Memory: setup gives the live server (150 MB) and Postgres (200 MB) a reserve with `MemoryLow=` drop-ins,
+so while staging builds, the kernel takes memory from the build and the rest first. The build has no
+memory limit of its own (a limit below what it needs would only make it thrash). After the first staging
+deploy, see how much it took with `sudo journalctl -u first-twenty-autoupdate-staging | grep 'memory peak'`
+(systemd logs it when each run ends), or with `systemctl show -p MemoryPeak first-twenty-autoupdate-staging`
+while a build runs.
 
 What is left: the staging server can still open connections to services that listen on 127.0.0.1, the
 live server among them (`sudo ss -ltnp` lists them). Every commit on `main` is reviewed, so this is a risk
