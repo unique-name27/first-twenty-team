@@ -1120,7 +1120,7 @@ SELECT p.workspace_id, p.code, p.severity, p.collection, p.record_id, p.field, p
   SELECT r.workspace_id, 'broken_reference', 'note', 'activity', r.id, 'relatedId', x.v
     FROM activity r
    CROSS JOIN LATERAL (SELECT NULLIF(r.data ->> 'relatedId', '') AS v) x
-   WHERE x.v IS NOT NULL AND NOT (EXISTS (SELECT 1 FROM people t WHERE t.workspace_id = r.workspace_id AND t.id = x.v) OR EXISTS (SELECT 1 FROM candidates t WHERE t.workspace_id = r.workspace_id AND t.id = x.v) OR EXISTS (SELECT 1 FROM contractors t WHERE t.workspace_id = r.workspace_id AND t.id = x.v) OR EXISTS (SELECT 1 FROM jobs t WHERE t.workspace_id = r.workspace_id AND t.id = x.v) OR EXISTS (SELECT 1 FROM applications t WHERE t.workspace_id = r.workspace_id AND t.id = x.v))
+   WHERE x.v IS NOT NULL AND NOT (EXISTS (SELECT 1 FROM people t WHERE t.workspace_id = r.workspace_id AND t.id = x.v) OR EXISTS (SELECT 1 FROM candidates t WHERE t.workspace_id = r.workspace_id AND t.id = x.v) OR EXISTS (SELECT 1 FROM contractors t WHERE t.workspace_id = r.workspace_id AND t.id = x.v) OR EXISTS (SELECT 1 FROM jobs t WHERE t.workspace_id = r.workspace_id AND t.id = x.v) OR EXISTS (SELECT 1 FROM applications t WHERE t.workspace_id = r.workspace_id AND t.id = x.v) OR EXISTS (SELECT 1 FROM plan t WHERE t.workspace_id = r.workspace_id AND t.id = x.v))
   UNION
   SELECT r.workspace_id, 'unknown_stage', 'failure', 'applications', r.id, 'stageId', x.v
     FROM applications r
@@ -1184,10 +1184,12 @@ SELECT p.workspace_id, p.code, p.severity, p.collection, p.record_id, p.field, p
   SELECT r.workspace_id, 'date_order', 'failure', 'people', r.id, 'startDate>endDate', NULL
     FROM people r
    WHERE ft_as_date(r.data ->> 'startDate') > ft_as_date(r.data ->> 'endDate')
+     AND NOT coalesce(ft_as_date(r.data ->> 'endDate') = ft_as_date(r.data #>> '{separation,lastDay}'), false)
   UNION
   SELECT r.workspace_id, 'date_order', 'failure', 'people', r.id, 'startDate>separation.lastDay', NULL
     FROM people r
    WHERE ft_as_date(r.data ->> 'startDate') > ft_as_date(r.data #>> '{separation,lastDay}')
+     AND NOT coalesce(ft_as_date(r.data ->> 'endDate') = ft_as_date(r.data #>> '{separation,lastDay}'), false)
   UNION
   SELECT r.workspace_id, 'date_order', 'failure', 'people', r.id, 'separation.noticeGivenOn>separation.lastDay', NULL
     FROM people r

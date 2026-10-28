@@ -109,9 +109,12 @@ function linkSql(rule: LinkRule): string {
 }
 
 function dateSql(rule: DateRule): string {
+  const unless = rule.unlessSame
+    ? `\n     AND NOT coalesce(ft_as_date(${textAt('r.data', rule.unlessSame[0])}) = ft_as_date(${textAt('r.data', rule.unlessSame[1])}), false)`
+    : ''
   return `${select('r.workspace_id', 'date_order', rule.severity, rule.from, 'r.id', `${rule.first}>${rule.then}`, 'NULL')}
     FROM ${table(rule.from)} r
-   WHERE ft_as_date(${textAt('r.data', rule.first)}) > ft_as_date(${textAt('r.data', rule.then)})`
+   WHERE ft_as_date(${textAt('r.data', rule.first)}) > ft_as_date(${textAt('r.data', rule.then)})${unless}`
 }
 
 function uniqueSql(rule: UniqueRule): string {

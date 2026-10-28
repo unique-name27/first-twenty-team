@@ -2,8 +2,13 @@
 // one way and returns the problems the checker must report, as describeProblem lines. They touch different
 // records, so plantAll can apply every one to a single copy: src/domain/integrity.test.ts checks each alone
 // and all together, and server/src/readmodel/readmodel.test.ts loads plantAll's copy into Postgres to
-// compare v_integrity_problems with integrityProblems.
+// compare v_integrity_problems with integrityProblems. everydayFlows is the other side: valid data written
+// by the app's own flows, which neither the checker nor the view may report.
 import { type Draft, produce } from 'immer'
+import { approveOffer, markAccepted, markSent } from '@/domain/hiring/offers'
+import { changeJobOrPay, hireFromOffer, offboardPerson, openJobFromPlan, startLeave } from '@/domain/lifecycle'
+import { markPayRunSubmitted, setPayRunTotals } from '@/domain/payrun/records'
+import { approveRequest, createRequest } from '@/domain/timeoff'
 import type { DB, ID } from '@/domain/types'
 
 export type Plant = { name: string; apply: (d: Draft<DB>) => string[] }
@@ -141,6 +146,17 @@ export const PLANTS: Plant[] = [
     },
   },
   {
+    name: 'a last day before the start date that is not a hire who never started',
+    apply(d) {
+      // No separation records it, and a separation whose last day differs from the end date.
+      find(d.people, 'p-sofia').endDate = '2026-01-05'
+      const caleb = find(d.people, 'p-caleb')
+      caleb.endDate = '2026-02-20'
+      caleb.separation = { type: 'resigned_notice', reason: 'Planted', lastDay: '2026-02-27' }
+      return ['date_order people p-caleb startDate>endDate -', 'date_order people p-caleb startDate>separation.lastDay -', 'date_order people p-sofia startDate>endDate -']
+    },
+  },
+  {
     name: 'a manager with a last day whose reports stay on',
     apply(d) {
       find(d.people, 'p-priya').endDate = '2026-12-31'
@@ -165,4 +181,36 @@ export function plantAll(base: DB): { db: DB; expected: string[] } {
     for (const plant of PLANTS) expected.push(...plant.apply(d))
   })
   return { db, expected: expected.sort() }
+}
+
+/** The day the everyday flows run on (the sample's anchor). */
+export const FLOWS_DATE = '2026-10-09'
+
+/**
+ * The sample after the everyday flows, each through the same domain function the app calls: open a job from
+ * the headcount plan, take an offer from approval to hire, offboard someone, offboard an incoming hire before
+ * their start date (never started), request and approve time off, schedule a raise, start a leave, mark a pay
+ * run submitted and enter totals for the next one. Nothing in it is a problem: the checks must stay quiet.
+ * Run it with the clock set to FLOWS_DATE (setClockOverride), as the activity log reads the clock.
+ */
+export function everydayFlows(base: DB): DB {
+  const date = FLOWS_DATE
+  const ok = (r: { ok: boolean } | boolean, step: string) => {
+    if (r === false || (typeof r === 'object' && !r.ok)) throw new Error(`The everyday flow "${step}" did not go through; update src/domain/integrityKit.ts`)
+  }
+  return produce(base, (d) => {
+    openJobFromPlan(d, 'ps-q3-solutions', { date, hiringManagerId: 'p-tomas' })
+    ok(approveOffer(d, 'o-daniel-reyes', { approverId: 'p-founder', at: '2026-10-09T17:00:00.000Z' }), 'approve the offer')
+    ok(markSent(d, 'o-daniel-reyes', { date, force: true }), 'send the offer')
+    ok(markAccepted(d, 'o-daniel-reyes', { date }), 'accept the offer')
+    hireFromOffer(d, 'o-daniel-reyes', { date })
+    offboardPerson(d, 'p-ravi', { type: 'resigned_notice', reason: 'Moving away', lastDay: '2026-10-30', noticeGivenOn: date }, { date })
+    offboardPerson(d, 'p-lucas', { type: 'resigned_notice', reason: 'Took another offer', lastDay: '2026-10-12', noticeGivenOn: date }, { date })
+    const request = createRequest(d, { personId: 'p-chris', policyId: 'pol-vacation', startDate: '2026-10-19', endDate: '2026-10-20' }, { date })
+    ok(approveRequest(d, request.id, { date, approverId: 'p-elena' }), 'approve the time off')
+    changeJobOrPay(d, 'p-chris', { effectiveOn: '2026-11-01', reason: 'merit', salary: 190000 }, { date })
+    startLeave(d, { personId: 'p-hannah', kind: 'bonding', requestedOn: date, startDate: '2026-10-26', expectedReturn: '2026-12-21' }, { date })
+    ok(markPayRunSubmitted(d, { start: '2026-10-01', end: '2026-10-15', payday: '2026-10-15' }, { date: '2026-10-13', actorId: 'p-jasmine' }), 'mark the pay run submitted')
+    ok(setPayRunTotals(d, { start: '2026-10-16', end: '2026-10-31', payday: '2026-10-30' }, { gross: 98000, employerTaxes: 7500 }, { date }), 'enter pay run totals')
+  })
 }

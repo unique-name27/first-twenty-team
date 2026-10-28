@@ -111,8 +111,11 @@ export type LinkRule = {
   severity: IntegritySeverity
 }
 
-/** `first` must not be after `then` when both are real dates. */
-export type DateRule = { from: CollectionKey; first: string; then: string; severity: IntegritySeverity }
+/**
+ * `first` must not be after `then` when both are real dates, unless the two `unlessSame` fields hold the same
+ * real date (a shape a flow writes on purpose).
+ */
+export type DateRule = { from: CollectionKey; first: string; then: string; unlessSame?: readonly [string, string]; severity: IntegritySeverity }
 
 /** No two records may share a value at `path` (compared lowercased when `lower`). */
 export type UniqueRule = { from: CollectionKey; path: string; when?: When; lower: boolean; severity: IntegritySeverity }
@@ -252,7 +255,8 @@ export const REFERENCE_RULES: readonly RefRule[] = [
   ...refs('activity', [
     { path: 'actorId', to: 'people', severity: 'note' },
     ...ACTIVITY_ENTITIES.map(([type, to]): RefInput<Row<'activity'>> => ({ path: 'entityId', to, required: true, when: { field: 'entityType', in: [type] }, severity: 'note' })),
-    { path: 'relatedId', to: ['people', 'candidates', 'contractors', 'jobs', 'applications'], severity: 'note' },
+    // A job opened from the headcount plan names its plan line.
+    { path: 'relatedId', to: ['people', 'candidates', 'contractors', 'jobs', 'applications', 'plan'], severity: 'note' },
   ]),
 ]
 
@@ -296,14 +300,26 @@ export const LINK_RULES: readonly LinkRule[] = [
   link('plan', 'jobId', 'jobs', 'id', 'planSlotId', 'note'),
 ]
 
-function dates<K extends CollectionKey>(from: K, pairs: Array<[PathTo<Row<K>, string>, PathTo<Row<K>, string>, IntegritySeverity?]>): DateRule[] {
-  return pairs.map(([first, then, severity]) => ({ from, first, then, severity: severity ?? 'failure' }))
+type DateOpts<T> = { severity?: IntegritySeverity; unlessSame?: readonly [PathTo<T, string>, PathTo<T, string>] }
+
+function dates<K extends CollectionKey>(
+  from: K,
+  pairs: Array<[PathTo<Row<K>, string>, PathTo<Row<K>, string>, (IntegritySeverity | DateOpts<Row<K>>)?]>,
+): DateRule[] {
+  return pairs.map(([first, then, o]) => {
+    const opts: DateOpts<Row<K>> = typeof o === 'string' ? { severity: o } : (o ?? {})
+    return { from, first, then, severity: opts.severity ?? 'failure', ...(opts.unlessSame ? { unlessSame: [opts.unlessSame[0], opts.unlessSame[1]] as const } : {}) }
+  })
 }
+
+// Offboarding someone before their start date (they never started work) writes that earlier last day as
+// both endDate and separation.lastDay, so a start after the end is fine when those two agree.
+const NEVER_STARTED = ['endDate', 'separation.lastDay'] as const
 
 export const DATE_RULES: readonly DateRule[] = [
   ...dates('people', [
-    ['startDate', 'endDate'],
-    ['startDate', 'separation.lastDay'],
+    ['startDate', 'endDate', { unlessSame: NEVER_STARTED }],
+    ['startDate', 'separation.lastDay', { unlessSame: NEVER_STARTED }],
     ['separation.noticeGivenOn', 'separation.lastDay'],
   ]),
   ...dates('contractors', [['startOn', 'endOn']]),
@@ -460,7 +476,12 @@ function checkDates(c: Checker, rule: DateRule): void {
   for (const r of c.list(rule.from)) {
     const a = asDate(valueAt(r, rule.first))
     const b = asDate(valueAt(r, rule.then))
-    if (a && b && a > b) c.add('date_order', rule.severity, rule.from, textOf(r.id) ?? '', `${rule.first}>${rule.then}`, null)
+    if (!a || !b || a <= b) continue
+    if (rule.unlessSame) {
+      const x = asDate(valueAt(r, rule.unlessSame[0]))
+      if (x !== null && x === asDate(valueAt(r, rule.unlessSame[1]))) continue
+    }
+    c.add('date_order', rule.severity, rule.from, textOf(r.id) ?? '', `${rule.first}>${rule.then}`, null)
   }
 }
 

@@ -12,11 +12,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { blankDB } from '@/data/blank'
 import { buildSampleDB } from '@/data/seed'
 import { type IntegrityCode, type IntegrityProblem, integrityProblems } from '@/domain/integrity'
-import { plantAll } from '@/domain/integrityKit'
+import { everydayFlows, FLOWS_DATE, plantAll } from '@/domain/integrityKit'
 import { compOrFirst, currentComp } from '@/domain/pay'
 import { asDate } from '@/domain/paths'
 import { employmentState, fullName, headcountOn } from '@/domain/people'
 import type { DB } from '@/domain/types'
+import { setClockOverride } from '@/lib/dates'
 import { RECORD_COLLECTIONS, tableName } from '../../../src/sync/collections'
 import type { Db } from '../db'
 import { migrationsDir } from '../migrate'
@@ -29,6 +30,10 @@ import { READ_MODEL } from './spec'
 const ANCHOR = '2026-10-09'
 const sample: DB = buildSampleDB()
 const { db: plantedDb } = plantAll(sample)
+setClockOverride(FLOWS_DATE)
+/** Valid data the app's own flows write (a hire who never started, a job opened from the plan, ...). */
+const flowsDb = everydayFlows(sample)
+setClockOverride(null)
 /** Records that are not the shape the types say: every view and the checks must still read them. */
 const malformedDb = produce(sample, (d) => {
   const job = d.jobs[0] as unknown as Record<string, unknown>
@@ -64,6 +69,7 @@ beforeAll(async () => {
   await load('default', sample)
   await load('w-planted', plantedDb)
   await load('w-malformed', malformedDb)
+  await load('w-flows', flowsDb)
   await load('w-blank', blankDB({ companyName: 'Blankco', founderFirstName: 'Bo', founderLastName: 'Lank', foundedOn: '2026-03-02' }))
   await db.exec(`SET first_twenty.today = '${ANCHOR}'`)
 })
@@ -379,6 +385,11 @@ describe('v_integrity_problems and integrityProblems', () => {
       'manager_leaving',
     ]
     expect([...new Set(ts.map((t) => t[0]))].sort()).toEqual([...codes].sort())
+  })
+
+  it('agree that the everyday flows leave nothing to report', async () => {
+    expect(integrityProblems(flowsDb)).toEqual([])
+    expect(await sqlProblems('w-flows')).toEqual([])
   })
 
   it('agree on records that are not the shape the types say', async () => {

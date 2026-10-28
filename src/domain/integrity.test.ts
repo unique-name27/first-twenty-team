@@ -3,9 +3,10 @@
 // The store loads first so every seed and domain module finishes loading before the sample is built.
 import '@/store/db'
 import { produce } from 'immer'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { buildSampleDB } from '@/data/seed'
 import type { DB } from '@/domain/types'
+import { setClockOverride } from '@/lib/dates'
 import {
   CUSTOM_CHECKS,
   DATE_RULES,
@@ -17,7 +18,7 @@ import {
   REFERENCE_RULES,
   UNIQUE_RULES,
 } from './integrity'
-import { PLANTS, plantAll, planted } from './integrityKit'
+import { everydayFlows, FLOWS_DATE, PLANTS, plantAll, planted } from './integrityKit'
 
 const sample: DB = buildSampleDB()
 const lines = (db: DB) => integrityProblems(db).map(describeProblem).sort()
@@ -95,5 +96,20 @@ describe('integrityProblems', () => {
       ...CUSTOM_CHECKS,
     ]
     expect(new Set(keys).size).toBe(keys.length)
+  })
+})
+
+describe('the everyday flows', () => {
+  afterEach(() => setClockOverride(null))
+
+  it('leave nothing to report: a job from the plan, a hire, an exit, a hire who never started, time off, a raise, a leave, pay runs', () => {
+    setClockOverride(FLOWS_DATE)
+    const db = everydayFlows(sample)
+    // The flows really ran: the new job names its plan line, and the incoming hire left before starting.
+    expect(db.activity.some((a) => a.kind === 'job_opened' && a.relatedId === 'ps-q3-solutions')).toBe(true)
+    const lucas = db.people.find((p) => p.id === 'p-lucas')!
+    expect([lucas.endDate, lucas.separation?.lastDay, lucas.endDate! < lucas.startDate]).toEqual(['2026-10-12', '2026-10-12', true])
+    expect(db.people.some((p) => p.fromApplicationId === 'a-daniel-reyes')).toBe(true)
+    expect(lines(db)).toEqual([])
   })
 })
