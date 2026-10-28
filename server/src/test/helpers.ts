@@ -3,7 +3,7 @@
 import { PGlite } from '@electric-sql/pglite'
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify'
 import { RECORD_COLLECTIONS, tableName } from '../../../src/sync/collections'
-import { buildApp } from '../app'
+import { buildApp, type BuildAppOptions } from '../app'
 import { DEVICE_COOKIE, SECURE_DEVICE_COOKIE, SECURE_SESSION_COOKIE, SESSION_COOKIE, upsertAdmin } from '../auth'
 import { type Config, testConfig } from '../config'
 import { type Db, fromPGlite } from '../db'
@@ -69,8 +69,9 @@ export async function resetDb(db: Db): Promise<void> {
   await db.query(`INSERT INTO workspaces (id, name, slug, keep) VALUES ($1, 'Default workspace', 'default-workspace', true)`, [WORKSPACE_ID])
 }
 
-export async function makeApp(db: Db, overrides: Partial<Config> = {}): Promise<FastifyInstance> {
-  const app = await buildApp({ db, config: testConfig(overrides), logger: false })
+/** The app on `db` with the test config (`overrides` on top) and, in `options`, any other buildApp option (careers routes, limiters). */
+export async function makeApp(db: Db, overrides: Partial<Config> = {}, options: Omit<BuildAppOptions, 'db' | 'config'> = {}): Promise<FastifyInstance> {
+  const app = await buildApp({ db, config: testConfig(overrides), logger: false, ...options })
   await app.ready()
   return app
 }
