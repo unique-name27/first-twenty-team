@@ -1560,6 +1560,29 @@ sed 's/^/log: /' "$LOG"
     }
   })
 
+  it('stops --install-postgres when the OS package is older than Postgres 15, and warns about an older one already there', () => {
+    const r = bash(`${prelude}
+${shellFunction(setup, 'apt_postgres_major')}
+mkdir -p "$work/bin"
+stub() { printf '#!/usr/bin/env bash\\n%s\\n' "$2" > "$work/bin/$1"; }
+stub apt-cache 'echo "postgresql:"; echo "  Installed: (none)"; echo "  Candidate: $FAKE_CANDIDATE"; echo "  Version table:"'
+chmod +x "$work"/bin/*
+export PATH="$work/bin:$PATH"
+echo "jammy=[$(FAKE_CANDIDATE='14+238' apt_postgres_major)]"
+echo "noble=[$(FAKE_CANDIDATE='16+257build1' apt_postgres_major)]"
+echo "none=[$(FAKE_CANDIDATE='(none)' apt_postgres_major)]"
+stub apt-cache 'exit 100'
+echo "broken=[$(apt_postgres_major)]"
+`)
+    expect(r.stderr).toBe('')
+    for (const line of ['jammy=[14]', 'noble=[16]', 'none=[]', 'broken=[]']) expect(r.stdout).toContain(line)
+    expect(setup).toMatch(/^MIN_PG_MAJOR=15$/m)
+    // The check comes before the install, and an existing older Postgres gets a warning (setup never changes it).
+    const install = /PG_CANDIDATE=\$\(apt_postgres_major\)[\s\S]*?apt_install postgresql/.exec(setup)?.[0]
+    expect(install).toMatch(/-lt "\$MIN_PG_MAJOR" \]; then\n\s+die /)
+    expect(setup).toMatch(/PG_HERE=\$\(local_server_major\)\n\s+if \[ -n "\$PG_HERE" \] && \[ "\$PG_HERE" -lt "\$MIN_PG_MAJOR" \]; then\n\s+warn /)
+  })
+
   it('tells you to skip creating the roles when they already exist', () => {
     const r = bash(`${prelude}
 ${shellFunction(setup, 'next_steps')}

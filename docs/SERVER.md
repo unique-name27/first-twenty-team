@@ -61,7 +61,8 @@ You need:
 1. **An EC2 instance running Postgres 15 or newer**, on Amazon Linux 2023 or Ubuntu 22.04 / 24.04.
    Check the version on the instance with `sudo -u postgres psql -tAc 'SHOW server_version'`. (Migration
    007, the read model's views, needs 15: its views read with the reader's own rights. Ubuntu 22.04's own
-   package is Postgres 14, so there install a newer one from apt.postgresql.org, or use Ubuntu 24.04.)
+   package is Postgres 14, so there install a newer one from apt.postgresql.org, or use Ubuntu 24.04;
+   `setup-ec2.sh --install-postgres` stops on 22.04 and says so, and warns about an older Postgres it finds.)
    An instance with 2 GB of memory or more builds comfortably. On a smaller one, such as a t3.micro
    (about 900 MB), setup adds a 2 GB swap file so the build fits (see step 2).
 2. **An Elastic IP attached to the instance**, so its address never changes. In the EC2 console:
