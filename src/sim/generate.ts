@@ -191,7 +191,7 @@ type RoleState = {
 type Who = { id: ID; as: Role }
 
 /** The profile (titles, employers, scorecard notes in pools.ts) for a role template. */
-function profileFor(plan: RolePlan): ProfileKey {
+export function profileFor(plan: Pick<RolePlan, 'template' | 'title'>): ProfileKey {
   if (plan.title === 'Office coordinator') return 'coord'
   const by: Record<string, ProfileKey> = {
     'rt-fullstack': 'eng',
@@ -207,7 +207,7 @@ function profileFor(plan: RolePlan): ProfileKey {
   return by[plan.template] ?? 'eng'
 }
 
-function slug(s: string): string {
+export function slug(s: string): string {
   return s
     .toLowerCase()
     .normalize('NFKD')
