@@ -627,10 +627,11 @@ deploys a release only when all of these hold:
 - the `verify` check of that commit passed;
 - it is newer than what runs now (an older release never rolls the server back by itself).
 
-CI on `main` cancels a run when another merge lands right after it, so a commit's `verify` check can end
-up cancelled. Releasing such a commit, the log says its check "did not pass (cancelled)": open that run in
-the repo's **Actions** tab and choose **Re-run all jobs**, and the live channel looks again within 30
-minutes of its last look.
+CI on `main` cancels a run when another merge lands right after it, so a commit's `verify` check can fail
+although no test did: `verify` still runs in a cancelled run, and its log shows which jobs were cancelled.
+Releasing such a commit, the log says its check "did not pass (failure)": open that run in the repo's
+**Actions** tab and choose **Re-run all jobs**, and the live channel looks again within 30 minutes of its
+last look.
 
 Team members have write access, so they could publish a release, move a tag or edit a release too; the
 author check and the publication-time check stop that from going live, and the on-`main` check keeps it to

@@ -55,6 +55,32 @@ export type Config = {
   careersOrigin: string | undefined
   /** The in-app assistant (server/src/assistant; docs/SERVER.md "Lark, the assistant"). */
   assistant: AssistantConfig
+  /**
+   * scrypt's cost (N) for new password hashes: always SCRYPT_N, except in tests, where testConfig uses
+   * the far cheaper TEST_SCRYPT_N to save time. Not an environment variable; checkScryptCost refuses any
+   * other cost outside tests. Each stored hash names its own cost, so either kind still verifies.
+   */
+  scryptN: number
+}
+
+/** scrypt's cost for password hashes (auth.ts): N=2^15, 32 MiB and tens of milliseconds per hash. */
+export const SCRYPT_N = 2 ** 15
+/** The cost tests hash with (testConfig, test/helpers.ts createAdmin): 32 times cheaper than SCRYPT_N. */
+export const TEST_SCRYPT_N = 2 ** 10
+
+/**
+ * Refuses a password hashing cost other than SCRYPT_N unless the config is for tests (nodeEnv 'test'):
+ * a cheaper cost is a shortcut for test runs only. buildApp and testConfig check every config they get.
+ */
+export function checkScryptCost(config: Pick<Config, 'nodeEnv' | 'scryptN'>): void {
+  const n = config.scryptN
+  if (n === SCRYPT_N) return
+  if (config.nodeEnv !== 'test') {
+    throw new ConfigError(`A password hashing cost other than N=${SCRYPT_N} is for tests only (got N=${n} with NODE_ENV=${config.nodeEnv}).`)
+  }
+  if (!Number.isInteger(n) || n < 2 || n > SCRYPT_N || (n & (n - 1)) !== 0) {
+    throw new ConfigError(`A test password hashing cost must be a power of 2 between 2 and ${SCRYPT_N} (got ${n}).`)
+  }
 }
 
 export type SignupMode = 'closed' | 'open'
@@ -332,6 +358,7 @@ export function loadConfig(env: Env = process.env, options: LoadConfigOptions = 
     careersHosts,
     careersOrigin,
     assistant,
+    scryptN: SCRYPT_N,
   }
 }
 
@@ -364,9 +391,13 @@ function assistantConfig(env: Env, production: boolean): AssistantConfig {
   }
 }
 
-/** A config for tests and tools: in-memory PGlite, nothing served, development defaults. */
+/**
+ * A config for tests: in-memory PGlite, nothing served, development defaults, and the cheap test cost
+ * for password hashes. Overrides that make it a production or development config get the real cost, and
+ * asking for the test cost there is a ConfigError.
+ */
 export function testConfig(overrides: Partial<Config> = {}): Config {
-  return {
+  const config: Config = {
     nodeEnv: 'test',
     port: 8787,
     host: '127.0.0.1',
@@ -391,6 +422,9 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     careersHosts: [],
     careersOrigin: undefined,
     assistant: { enabled: false, ...ASSISTANT_DEFAULTS, fake: false },
+    scryptN: (overrides.nodeEnv ?? 'test') === 'test' ? TEST_SCRYPT_N : SCRYPT_N,
     ...overrides,
   }
+  checkScryptCost(config)
+  return config
 }

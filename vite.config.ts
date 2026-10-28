@@ -3,8 +3,10 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { viteSingleFile } from 'vite-plugin-singlefile'
+import { defaultExclude } from 'vitest/config'
 import { devCredentials } from './scripts/dev/credentials.ts'
 import { apiPortFromEnv, codespaceAllowedHosts, DEV_FS_DENY } from './scripts/dev/stack-lib.mjs'
+import { TIERS } from './scripts/test/tiers.ts'
 
 const root = fileURLToPath(new URL('.', import.meta.url))
 
@@ -40,13 +42,15 @@ export default defineConfig(({ mode }) => ({
   },
   test: {
     environment: 'node',
-    include: [
-      'src/**/*.test.ts',
-      'scripts/careers/**/*.test.ts',
-      'scripts/dev/**/*.test.ts',
-      'server/src/**/*.test.ts',
-      'server/deploy/**/*.test.ts',
-    ],
     testTimeout: 20_000,
+    // Every run in UTC, as on the CI runners, whatever the computer's own time zone: some tests show a
+    // timestamp as a date, and east of about UTC+5 that date is a day later.
+    env: { TZ: 'UTC' },
+    // One project per test tier (scripts/test/tiers.ts): `npm run test:unit`, `test:server`, `test:e2e`
+    // and `test:deploy`. Each takes the settings above.
+    projects: TIERS.map((tier) => ({
+      extends: true,
+      test: { name: tier.name, include: tier.include, exclude: [...defaultExclude, ...tier.exclude] },
+    })),
   },
 }))

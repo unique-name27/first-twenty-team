@@ -3,8 +3,15 @@
   "permissions": {
     "allow": [
       "Bash(npm run verify)",
+      "Bash(npm run check)",
       "Bash(npm run typecheck)",
       "Bash(npm test:*)",
+      "Bash(npm run test:unit:*)",
+      "Bash(npm run test:server:*)",
+      "Bash(npm run test:e2e:*)",
+      "Bash(npm run test:deploy:*)",
+      "Bash(npm run test:changed:*)",
+      "Bash(npm run test:watch:*)",
       "Bash(npm run stack:*)",
       "Bash(git status)",
       "Bash(git diff:*)",

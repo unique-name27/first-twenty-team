@@ -1,5 +1,8 @@
-# Runs on every pull request and on every push to main. The branch rule on main requires the
-# "verify" check, so nothing merges unless typecheck, all tests and both builds pass.
+# Runs on every pull request and on every push to main. Four jobs run side by side: typecheck and both
+# builds, the unit tests, the server tests with the journeys, and the deploy kit's tests. The last job,
+# "verify", waits for all four and passes only when every one of them passed. The branch rule on main
+# requires the "verify" check, and the server deploys a commit only once its "verify" check passed
+# (server/deploy/auto-update.sh), so keep that name. scripts/test/ci-workflow.test.ts checks this file.
 name: CI
 
 on:
@@ -16,11 +19,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
-    name: verify
+  builds:
+    name: typecheck and builds
     # Pinned so the runner image does not change during the project (ubuntu-latest moves to Ubuntu 26 in October 2026).
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
 
@@ -32,8 +35,119 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Typecheck, tests, app build
-        run: npm run verify
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: App build
+        run: npm run build
 
       - name: Server build
         run: npm run server:build
+
+      # The dev auto sign-in (src/dev, docs/DEV.md) and any development-only API route must never reach a
+      # build. A missing build fails here too, so the check never passes by looking at nothing. A match
+      # prints only the text around it: the one-file build has lines hundreds of kilobytes long.
+      - name: No development-only code in the builds
+        run: |
+          for built in first-twenty.html dist-server; do
+            if [ ! -e "$built" ]; then
+              echo "::error::$built is missing, so this check cannot look at it."
+              exit 1
+            fi
+          done
+          if grep -q -e '__dev/credentials' -e 'autoconnect' first-twenty.html; then
+            grep -o -E '.{0,60}(__dev/credentials|autoconnect).{0,60}' first-twenty.html | head -n 5 || true
+            echo "::error::Development-only code (the dev auto sign-in) reached first-twenty.html."
+            exit 1
+          fi
+          if grep -rq -F '/api/dev/' dist-server; then
+            grep -rl -F '/api/dev/' dist-server || true
+            echo "::error::A development-only route (/api/dev/) reached dist-server."
+            exit 1
+          fi
+          echo "The builds hold no development-only code."
+
+  unit:
+    name: unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Unit tests
+        run: npm run test:unit
+
+  server:
+    name: server and journeys
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Server tests
+        run: npm run test:server
+
+      - name: Journeys
+        run: npm run test:e2e
+
+  deploy:
+    name: deploy kit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Deploy kit tests
+        run: npm run test:deploy
+
+  # The required check. A job that only "needs" the others would be skipped when one of them fails, and
+  # branch protection counts a skipped check as passed. So it always runs and checks every result itself.
+  # In a run that was cancelled (a newer push), it runs too and fails, as a cancelled job is not a pass.
+  verify:
+    name: verify
+    needs: [builds, unit, server, deploy]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every job passed
+        env:
+          BUILDS: ${{ needs.builds.result }}
+          UNIT: ${{ needs.unit.result }}
+          SERVER: ${{ needs.server.result }}
+          DEPLOY: ${{ needs.deploy.result }}
+        run: |
+          echo "typecheck and builds: $BUILDS"
+          echo "unit: $UNIT"
+          echo "server and journeys: $SERVER"
+          echo "deploy kit: $DEPLOY"
+          for result in "$BUILDS" "$UNIT" "$SERVER" "$DEPLOY"; do
+            if [ "$result" != success ]; then
+              echo "::error::Not every job passed."
+              exit 1
+            fi
+          done

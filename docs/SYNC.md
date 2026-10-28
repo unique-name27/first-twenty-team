@@ -567,8 +567,10 @@ company's name and " Bot" (`Company Bot` for a company with no name). The sample
 - Never put secrets in the repo or the app bundle. The server reads `DATABASE_URL` and other settings
   from environment variables (`/etc/first-twenty/env` on EC2, `.env` locally; `.env` is git-ignored).
 - Passwords are hashed with scrypt (`node:crypto`, N=2^15, r=8, p=1, 16-byte salt); compared in constant
-  time. The admin is created from the command line (`npm run server:create-admin -- --email you@company.com`),
-  which asks for the password without echoing it. At most two password checks run at once (16 may wait);
+  time. Tests hash at a far cheaper cost (`TEST_SCRYPT_N` in `server/src/config.ts`) to save time; a
+  server refuses to start with it unless `NODE_ENV` is test, and no setting can choose it. The admin is
+  created from the command line (`npm run server:create-admin -- --email you@company.com`), which asks for
+  the password without echoing it. At most two password checks run at once (16 may wait);
   sign-ups and accepted invites hash their passwords through the same gate.
 - Sign-ups are limited per client address (every try) and for the whole server (only those that create a
   company), 5 and 60 per hour; joining with an invite checks the token first and is limited per address;
