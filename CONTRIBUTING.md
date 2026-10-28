@@ -60,7 +60,10 @@ submit to the project is under Apache-2.0 too, unless you explicitly say otherwi
    Shift+Tab). Push back on the plan until you agree with it.
 4. **Build and check locally.** Let Claude write the code and its tests, read every change it makes, then run
    `npm run verify` (while you work, `npm run check` is quicker: see "Tests" below). For UI, try it in the
-   browser at 375px wide and by keyboard only.
+   browser at 375px wide and by keyboard only. A change to hiring, onboarding, payroll or sync
+   (`src/domain`, `src/sync`, `server/`) should also pass the journey tests on their own, which take a few
+   seconds: `npm run test:e2e` (docs/DEV.md, "Journey tests"). When one fails, its failure dump says which
+   step broke and what the server holds.
 5. **Open a pull request** and fill in the template. Link the issue (`Closes #12`). Open it as a draft early
    if you want feedback before it is finished.
 6. **CI and review.** GitHub Actions runs four jobs side by side (typecheck and both builds, the unit tests,

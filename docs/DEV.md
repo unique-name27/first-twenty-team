@@ -55,7 +55,7 @@ codespace uses (`.devcontainer/devcontainer.json`).
 | `npm test` | Every test, all four tiers; `npm test -- src/sync` runs the tests in one folder |
 | `npm run test:unit` | The unit tests: no database, no server (`src/`, `scripts/`) |
 | `npm run test:server` | The server tests: the API on in-memory PGlite (`server/src/`) |
-| `npm run test:e2e` | The journeys through the real API (`server/src/e2e/`, the `src/sync` round trips) |
+| `npm run test:e2e` | The journey tests: whole paths through the real server and database (`server/src/e2e/`, the `src/sync` round trips; "Journey tests" below) |
 | `npm run test:deploy` | The deploy kit's tests (`server/deploy/`): seconds on Linux, about 13 minutes on Windows |
 | `npm run test:changed` | Only the tests your changes since `origin/main` touch, in every tier but the deploy kit |
 | `npm run test:watch` | Reruns the tests each save touches (every tier but the deploy kit); Ctrl+C stops it |
@@ -178,6 +178,134 @@ changes, and lists it in `server/sql/SHA256SUMS`. `server/src/readmodel/readmode
 newest one matches. While that file is your branch's own and not on main yet, `--replace` instead of
 `--write` rewrites it; it refuses a file that is on main. Changing a check in
 `src/domain/integrity.ts` changes `v_integrity_problems` the same way.
+
+## Journey tests
+
+A journey test walks one path through the app the way people take it, against the real server and
+database, in one test file: no browser window, no network, no running stack. `server/src/e2e/journey.test.ts`
+takes a candidate from Ledgerlark's careers page to their first paycheck and proves that:
+
+- the careers form works through the real route, with its real checks and limits (a typo comes back to
+  the candidate, a second click stores nothing more), and the application reaches the admin's browser by sync;
+- the admin's browser can move it through the stages, schedule the intro call, enter the scorecard, draft
+  and send the offer (an offer the admin drafts needs no approval), record the acceptance, hire from it,
+  complete the onboarding checklist and submit the first pay run that pays the new person, each change made
+  by the domain function the screen calls;
+- the server holds all of it: `v_hire_journey` has one complete row for the hire, `v_integrity_problems` is
+  empty (and `src/domain/integrity.ts` agrees on the browser's copy), and `change_log` has every write in
+  order, under the login that sent it;
+- a second login, invited the normal way, sees the new person and the pay run, and its copy matches the admin's.
+
+It takes about 4 seconds. The server runs as the rows-only role production uses (the migrations run as the
+schema owner, as `server/deploy/deploy.sh` runs them), so a change that needs more rights fails here first.
+
+### Run them
+
+```bash
+npm run test:e2e                                  # every journey test (server/src/e2e)
+npx vitest run server/src/e2e/journey.test.ts     # one file
+```
+
+`npm test`, `npm run verify` and CI run them too. Run them before a pull request that changes hiring,
+onboarding, payroll or sync (CONTRIBUTING.md).
+
+### Write one
+
+Add a `*.test.ts` file in `server/src/e2e` and start it from the kit, `server/src/e2e/kit.ts`:
+
+| Part | What it does |
+| --- | --- |
+| `startJourney()` | A fresh server for the file: an in-memory database, the real app with the careers pages on, and the admin's browser connected to the uploaded Ledgerlark sample. The day is 2026-10-09 (the sample's own day) unless `start` says another |
+| `j.step(name, fn)` | Runs one part of the story under a name. When it fails, the failure dump is printed and the error names the step |
+| `j.act(browser, label, recipe)` | One change, as the app makes it: the browser store's `mutate(label, recipe)`, then a sync. The recipe calls the domain function the screen calls, with the same arguments and label (copy them from the feature, for example `src/features/hiring/actions.ts`) |
+| `j.apply({ job, fields })` | Sends the careers form the way a candidate's browser does: the list page, the job's page, its form. Gives back the status, the page and whether it was sent |
+| `j.advanceTo(date)` | Moves the day forward with the app's clock override (`setClockOverride`), which every date in the domain reads. Never backwards |
+| `j.sql(text, params)` | A read-only query as the server's role, with the read model's today on the journey's day |
+| `j.connect(name)` and `j.invite(name, email)` | Another computer of the admin, or a second login joined with an invite link. Each browser has its own store, storage and cookie jar |
+| `browser.db()`, `browser.sync()`, `browser.viewerId()` | A browser's copy of the workspace, a sync now, and the person it acts as (Viewing as; set `browser.viewAs` to change it) |
+
+```ts
+import { afterAll, beforeAll, expect, it } from 'vitest'
+import { advanceApplication } from '@/domain/hiring'
+import { today } from '@/lib/dates'
+import { type Journey, startJourney } from './kit'
+
+let j: Journey
+beforeAll(async () => {
+  j = await startJourney()
+}, 60_000)
+afterAll(() => j?.close())
+
+it('takes a careers application to the intro call', async () => {
+  const email = 'rosa.alvarez@example.test'
+  await j.step('a candidate applies on the careers page', async () => {
+    const res = await j.apply({
+      job: 'Account executive, mid-market',
+      fields: { name: 'Rosa Alvarez', email, answer: 'I took a mid-market territory from zero to a full pipeline in two quarters.' },
+    })
+    expect(res.sent).toBe(true)
+  })
+  await j.step('the admin moves it to the intro call', async () => {
+    j.advanceTo('2026-10-12')
+    await j.admin.sync()
+    const db = j.admin.db()
+    const app = db.applications.find((a) => db.candidates.find((c) => c.id === a.candidateId)?.email === email)!
+    await j.act(j.admin, 'Moved Rosa Alvarez to Intro call', (d) => advanceApplication(d, app.id, { date: today(), actorId: j.admin.viewerId() }))
+    expect(await j.sql(`SELECT stage_id FROM v_applications WHERE workspace_id = 'default' AND id = $1`, [app.id])).toEqual([{ stage_id: 'intro' }])
+  })
+})
+```
+
+The rules that keep a journey honest:
+
+- **Change data only the way people do**: `j.act` with a domain function, or the careers form. Never write a
+  record by hand, in a browser's store or in SQL. A refused change (the recipe returns `false` or
+  `{ ok: false, reason }`, as the app's own `act()` reads it) or a change that changes nothing fails the step.
+- **Take only the steps the screen offers.** Start from what the screen starts with (the schedule sheet's
+  first proposed time, the offer builder's defaults), and where a button shows only in some states, check
+  it the way the journey checks the offer card's Mark sent with `offerActionPlan`.
+- **One fixed clock.** Move it with `j.advanceTo`. Never assert on a time of day (activity times and approvals
+  keep the real time of day on the journey's date) or on a generated id: compare ids with the records that hold them.
+- **Check what the server holds** with `j.sql` over the read model's views ("Query the data with SQL" above),
+  and the browser's copy where that is the point.
+- **Keep it quick**: one `startJourney` per file, in `beforeAll`, and as many steps as the story needs.
+
+### Read the failure dump
+
+When a step fails, the test prints the failure dump once, above the error, and the error starts with
+`Journey step "<name>" failed:`. It looks like this (shortened):
+
+```
+Journey failure dump
+
+Steps (the day, then what happened):
+  2026-10-09  admin connected and uploaded Ledgerlark; careers page on at https://careers.journey.test/ledgerlark/ (1414 ms)
+  2026-10-09  step: a candidate applies on the careers page
+  2026-10-09  candidate: applied for Senior full-stack engineer on the careers page
+  2026-10-12  admin: Moved Noor Lindqvist to Intro call
+  2026-11-10  admin: Marked the Nov 1-15 payroll submitted to your PEO
+  2026-11-10  step: the read model shows one complete hire
+  2026-11-10  FAILED: the read model shows one complete hire
+
+v_hire_journey, the 8 newest hires (a null is a missing step):
+  {"application_id":"a-b85edea8a9","candidate_name":"Noor Lindqvist","job_id":"j-fullstack",...,"first_payday":"2026-11-13"}
+
+v_integrity_problems:
+  (none)
+
+change_log, the last 25 writes (user: who pushed it; none for the careers form):
+  {"seq":1478,"collection":"$doc","record_id":"company","op":"upsert","user":"admin@example.com"}
+```
+
+- **Steps**: what happened, in order, each line starting with the journey's day. A line like
+  `admin: Moved Noor Lindqvist to Intro call` is one change a browser made and synced, named with the app's
+  own label (the one its Undo toast shows). The last line names the step that failed.
+- **v_hire_journey**: one row per hire, newest first. A null shows the step that is missing: no `offer_id`,
+  no accepted offer; no `person_id`, the hire was never recorded; no `hire_comp_id` or
+  `onboarding_checklist_id`, the hire is incomplete; no `first_payday`, no submitted pay run holds the start date yet.
+- **v_integrity_problems**: what `src/domain/integrity.ts` finds wrong in the server's copy, by code and record.
+- **change_log**: the newest writes the server took, newest first, with the login that sent each. A change
+  that is not there never reached the server: the error then says which browser refused it or is not synced.
 
 ## Claude Code in a codespace
 

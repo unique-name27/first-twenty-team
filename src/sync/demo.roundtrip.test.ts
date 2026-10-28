@@ -8,40 +8,22 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { DB } from '@/domain/types'
 import { setClockOverride } from '@/lib/dates'
-import { createApi, type FetchLike } from './api'
+import { createApi } from './api'
 import { diffDB } from './diff'
 import { createSyncEngine } from './engine'
 import { workspaceIdOf } from './loadTime'
+import { type InjectApp, injectFetch } from './testing/inject'
 import { createStatusStore, createTestStore, makeDB, makePerson, memoryStorage, testEnv } from './testing/kit'
 
 const helpersPath = fileURLToPath(new URL('../../server/src/test/helpers.ts', import.meta.url))
 const appPath = fileURLToPath(new URL('../../server/src/app.ts', import.meta.url))
 const available = existsSync(appPath) && existsSync(helpersPath)
 
-type InjectResponse = { statusCode: number; body: string; headers: Record<string, unknown>; cookies: Array<{ name: string; value: string }> }
-type InjectApp = {
-  inject(opts: { method: string; url: string; headers: Record<string, string>; payload?: string }): Promise<InjectResponse>
-  close(): Promise<void>
-}
 type TestDb = { close(): Promise<void>; query(sql: string, params?: unknown[]): Promise<unknown> }
 type ServerHelpers = {
   makeTestDb(): Promise<TestDb>
   resetDb(db: TestDb): Promise<void>
   makeApp(db: TestDb, overrides?: Record<string, unknown>): Promise<InjectApp>
-}
-
-/** fetch() over app.inject(), with one cookie jar per browser. */
-function injectFetch(app: () => InjectApp): FetchLike {
-  let cookie: string | null = null
-  return async (url, init = {}) => {
-    const headers: Record<string, string> = { ...(init.headers as Record<string, string>) }
-    if (cookie) headers.cookie = cookie
-    const res = await app().inject({ method: init.method ?? 'GET', url, headers, payload: init.body as string | undefined })
-    const session = res.cookies.find((c) => c.name === 'ft_session')
-    if (session) cookie = session.value ? `ft_session=${session.value}` : null
-    const noBody = res.statusCode === 204 || res.statusCode === 304
-    return new Response(noBody ? null : res.body, { status: res.statusCode, headers: { 'Content-Type': String(res.headers['content-type'] ?? '') } })
-  }
 }
 
 const PASSWORD = 'a demo password'

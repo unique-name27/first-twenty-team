@@ -2,7 +2,9 @@
 // production by structure: only the development entry, server/src/dev/index.ts, imports it, and npm run
 // stack is the only thing that starts that entry. This walks the import graph of every production entry
 // (the ones vite.server.config.ts bundles, which include server/src/index.ts, and app.ts on its own) and
-// fails if any path reaches this folder. It reads the source instead of building (a build is slow).
+// fails if any path reaches this folder. The test-only folders (the journey kit in server/src/e2e, the
+// server test helpers, src/sync/testing) are held to the same rule. It reads the source instead of
+// building (a build is slow).
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,6 +14,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const DEV = path.join(ROOT, 'server', 'src', 'dev')
 const rel = (file: string) => path.relative(ROOT, file).replace(/\\/g, '/')
 const insideDev = (file: string) => file === DEV || file.startsWith(DEV + path.sep)
+/** Code only tests import: production must never reach it either. */
+const TEST_ONLY = [path.join(ROOT, 'server', 'src', 'e2e'), path.join(ROOT, 'server', 'src', 'test'), path.join(ROOT, 'src', 'sync', 'testing')]
+const insideTestOnly = (file: string) => TEST_ONLY.some((dir) => file === dir || file.startsWith(dir + path.sep))
 
 /** Every module specifier in `code`: static imports and re-exports, side-effect imports and import(). */
 export function specifiers(code: string): string[] {
@@ -56,7 +61,7 @@ function buildEntries(): string[] {
   return [...input.matchAll(/['"]([^'"]+\.ts)['"]/g)].map((m) => path.join(ROOT, m[1]))
 }
 
-describe('server/src/dev stays out of production', () => {
+describe('server/src/dev and the test-only folders stay out of production', () => {
   const entries = buildEntries()
 
   it('reads the production entries from vite.server.config.ts (so this test checks something)', () => {
@@ -72,6 +77,8 @@ describe('server/src/dev stays out of production', () => {
       }
       const reached = [...graph.entries()].filter(([file]) => insideDev(file)).map(([, chain]) => chain.join(' -> '))
       expect(reached, 'production code must not import server/src/dev').toEqual([])
+      const testOnly = [...graph.entries()].filter(([file]) => insideTestOnly(file)).map(([, chain]) => chain.join(' -> '))
+      expect(testOnly, 'production code must not import server/src/e2e, server/src/test or src/sync/testing').toEqual([])
     })
   }
 
