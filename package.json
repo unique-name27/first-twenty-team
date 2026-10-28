@@ -17,7 +17,7 @@
     "test:server": "vitest run --project server",
     "test:e2e": "vitest run --project e2e",
     "test:deploy": "vitest run --project deploy",
-    "test:changed": "vitest run --changed origin/main",
+    "test:changed": "vitest run --changed origin/main --project unit --project server --project e2e",
     "test:watch": "vitest --project unit --project server --project e2e",
     "check": "npm run typecheck && npm run test:changed",
     "verify": "npm run typecheck && vitest run --project unit --project server --project e2e && npm run build",

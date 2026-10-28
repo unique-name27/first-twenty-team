@@ -84,7 +84,7 @@ The tests come in four tiers, one npm script each. `npm test` runs all four.
 | `npm run test:server` | The server tests: the API on in-memory PGlite (`server/src/`) |
 | `npm run test:e2e` | The journeys through the real API (`server/src/e2e/`, the `src/sync` round trips) |
 | `npm run test:deploy` | The deploy kit's tests (`server/deploy/`): seconds on Linux, about 13 minutes on Windows |
-| `npm run test:changed` | Only the tests your changes since `origin/main` touch (a change to `package.json` or `vite.config.ts` runs them all) |
+| `npm run test:changed` | Only the tests your changes since `origin/main` touch, every tier but the deploy kit (a change to `package.json` or `vite.config.ts` runs them all) |
 | `npm run test:watch` | Reruns the tests each save touches, every tier but the deploy kit |
 | `npm run check` | Typecheck and `test:changed` |
 

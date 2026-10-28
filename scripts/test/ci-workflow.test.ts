@@ -135,4 +135,12 @@ describe('npm scripts for the tiers', () => {
     expect(scripts.verify).toBe('npm run typecheck && vitest run --project unit --project server --project e2e && npm run build')
     expect(TIERS.map((t) => t.name).filter((name) => !scripts.verify.includes(`--project ${name}`))).toEqual(['deploy'])
   })
+
+  it('leave the deploy kit out of the quick runs too (it imports the server, and takes minutes on Windows)', () => {
+    for (const name of ['test:changed', 'test:watch']) {
+      expect(TIERS.map((t) => t.name).filter((tier) => !scripts[name].includes(`--project ${tier}`)), name).toEqual(['deploy'])
+    }
+    expect(scripts['test:changed'].startsWith('vitest run --changed origin/main ')).toBe(true)
+    expect(scripts.check).toBe('npm run typecheck && npm run test:changed')
+  })
 })
