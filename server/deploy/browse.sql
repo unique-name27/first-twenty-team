@@ -2,106 +2,127 @@
 -- the data in DBeaver"). Connect as first_twenty_viewer to the first_twenty database, open this file in a
 -- SQL editor and run one statement at a time (in DBeaver: put the cursor in it and press Ctrl+Enter).
 --
--- Every record table has the same columns: workspace_id, id, data (the whole record as JSON), version,
--- pos, updated_at, updated_by. data->>'field' reads one field as text; jsonb_pretty(data) shows all of it.
+-- Most queries read the read model (migration 007; docs/DEV.md, "Query the data with SQL"): views with one
+-- typed column per field, named in snake_case (v_people, v_jobs, v_hire_journey, ...). Under them, every
+-- record table has the same columns: workspace_id, id, data (the whole record as JSON), version, pos,
+-- updated_at, updated_by. data->>'field' reads one field as text; jsonb_pretty(data) shows all of it.
 -- Field names match the record types in src/domain/types.ts.
 --
 -- A server can hold more than one company (a public demo server, SIGNUP_MODE=open), so every query below
 -- reads one company: yours, the workspace 'default'. To read another, replace 'default' with its id from
--- the first query.
+-- the first query. The views that depend on today (v_current_job, v_headcount_by_month) use today's date in
+-- Pacific time, the app's own day; to read them as of another day, run SET first_twenty.today = '2026-12-31'
+-- first.
 
 -- Companies on this server: yours is 'default' (kept); demo companies are deleted after DEMO_EXPIRE_DAYS idle.
 SELECT w.id, w.slug, w.name, w.keep, w.created_at, w.last_active_at
 FROM workspaces w
 ORDER BY w.keep DESC, w.last_active_at DESC;
 
--- People: everyone on the team, oldest first.
-SELECT p.data->>'firstName' AS first_name, p.data->>'lastName' AS last_name, p.data->>'title' AS title,
-       p.data->>'workEmail' AS work_email, p.data->>'startDate' AS start_date, p.data->>'endDate' AS end_date,
-       p.data->>'workMode' AS work_mode, p.updated_at
-FROM people p
-WHERE p.workspace_id = 'default'
-ORDER BY p.data->>'startDate';
+-- People: everyone on the team with today's title, department and pay (from the newest pay record in
+-- effect), in order of hire. employment_state is incoming, active, on_leave or former.
+SELECT c.hire_number AS employee_no, c.full_name, c.employment_state, c.title, c.department_name, c.pay_type,
+       c.salary, c.hourly_rate, c.start_date, c.end_date, p.work_email, p.work_mode, p.home_state
+FROM v_current_job c
+JOIN v_people p ON p.workspace_id = c.workspace_id AND p.id = c.id
+WHERE c.workspace_id = 'default'
+ORDER BY c.hire_number;
 
--- Hires: everyone who joined through the app's Hire step, with the job, application and accepted offer it
--- came from. A hire is not a table of its own: Hire writes the person (people), the first pay record
--- (comp), the equity grant (grants), the onboarding checklist (checklists), marks the application hired
--- and the job filled. people.data->>'fromApplicationId' is the link back. People added by hand (the
--- founder, imports) show with empty hiring columns.
-SELECT (p.data->>'hireNumber')::int AS employee_no,
-       concat_ws(' ', p.data->>'firstName', p.data->>'lastName') AS person, p.data->>'title' AS title,
-       p.data->>'startDate' AS start_date, j.data->>'title' AS hired_for_job, c.data->>'source' AS source,
-       a.data->>'appliedOn' AS applied_on, a.data->>'closedOn' AS hired_on, o.data->>'payType' AS pay_type,
-       (o.data->>'salary')::numeric AS offer_salary, (o.data->>'hourlyRate')::numeric AS offer_hourly_rate,
-       (o.data->>'equityShares')::numeric AS offer_shares, o.data->>'sentOn' AS offer_sent
-FROM people p
-LEFT JOIN applications a ON a.workspace_id = p.workspace_id AND a.id = p.data->>'fromApplicationId'
-LEFT JOIN candidates c ON c.workspace_id = a.workspace_id AND c.id = a.data->>'candidateId'
-LEFT JOIN jobs j ON j.workspace_id = a.workspace_id AND j.id = a.data->>'jobId'
-LEFT JOIN offers o ON o.workspace_id = a.workspace_id AND o.data->>'applicationId' = a.id AND o.data->>'status' = 'accepted'
-WHERE p.workspace_id = 'default'
-ORDER BY employee_no;
+-- Headcount at the end of each month (W-2 employees; contractors never count), with starts and last days.
+SELECT h.month, h.headcount, h.starts, h.departures
+FROM v_headcount_by_month h
+WHERE h.workspace_id = 'default'
+ORDER BY h.month;
+
+-- Hires: one row per application marked hired, from the job to the first payday. The Hire step writes the
+-- person, the starting pay record, the equity grant and the onboarding checklist, marks the application
+-- hired and the job filled. An empty column means that step is missing (the integrity query says more).
+-- first_payday is the payday of the pay run whose period holds the start date: empty when that period is
+-- not on record (people paid before the company kept pay runs in the app, or a hire who never started).
+-- People added by hand (the founder, imports) have no hire row; they are in the people query.
+SELECT j.hire_number AS employee_no, j.person_name, j.job_title, j.source, j.applied_on, j.offer_accepted_on,
+       j.start_date, j.days_to_hire, j.offer_pay_type, j.offer_salary, j.offer_hourly_rate, j.offer_shares,
+       j.onboarding_tasks_done, j.onboarding_tasks_total, j.first_payday
+FROM v_hire_journey j
+WHERE j.workspace_id = 'default'
+ORDER BY j.start_date, j.hire_number;
 
 -- Jobs, with their status and posted pay range.
-SELECT j.data->>'title' AS title, j.data->>'status' AS status, (j.data->>'payMin')::numeric AS pay_min,
-       (j.data->>'payMax')::numeric AS pay_max, j.data->>'workMode' AS work_mode,
-       j.data->>'employmentType' AS employment, j.updated_at
-FROM jobs j
+SELECT j.title, j.status, j.department_name, j.pay_min, j.pay_max, j.work_mode, j.employment_type,
+       j.opened_on, j.closed_on, j.updated_at
+FROM v_jobs j
 WHERE j.workspace_id = 'default'
 ORDER BY j.updated_at DESC;
 
+-- The hiring funnel: applications per job and stage, in each job's stage order. reached counts every
+-- application that ever entered the stage; in_stage counts the ones there now, split by status.
+SELECT f.job_title, f.job_status, f.stage_position, f.stage_name, f.reached, f.in_stage, f.active,
+       f.rejected, f.withdrawn, f.hired
+FROM v_pipeline_funnel f
+WHERE f.workspace_id = 'default'
+ORDER BY f.job_title, f.stage_position;
+
 -- Candidates and where each application stands.
-SELECT concat_ws(' ', c.data->>'firstName', c.data->>'lastName') AS candidate, j.data->>'title' AS job,
-       a.data->>'stageId' AS stage, a.data->>'status' AS status, a.data->>'appliedOn' AS applied_on,
-       c.data->>'source' AS source
-FROM applications a
-JOIN candidates c ON c.workspace_id = a.workspace_id AND c.id = a.data->>'candidateId'
-JOIN jobs j ON j.workspace_id = a.workspace_id AND j.id = a.data->>'jobId'
+SELECT concat_ws(' ', c.first_name, c.last_name) AS candidate, j.title AS job, a.stage_name AS stage,
+       a.status, a.applied_on, a.next_step_due_on, c.source
+FROM v_applications a
+JOIN v_candidates c ON c.workspace_id = a.workspace_id AND c.id = a.candidate_id
+JOIN v_jobs j ON j.workspace_id = a.workspace_id AND j.id = a.job_id
 WHERE a.workspace_id = 'default'
-ORDER BY a.data->>'appliedOn' DESC;
+ORDER BY a.applied_on DESC;
 
 -- Offers.
-SELECT concat_ws(' ', c.data->>'firstName', c.data->>'lastName') AS candidate, o.data->>'title' AS title,
-       o.data->>'status' AS status, o.data->>'payType' AS pay_type, (o.data->>'salary')::numeric AS salary,
-       (o.data->>'hourlyRate')::numeric AS hourly_rate, o.data->>'equityType' AS equity_type,
-       (o.data->>'equityShares')::numeric AS equity_shares, o.data->>'startDate' AS start_date,
-       o.data->>'sentOn' AS sent_on, o.data->>'expiresOn' AS expires_on
-FROM offers o
-LEFT JOIN candidates c ON c.workspace_id = o.workspace_id AND c.id = o.data->>'candidateId'
+SELECT concat_ws(' ', c.first_name, c.last_name) AS candidate, o.title, o.status, o.pay_type, o.salary,
+       o.hourly_rate, o.equity_type, o.equity_shares, o.start_date, o.sent_on, o.expires_on
+FROM v_offers o
+LEFT JOIN v_candidates c ON c.workspace_id = o.workspace_id AND c.id = o.candidate_id
 WHERE o.workspace_id = 'default'
 ORDER BY o.updated_at DESC;
 
 -- Pay history, one row per change.
-SELECT concat_ws(' ', p.data->>'firstName', p.data->>'lastName') AS person, r.data->>'effectiveOn' AS effective_on,
-       r.data->>'payType' AS pay_type, (r.data->>'salary')::numeric AS salary,
-       (r.data->>'hourlyRate')::numeric AS hourly_rate, r.data->>'title' AS title, r.data->>'reason' AS reason
-FROM comp r
-LEFT JOIN people p ON p.workspace_id = r.workspace_id AND p.id = r.data->>'personId'
+SELECT p.full_name AS person, r.effective_on, r.reason, r.pay_type, r.salary, r.hourly_rate, r.title
+FROM v_comp r
+LEFT JOIN v_people p ON p.workspace_id = r.workspace_id AND p.id = r.person_id
 WHERE r.workspace_id = 'default'
-ORDER BY person, effective_on;
+ORDER BY person, r.effective_on;
+
+-- Pay runs: the pay periods marked submitted to the payroll provider, or with the totals entered from its
+-- register (empty until entered), and how many people were employed in the period.
+SELECT r.period_start, r.period_end, r.payday, r.submitted_on, r.gross, r.employer_taxes, r.people_in_period
+FROM v_pay_runs r
+WHERE r.workspace_id = 'default'
+ORDER BY r.period_start;
 
 -- Equity grants (holders can be employees, advisors, contractors, or candidates while an offer is out).
-SELECT g.data->>'holderType' AS holder_type, coalesce(concat_ws(' ', p.data->>'firstName', p.data->>'lastName'), g.data->>'personId') AS holder,
-       g.data->>'type' AS type, (g.data->>'shares')::numeric AS shares, (g.data->>'strikePrice')::numeric AS strike_price,
-       g.data->>'vestingStart' AS vesting_start, g.data->>'status' AS status
-FROM grants g
-LEFT JOIN people p ON p.workspace_id = g.workspace_id AND p.id = g.data->>'personId'
+SELECT g.holder_type, coalesce(p.full_name, k.data->>'name', g.holder_id) AS holder, g.grant_type, g.shares,
+       g.strike_price, g.vesting_start, g.status
+FROM v_grants g
+LEFT JOIN v_people p ON p.workspace_id = g.workspace_id AND p.id = g.holder_id
+LEFT JOIN contractors k ON k.workspace_id = g.workspace_id AND k.id = g.holder_id
 WHERE g.workspace_id = 'default'
-ORDER BY vesting_start;
+ORDER BY g.vesting_start;
 
 -- Time off requests.
-SELECT concat_ws(' ', p.data->>'firstName', p.data->>'lastName') AS person, t.data->>'startDate' AS start_date,
-       t.data->>'endDate' AS end_date, (t.data->>'hours')::numeric AS hours, t.data->>'status' AS status
-FROM time_off_requests t
-LEFT JOIN people p ON p.workspace_id = t.workspace_id AND p.id = t.data->>'personId'
+SELECT p.full_name AS person, t.policy_name, t.start_date, t.end_date, t.hours, t.status
+FROM v_time_off_requests t
+LEFT JOIN v_people p ON p.workspace_id = t.workspace_id AND p.id = t.person_id
 WHERE t.workspace_id = 'default'
-ORDER BY start_date DESC;
+ORDER BY t.start_date DESC;
 
--- Onboarding and offboarding checklists, whole records.
-SELECT c.id, jsonb_pretty(c.data) AS checklist, c.updated_at
-FROM checklists c
-WHERE c.workspace_id = 'default'
-ORDER BY c.updated_at DESC;
+-- Checklists still open (onboarding, offboarding, new state, leave, job changes), soonest task first.
+SELECT p.full_name AS person, k.kind, k.anchor_date, k.tasks_done, k.tasks_total, k.statutory_open, k.next_due_on
+FROM v_checklists k
+LEFT JOIN v_people p ON p.workspace_id = k.workspace_id AND p.id = k.person_id
+WHERE k.workspace_id = 'default' AND k.tasks_open > 0
+ORDER BY k.next_due_on;
+
+-- Integrity problems: what should never be true of the data (src/domain/integrity.ts). Empty is good.
+-- A failure means records contradict each other (a manager who does not exist, dates out of order); a
+-- note means something expected is missing or unusual. Fix them in the app, never here.
+SELECT i.severity, i.code, i.collection, i.record_id, i.field, i.other_id
+FROM v_integrity_problems i
+WHERE i.workspace_id = 'default'
+ORDER BY i.severity, i.code, i.collection, i.record_id;
 
 -- Company settings and the other one-per-workspace documents.
 SELECT d.key, jsonb_pretty(d.data) AS document, d.updated_at

@@ -17,6 +17,7 @@ Read before changing code:
 | --- | --- |
 | `npm install` | Install dependencies (Node 22 or newer) |
 | `npm run stack` | The app, the server on its own PGlite database with the sample company, signed in (`docs/DEV.md`); `-- --fresh` starts over, `-- --offset 10` runs a second one |
+| `npm run sql` | Reads the stack's database with SQL and never changes it: `npm run sql -- hires`, or one SELECT in quotes (`docs/DEV.md`) |
 | `npm run dev` | The app alone at http://127.0.0.1:8826 |
 | `npm run server:dev` | The optional server on PGlite (Postgres in WebAssembly, no install) |
 | `npm test` | Every test, all four tiers (Vitest); `npm test -- src/domain/payrun` runs one folder |
@@ -63,7 +64,8 @@ keeps running until stopped: start it in the background and stop it when you are
   link and the date it was checked; constants live in `src/data/law.ts`. If the source cannot be opened,
   stop and say so.
 - **Never edit an applied SQL migration** (`server/sql/001` to `006`, and any migration already on `main`).
-  A schema change is a new numbered file plus a test.
+  A schema change is a new numbered file plus a test; `npm run server:gen-sql -- --checksums` lists it in
+  `server/sql/SHA256SUMS`, which a test checks so an applied migration cannot change unnoticed.
 - **No secrets.** Never read, print or commit `.env` files, keys, tokens or passwords. The live server's
   settings are not in this repo, and nobody but the product owner deploys.
 - **Privacy rules in ARCHITECTURE.md are hard**: no protected characteristics, no SSNs or bank details,

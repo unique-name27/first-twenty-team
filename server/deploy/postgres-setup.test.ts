@@ -217,6 +217,12 @@ describe('postgres-setup.sql', () => {
         all.rows.map((r) => r.tablename).filter((t) => !['users', 'sessions', 'trusted_devices', 'invites'].includes(t)).sort(),
       )
       expect(readable.rows.map((r) => r.tablename)).toContain('workspaces')
+      // And every read-model view (migration 007), which the viewer reads only through those table grants.
+      const views = await pg.query<{ viewname: string; ok: boolean }>(
+        `SELECT viewname, has_table_privilege('first_twenty_viewer', format('public.%I', viewname), 'SELECT') AS ok FROM pg_views WHERE schemaname = 'public'`,
+      )
+      expect(views.rows.map((r) => r.viewname)).toContain('v_hire_journey')
+      expect(views.rows.filter((r) => !r.ok)).toEqual([])
       await expect(pg.exec(`INSERT INTO people (workspace_id, id, data) VALUES ('w', 'p', '{}')`)).rejects.toThrow(/permission denied/)
       await expect(pg.exec('DELETE FROM change_log')).rejects.toThrow(/permission denied/)
       await expect(pg.exec('CREATE TABLE public.x (a int)')).rejects.toThrow(/permission denied/)

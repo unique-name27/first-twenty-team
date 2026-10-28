@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { CREDENTIALS_PATH, credentialsFile, credentialsMiddleware } from './credentials'
+import { DEV_TOOLS_FILE } from './stack-lib.mjs'
 
 // Invented values for a temporary file; never a real login.
 const LOGIN = { email: 'dev@example.test', password: 'test-only-password-1234', stackId: 'stack-test' }
@@ -52,6 +53,15 @@ describe('GET /__dev/credentials', () => {
     expect(res.headers.get('content-type')).toContain('application/json')
     expect(res.headers.get('cache-control')).toBe('no-store')
     expect(await res.json()).toEqual(LOGIN)
+  })
+
+  it('answers the login only, never the dev tools secret kept beside it', async () => {
+    writeFileSync(file, JSON.stringify(LOGIN))
+    writeFileSync(path.join(dir, DEV_TOOLS_FILE), JSON.stringify({ secret: 'test-only-dev-tools-secret' }))
+    const res = await get({ 'Sec-Fetch-Site': 'same-origin' })
+    const body = await res.text()
+    expect(JSON.parse(body)).toEqual(LOGIN)
+    expect(body).not.toContain('test-only-dev-tools-secret')
   })
 
   it('accepts a same-origin Origin, including the public host a proxy names', async () => {

@@ -6,19 +6,21 @@
 //      .data/dev/credentials.json) and, while the workspace is empty, the Ledgerlark sample company
 //      (scripts/dev/prepare.ts; it finishes before the API starts, because PGlite allows one process per folder)
 //   3. the API (tsx watch, restarts on server changes), then, once it answers, the Vite dev server, their
-//      logs prefixed
+//      logs prefixed. The API runs the development entry, server/src/dev/index.ts: the same server plus
+//      development-only routes, unlocked by a secret made for this run (dev-tools.json, for npm run sql)
 //   4. the address to open; the app signs itself in there (src/dev/autoconnect.ts)
 //
 // Ctrl+C stops both. Flags: --fresh, --offset N, --no-seed (stack-lib.mjs USAGE). The pure parts live in
 // stack-lib.mjs, with tests. Plain JavaScript, so it runs before anything is compiled.
 import { spawn, spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import readline from 'node:readline'
 import { fileURLToPath } from 'node:url'
-import { apiEnv, appOrigin, DEV_EMAIL, devDirName, isStackCommandLine, parseArgs, stackPorts, USAGE } from './stack-lib.mjs'
+import { apiEnv, appOrigin, DEV_EMAIL, DEV_TOOLS_FILE, devDirName, parseArgs, stackPorts, USAGE } from './stack-lib.mjs'
+import { isStackProcess, readStackPid } from './stack-process.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const windows = process.platform === 'win32'
@@ -49,50 +51,22 @@ const devDir = devDirName(args.offset)
 const dir = path.join(root, devDir)
 const pidFile = path.join(dir, 'stack.pid')
 const credentialsFile = path.join(dir, 'credentials.json')
+const devToolsFile = path.join(dir, DEV_TOOLS_FILE)
 const offsetFlag = args.offset ? ` -- --offset ${args.offset}` : ''
 
 // ------------------------------------------------------------------------------------------------
 // One stack per data folder
 // ------------------------------------------------------------------------------------------------
 
-/** The pid file of a stack that is still running, or null (a stale file is removed). */
+/** The pid file of a stack that is still running, or null (a stale file is removed, with its dev tools secret). */
 function runningStack() {
   if (!existsSync(pidFile)) return null
-  let info = null
-  try {
-    info = JSON.parse(readFileSync(pidFile, 'utf8'))
-  } catch {
-    /* unreadable: stale */
-  }
+  const info = readStackPid(pidFile)
   // This process and its parent (npm's shell) may hold the old pid after a restart; neither is another stack.
-  if (info && Number.isInteger(info.pid) && info.pid !== process.pid && info.pid !== process.ppid && isStackProcess(info.pid)) return info
+  if (info && info.pid !== process.pid && info.pid !== process.ppid && isStackProcess(info.pid)) return info
   rmSync(pidFile, { force: true })
+  rmSync(devToolsFile, { force: true })
   return null
-}
-
-/**
- * True when `pid` is alive and, as far as the system can tell, is a stack. A pid alone is not enough: a
- * codespace or container that stopped without Ctrl+C left its pid file behind, and after a restart it
- * hands out the same low pids again, often to unrelated processes (or to this very stack).
- */
-function isStackProcess(pid) {
-  try {
-    process.kill(pid, 0)
-  } catch (err) {
-    // EPERM: the process exists but belongs to someone else.
-    if (err?.code !== 'EPERM') return false
-  }
-  try {
-    if (process.platform === 'linux') return isStackCommandLine(readFileSync(`/proc/${pid}/cmdline`, 'utf8'))
-    const ps = windows
-      ? spawnSync('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], { encoding: 'utf8' })
-      : spawnSync('ps', ['-p', String(pid), '-o', 'args='], { encoding: 'utf8' })
-    if (ps.status !== 0) return true
-    // Windows names only the program, so any node process counts; ps names its arguments too.
-    return windows ? /^"node(\.exe)?"/i.test(ps.stdout.trim()) : isStackCommandLine(ps.stdout.trim().split(/\s+/).join('\0'))
-  } catch {
-    return true // the system would not say: trust the pid
-  }
 }
 
 /** Resolves true when nothing listens on `port` at 127.0.0.1. */
@@ -223,6 +197,7 @@ async function stop(code, fromCtrlC) {
   for (const child of children.values()) end(child, true)
   children.clear()
   rmSync(pidFile, { force: true })
+  rmSync(devToolsFile, { force: true })
   process.exit(code)
 }
 
@@ -233,6 +208,7 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP', ...(windows ? ['SIGBREAK'] 
 // database folder and the ports busy.
 process.on('exit', () => {
   for (const child of children.values()) end(child, true)
+  rmSync(devToolsFile, { force: true })
 })
 
 /** Resolves once `url` answers with a status below 500, or false after `ms`. */
@@ -257,7 +233,17 @@ async function mustStart(what, url) {
   await stop(1, false)
 }
 
-start('api', '36', [tsx, 'watch', '--clear-screen=false', 'server/src/index.ts'], serverEnv)
+// The secret for the API's development-only routes (server/src/dev/routes.ts), new every run: the API gets
+// it in its environment, npm run sql from this file (the Vite dev server never serves .data/).
+const devToolsSecret = randomBytes(32).toString('base64url')
+const devTools = {
+  secret: devToolsSecret,
+  startedAt: new Date().toISOString(),
+  note: 'Development only: lets npm run sql ask this stack\'s API. Made anew each time the stack starts, deleted when it stops.',
+}
+writeFileSync(devToolsFile, `${JSON.stringify(devTools, null, 2)}\n`, { mode: 0o600 })
+
+start('api', '36', [tsx, 'watch', '--clear-screen=false', 'server/src/dev/index.ts'], { ...serverEnv, DEV_TOOLS_SECRET: devToolsSecret })
 // The app starts once the API answers. A codespace opens the browser tab as soon as the app's port
 // listens, and the automatic sign-in on that first load needs the API.
 await mustStart('the API', `http://127.0.0.1:${ports.api}/api/health`)
@@ -280,6 +266,7 @@ if (!stopping) {
       `  Login     ${DEV_EMAIL}: the app signs itself in (password in ${path.relative(root, credentialsFile)})`,
       `  API       http://127.0.0.1:${ports.api} (Vite passes /api through to it)`,
       `  Data      ${devDir} (npm run stack${offsetFlag ? `${offsetFlag} --fresh` : ' -- --fresh'} starts over)`,
+      `  SQL       npm run sql${offsetFlag ? `${offsetFlag}` : ' --'} hires (read only; docs/DEV.md)`,
       '  Stop      Ctrl+C',
       '',
     ].join('\n'),

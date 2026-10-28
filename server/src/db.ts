@@ -9,7 +9,10 @@ import { mkdirSync } from 'node:fs'
 import type { Config } from './config'
 
 export type Row = Record<string, unknown>
-export type QueryResult<T> = { rows: T[]; rowCount: number }
+/** A result column: its name and its Postgres type id (pg_type.oid). */
+export type Field = { name: string; dataTypeID: number }
+/** fields: the result's columns in order (both drivers report them; rows lose a repeated column name). */
+export type QueryResult<T> = { rows: T[]; rowCount: number; fields?: Field[] }
 
 export interface Queryable {
   query<T extends Row = Row>(text: string, params?: unknown[]): Promise<QueryResult<T>>
@@ -42,10 +45,10 @@ function txPreamble(options?: TxOptions): string | null {
 // ---------------------------------------------------------------------------------------------
 
 type PGliteLike = {
-  query<T>(text: string, params?: unknown[]): Promise<{ rows: T[]; affectedRows?: number }>
+  query<T>(text: string, params?: unknown[]): Promise<{ rows: T[]; affectedRows?: number; fields?: Field[] }>
   exec(sql: string): Promise<unknown>
   transaction<T>(fn: (tx: {
-    query<R>(text: string, params?: unknown[]): Promise<{ rows: R[]; affectedRows?: number }>
+    query<R>(text: string, params?: unknown[]): Promise<{ rows: R[]; affectedRows?: number; fields?: Field[] }>
     exec(sql: string): Promise<unknown>
   }) => Promise<T>): Promise<T>
   close(): Promise<void>
@@ -57,7 +60,7 @@ export function fromPGlite(pg: PGliteLike): Db {
   const wrap = (target: Pick<PGliteLike, 'query' | 'exec'>): Queryable => ({
     async query<T extends Row>(text: string, params?: unknown[]) {
       const r = await target.query<T>(text, params)
-      return { rows: r.rows, rowCount: r.affectedRows ?? r.rows.length }
+      return { rows: r.rows, rowCount: r.affectedRows ?? r.rows.length, fields: r.fields?.map((f) => ({ name: f.name, dataTypeID: f.dataTypeID })) }
     },
     async exec(sql: string) {
       await target.exec(sql)
@@ -125,11 +128,11 @@ export async function openPg(config: Pick<Config, 'databaseUrl' | 'pgSslMode'>, 
   // An idle client losing its connection must not crash the process.
   pool.on('error', (err) => onError?.(err))
 
-  type PgClient = { query(text: string, params?: unknown[]): Promise<{ rows: Row[]; rowCount: number | null }> }
+  type PgClient = { query(text: string, params?: unknown[]): Promise<{ rows: Row[]; rowCount: number | null; fields?: Field[] }> }
   const wrap = (c: PgClient): Queryable => ({
     async query<T extends Row>(text: string, params?: unknown[]) {
       const r = await c.query(text, params)
-      return { rows: r.rows as T[], rowCount: r.rowCount ?? r.rows.length }
+      return { rows: r.rows as T[], rowCount: r.rowCount ?? r.rows.length, fields: r.fields?.map((f) => ({ name: f.name, dataTypeID: f.dataTypeID })) }
     },
     async exec(sql: string) {
       await c.query(sql) // no parameters: simple protocol, several statements allowed

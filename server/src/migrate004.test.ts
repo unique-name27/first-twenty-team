@@ -53,8 +53,8 @@ describe('migration 004 on a live database', () => {
     await db.query(`INSERT INTO change_log (workspace_id, collection, record_id, op, version, data) VALUES ('default', 'people', 'p-1', 'upsert', 2, '{"id": "p-1"}')`)
     const historyBefore = (await db.query<{ h: string }>(`SELECT history_id::text AS h FROM workspaces`)).rows[0].h
 
-    // 005 and 006 come with it (they reach a live server in one update); migrate005.test.ts covers 005 on its own.
-    expect((await migrate(db)).applied).toEqual(['004_multitenant.sql', '005_demo_hardening.sql', '006_assistant.sql'])
+    // 005 to 007 come with it (they reach a live server in one update); migrate005.test.ts covers 005 on its own.
+    expect((await migrate(db)).applied).toEqual(['004_multitenant.sql', '005_demo_hardening.sql', '006_assistant.sql', '007_read_model.sql'])
 
     const ws = await db.query<Record<string, unknown>>(
       `SELECT id, slug, keep, created_by, last_active_at IS NOT NULL AS active, history_id::text AS history_id, last_seq FROM workspaces`,

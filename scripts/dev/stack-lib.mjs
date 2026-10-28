@@ -14,6 +14,14 @@ export const MAX_OFFSET = 1000
 /** The dev login `npm run stack` creates once. Its password is random and lives in credentials.json only. */
 export const DEV_EMAIL = 'dev@example.test'
 
+/**
+ * The file in the stack's data folder that holds the secret for the API's development-only routes
+ * (server/src/dev/routes.ts), which `npm run sql` reads. The stack makes a new secret every time it starts
+ * and deletes the file when it stops. The Vite dev server never serves .data/ (DEV_FS_DENY), and
+ * /__dev/credentials reads credentials.json only.
+ */
+export const DEV_TOOLS_FILE = 'dev-tools.json'
+
 /** How to run the stack, for --help and for argument errors. */
 export const USAGE = `Usage: npm run stack
        npm run stack -- [--fresh] [--offset N] [--no-seed]
@@ -164,6 +172,8 @@ export function apiPortFromEnv(env) {
  * Code, and the stack's assistant never spends it. Both are set to '' rather than removed, because the
  * server fills unset variables from a .env file (config.ts loadDotEnv) and an empty one counts as set.
  * LOG_LEVEL defaults to warn (every request otherwise logs a line); set it in the environment to see more.
+ * DEV_TOOLS=1 lets the development entry (server/src/dev/index.ts) add its routes; the stack passes their
+ * secret to the API process alone (DEV_TOOLS_SECRET), never through this function.
  * @param {Record<string, string | undefined>} base usually process.env
  * @param {{ apiPort: number, appPort: number, devDir: string }} stack devDir relative to the repo root
  * @returns {Record<string, string | undefined>}
@@ -182,6 +192,7 @@ export function apiEnv(base, stack) {
     MIGRATE_ON_START: 'true',
     SIGNUP_MODE: 'open',
     ASSISTANT_FAKE: '1',
+    DEV_TOOLS: '1',
     LOG_LEVEL: base.LOG_LEVEL?.trim() || 'warn',
   }
 }

@@ -13,6 +13,7 @@
       "Bash(npm run test:changed:*)",
       "Bash(npm run test:watch:*)",
       "Bash(npm run stack:*)",
+      "Bash(npm run sql:*)",
       "Bash(git status)",
       "Bash(git diff:*)",
       "Bash(git log:*)"

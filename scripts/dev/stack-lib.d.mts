@@ -6,6 +6,7 @@ export const APP_PORT: number
 export const API_PORT: number
 export const MAX_OFFSET: number
 export const DEV_EMAIL: string
+export const DEV_TOOLS_FILE: string
 export const USAGE: string
 export const DEV_FS_DENY: string[]
 

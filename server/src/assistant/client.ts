@@ -2,7 +2,7 @@
 // (fake.ts) can stand in for the real client: client.beta.messages.toolRunner with stream: true, which
 // yields one message stream per model turn and runs the tools in between (runner.ts drives it).
 //
-// The API key: index.ts passes ANTHROPIC_API_KEY from the environment straight into the client built here,
+// The API key: serve.ts passes ANTHROPIC_API_KEY from the environment straight into the client built here,
 // and nothing else holds it. It is never logged (the SDK redacts it from its own debug output, and the
 // server logs no headers), never returned in an answer and never sent to the browser.
 import Anthropic, { type ClientOptions } from '@anthropic-ai/sdk'

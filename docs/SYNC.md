@@ -25,7 +25,7 @@ Decisions (from the user, October 2026):
 | Piece | Where | Notes |
 |---|---|---|
 | API server | `server/src/**` (Fastify 5 + `pg`), built into `dist-server/server.mjs` with Vite SSR | Node 22+. Serves `/api/*` and, when `SERVE_APP=true`, the one-file app at `/` and its offline worker at `/sw.js`. |
-| SQL migrations | `server/sql/NNN_name.sql`, applied by `npm run server:migrate` | Tracked in `schema_migrations`. |
+| SQL migrations | `server/sql/NNN_name.sql`, applied by `npm run server:migrate` | Tracked in `schema_migrations`. Each is listed with its SHA-256 in `server/sql/SHA256SUMS` (`npm run server:gen-sql -- --checksums`), so an applied one cannot change unnoticed. |
 | Shared collection list | `src/sync/collections.ts` | The single source of truth for which DB keys are record collections (one table each) and which are single documents. Server and client both import it. A test asserts it matches `src/domain/types.ts`. |
 | Browser sync engine | `src/sync/**` | Diff, outbox, API client, pull/push loop, status store. No UI. Also the assistant's client (`src/sync/assistant.ts`, with the event-stream reader `src/sync/sse.ts`): `assistantInfo()` and `assistantChat()`, never synced. |
 | Sync UI | Settings > Server (`#settings.server`), a header status chip, sync banners under the header, the rail note, the sample banner | Opened from a file or the claude.ai artifact viewer, Settings > Server only explains the server and makes no request. A browser that is not connected asks once per page load (`checkServer`) whether a server answers here: for the sample on any page served over http(s), and for any other workspace only on a page the server served (`isServedPage()`, the served mark), so the Vite dev server or a file never probes `/api` for it. If one does, the sample banner offers "Sign in to your server" (or, signed in to an empty server, Start fresh, which then uploads, and Import a backup) before Start fresh, the rail note says where to sign in, and a dismissible notice points a workspace of the company's own at the server while it lives in this browser only. A sign-in asks again; connecting or disconnecting updates the answer. `checkServer` asks `GET /api/auth/session`, so a browser that is not signed in logs no 401 on a normal page load, and, signed in and not connected, `GET /api/workspace/status` (`empty`; never the old servers' fallback, which would download the workspace). |
@@ -89,6 +89,10 @@ Decisions (from the user, October 2026):
   (input at full price, written to the prompt cache, read from it, and output with the thinking in it),
   counted for every turn, a turn that failed part way included. Nothing of what was asked or answered.
   Deleting a workspace deletes its rows (the foreign key cascades, and the expiry deletes them by name).
+- **Read model** (migration 007, `server/src/readmodel`): views with typed columns over the record tables
+  and `workspace_docs` (`v_people`, `v_hire_journey`, `v_integrity_problems`, ...) for reading with plain
+  SQL (docs/DEV.md, "Query the data with SQL"). Read-only and outside sync: no triggers, nothing on the
+  write path, and the app never reads them.
 
 ## Protocol (`/api`, JSON)
 

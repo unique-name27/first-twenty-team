@@ -242,6 +242,24 @@ describe('loadConfig: the assistant', () => {
   })
 })
 
+describe('loadConfig: development tools', () => {
+  const PROD = { NODE_ENV: 'production', DATABASE_URL: 'postgres://first_twenty:placeholder@127.0.0.1:5432/first_twenty', PUBLIC_ORIGIN: 'https://hr.example.com' }
+
+  it('are off unless DEV_TOOLS is on, which only npm run stack sets', () => {
+    expect(load({}).devTools).toBe(false)
+    expect(load({ DEV_TOOLS: '0' }).devTools).toBe(false)
+    expect(load({ DEV_TOOLS: '1' }).devTools).toBe(true)
+    expect(load({ NODE_ENV: 'test', DEV_TOOLS: 'true' }).devTools).toBe(true)
+  })
+
+  it('stop a production server from starting', () => {
+    expect(() => load({ ...PROD, DEV_TOOLS: '1' })).toThrow(ConfigError)
+    expect(() => load({ ...PROD, DEV_TOOLS: 'yes' })).toThrow(/DEV_TOOLS is for development only/)
+    expect(load({ ...PROD, DEV_TOOLS: '0' }).devTools).toBe(false)
+    expect(load(PROD).devTools).toBe(false)
+  })
+})
+
 describe('the password hashing cost', () => {
   const PROD = { NODE_ENV: 'production', DATABASE_URL: 'postgres://first_twenty:placeholder@127.0.0.1:5432/first_twenty' }
 

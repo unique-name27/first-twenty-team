@@ -1,4 +1,4 @@
-// Daily housekeeping, which index.ts also runs once at startup (docs/SERVER.md, "A public demo server"):
+// Daily housekeeping, which serve.ts also runs once at startup (docs/SERVER.md, "A public demo server"):
 // - sessions that ended (idle or past their expiry);
 // - demo companies (workspaces not kept) with no write or sign-in for DEMO_EXPIRE_DAYS, each deleted
 //   whole in one transaction (workspaces.ts deleteDemoWorkspace);

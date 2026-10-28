@@ -115,7 +115,7 @@ describe('migrations', () => {
     expect(await pendingMigrations(db)).toEqual([])
     const again = await migrate(db)
     expect(again.applied).toEqual([])
-    expect(again.alreadyApplied).toEqual(['001_init.sql', '002_history_and_seq_versions.sql', '003_trusted_devices.sql', '004_multitenant.sql', '005_demo_hardening.sql', '006_assistant.sql'])
+    expect(again.alreadyApplied).toEqual(['001_init.sql', '002_history_and_seq_versions.sql', '003_trusted_devices.sql', '004_multitenant.sql', '005_demo_hardening.sql', '006_assistant.sql', '007_read_model.sql'])
     const ws = await db.query<{ id: string }>('SELECT id FROM workspaces')
     expect(ws.rows).toEqual([{ id: 'default' }])
   })

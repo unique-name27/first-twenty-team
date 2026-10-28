@@ -61,7 +61,7 @@ describe('migration 005 on a live database', () => {
 
   it('keeps every seq and version, moves last_seq past them, and keys the change log by workspace', async () => {
     const db = await databaseAt004()
-    expect((await migrate(db)).applied).toEqual(['005_demo_hardening.sql', '006_assistant.sql'])
+    expect((await migrate(db)).applied).toEqual(['005_demo_hardening.sql', '006_assistant.sql', '007_read_model.sql'])
 
     const ws = await db.query<{ id: string; last_seq: unknown }>('SELECT id, last_seq FROM workspaces ORDER BY id')
     expect(Object.fromEntries(ws.rows.map((r) => [r.id, Number(r.last_seq)]))).toEqual({ default: 3, 'w-demo': 4 })

@@ -2,14 +2,18 @@
 // postgres-setup.sql): SELECT, INSERT, UPDATE, DELETE on the tables and USAGE, SELECT on sequences, while
 // another role owns the schema and runs migrations and after-restore. Every request path must work with
 // those rights alone, including taking each workspace's next seq as a version (migration 005: a counter
-// in workspaces.last_seq, no sequence).
+// in workspaces.last_seq, no sequence). The read model's views (migration 007) apply as that owner and read
+// as the server's role and as a read-only login (server/deploy/viewer-role.sql), each only through what it
+// may read in the tables.
 import { PGlite } from '@electric-sql/pglite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { blankDB } from '@/data/blank'
+import { RECORD_COLLECTIONS, tableName } from '../../src/sync/collections'
 import { recordTokens, releaseMessage, remainingToday, reserveMessage } from './assistant/quota'
 import { upsertAdmin } from './auth'
 import { type Db, fromPGlite } from './db'
 import { migrate } from './migrate'
+import { readModelViews } from './readmodel/generate'
 import { afterRestore, applyChanges, changesSince, pruneChangeLog, replaceWorkspace, snapshot } from './repo'
 import { parseChanges, parseWorkspace } from './validate'
 
@@ -22,8 +26,11 @@ beforeAll(async () => {
   await pg.exec(`
     CREATE ROLE ft_owner NOLOGIN;
     CREATE ROLE ft_app NOLOGIN;
+    -- The read-only login exists before the migrations here, so 007's guarded grant gives it the views.
+    CREATE ROLE first_twenty_viewer NOLOGIN;
+    CREATE ROLE ft_views_only NOLOGIN;
     GRANT USAGE, CREATE ON SCHEMA public TO ft_owner;
-    GRANT USAGE ON SCHEMA public TO ft_app;
+    GRANT USAGE ON SCHEMA public TO ft_app, first_twenty_viewer, ft_views_only;
     ALTER DEFAULT PRIVILEGES FOR ROLE ft_owner IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ft_app;
     ALTER DEFAULT PRIVILEGES FOR ROLE ft_owner IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO ft_app;
     SET ROLE ft_owner;
@@ -86,5 +93,96 @@ describe('the server role (rows only, no schema rights)', () => {
       { historyId: ws?.historyId },
     )
     expect(next.seq).toBeGreaterThan(1_000_000_000)
+  })
+})
+
+describe('the read model (007) under least privilege', () => {
+  const views = readModelViews()
+  const recordTables = RECORD_COLLECTIONS.map(tableName)
+
+  async function as<T>(role: string, run: () => Promise<T>): Promise<T> {
+    await pg.exec(`RESET ROLE; SET ROLE ${role}`)
+    try {
+      return await run()
+    } finally {
+      await pg.exec('RESET ROLE; SET ROLE ft_app')
+    }
+  }
+
+  it('applied as the owner, who owns every view', async () => {
+    const owners = await db.query<{ viewname: string; viewowner: string }>(`SELECT viewname, viewowner FROM pg_views WHERE schemaname = 'public'`)
+    expect(owners.rows.map((r) => r.viewname).sort()).toEqual([...views].sort())
+    expect(owners.rows.every((r) => r.viewowner === 'ft_owner')).toBe(true)
+  })
+
+  it("lets the server's role read every view through the default privileges, and never write through one", async () => {
+    for (const view of views) await expect(db.query(`SELECT * FROM ${view} LIMIT 5`), view).resolves.toBeDefined()
+    expect((await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM v_people`)).rows[0].n).toBeGreaterThan(0)
+    // The default privileges hand out write rights too; 007 takes them back, so a simple view cannot pass a write on.
+    const writable = await db.query<{ view: string }>(
+      `SELECT v AS view FROM unnest($1::text[]) AS v
+        WHERE has_table_privilege('ft_app', v, 'INSERT') OR has_table_privilege('ft_app', v, 'UPDATE') OR has_table_privilege('ft_app', v, 'DELETE')`,
+      [views],
+    )
+    expect(writable.rows).toEqual([])
+    await expect(db.query('DELETE FROM v_people')).rejects.toThrow(/permission denied for view v_people/)
+    await expect(db.query('UPDATE v_comp SET version = 1')).rejects.toThrow(/permission denied for view v_comp/)
+  })
+
+  it('gives the read-only login every view, which it reads only as far as its table rights go', async () => {
+    const granted = await db.query<{ view: string; ok: boolean }>(
+      `SELECT v AS view, has_table_privilege('first_twenty_viewer', v, 'SELECT') AS ok FROM unnest($1::text[]) AS v`,
+      [views],
+    )
+    expect(granted.rows.filter((r) => !r.ok)).toEqual([])
+    // With SELECT on the record tables only, the views over records read and the ones that also read a
+    // workspace document (the company's pay runs, compliance owners) are refused: security_invoker at work.
+    await pg.exec(`RESET ROLE; GRANT SELECT ON ${recordTables.join(', ')} TO first_twenty_viewer; SET ROLE ft_app`)
+    await as('first_twenty_viewer', async () => {
+      for (const view of ['v_people', 'v_comp', 'v_applications', 'v_current_job', 'v_pipeline_funnel', 'v_headcount_by_month', 'v_checklist_tasks']) {
+        await expect(db.query(`SELECT * FROM ${view} LIMIT 5`), view).resolves.toBeDefined()
+      }
+      for (const view of ['v_pay_runs', 'v_hire_journey', 'v_integrity_problems']) {
+        await expect(db.query(`SELECT * FROM ${view} LIMIT 5`), view).rejects.toThrow(/permission denied for table workspace_docs/)
+      }
+    })
+    // With the documents too (viewer-role.sql grants every table but the four that hold credentials), all of them.
+    await pg.exec('RESET ROLE; GRANT SELECT ON workspace_docs, workspaces TO first_twenty_viewer; SET ROLE ft_app')
+    await as('first_twenty_viewer', async () => {
+      for (const view of views) await expect(db.query(`SELECT * FROM ${view} LIMIT 5`), view).resolves.toBeDefined()
+      await expect(db.query('SELECT * FROM users')).rejects.toThrow(/permission denied/)
+    })
+  })
+
+  it('gets its privileges back from after-restore, after a restore made the views anew', async () => {
+    // pg_restore --no-acl as the owner (docs/SERVER.md): the default privileges give the server's role write
+    // rights on each new view, and the read-only login's grant from the dump is skipped.
+    const list = views.join(', ')
+    await pg.exec(`RESET ROLE; SET ROLE ft_owner; GRANT INSERT, UPDATE, DELETE ON ${list} TO ft_app; REVOKE SELECT ON ${list} FROM first_twenty_viewer`)
+    const rights = async () =>
+      (
+        await db.query<{ view: string; writes: boolean; viewer: boolean }>(
+          `SELECT v AS view, has_table_privilege('ft_app', v, 'INSERT') OR has_table_privilege('ft_app', v, 'DELETE') AS writes,
+                  has_table_privilege('first_twenty_viewer', v, 'SELECT') AS viewer
+             FROM unnest($1::text[]) AS v`,
+          [views],
+        )
+      ).rows
+    expect((await rights()).every((r) => r.writes && !r.viewer)).toBe(true)
+    try {
+      await afterRestore(db)
+    } finally {
+      await pg.exec('RESET ROLE; SET ROLE ft_app')
+    }
+    expect((await rights()).filter((r) => r.writes || !r.viewer)).toEqual([])
+    await expect(db.query('SELECT count(*) FROM v_people')).resolves.toBeDefined()
+  })
+
+  it('refuses a login that may read a view but not the tables under it', async () => {
+    await pg.exec('RESET ROLE; GRANT SELECT ON v_people TO ft_views_only; SET ROLE ft_app')
+    await as('ft_views_only', async () => {
+      await expect(db.query('SELECT * FROM v_people')).rejects.toThrow(/permission denied for table people/)
+      await expect(db.query('SELECT * FROM v_comp')).rejects.toThrow(/permission denied for view v_comp/)
+    })
   })
 })

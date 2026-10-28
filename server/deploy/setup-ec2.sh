@@ -32,7 +32,8 @@
 #   --email ADDRESS      optional contact email for certificate expiry notices
 #   --deploy-user NAME   the login that owns the code and runs deploy.sh (default: the user who ran sudo,
 #                        else ec2-user or ubuntu)
-#   --install-postgres   install Postgres from the OS packages, only when none exists yet
+#   --install-postgres   install Postgres from the OS packages, only when none exists yet (it stops
+#                        when the release's package is older than Postgres 15, as on Ubuntu 22.04)
 #   --swap SIZE          add a swap file of this size (for example 1G or 2G) if the instance has no swap.
 #                        Without it, an instance with under 2 GB of memory (a t3.micro has about 900 MB)
 #                        gets a 2G swap file, so it can build. Either way the disk must keep 1 GB free
@@ -57,6 +58,8 @@ STATE_DIR=/var/lib/first-twenty
 BACKUP_DIR=/var/backups/first-twenty
 NODE_MAJOR=${NODE_MAJOR:-22}
 PG_MAJOR=${PG_MAJOR:-16}
+# The oldest Postgres the migrations run on (007's views read with the reader's own rights, new in 15).
+MIN_PG_MAJOR=15
 SWAPFILE=/swapfile
 FSTAB=/etc/fstab
 # Disk space a swap file must leave free: the root disk also holds Postgres and every database on it.
@@ -309,6 +312,12 @@ careers_hosts_fix() {
   else
     printf "echo 'CAREERS_HOSTS=%s' | sudo tee -a %s >/dev/null && sudo systemctl restart %s" "$want" "$1" "$SERVICE"
   fi
+}
+
+apt_postgres_major() {
+  # The major version the OS postgresql package would install (14 on Ubuntu 22.04, 16 on 24.04), or
+  # nothing when apt cannot say.
+  apt-cache policy postgresql 2>/dev/null | sed -n -E 's/^[[:space:]]*Candidate:[[:space:]]*([0-9]+).*/\1/p' || true
 }
 
 local_server_major() {
@@ -722,6 +731,11 @@ if postgres_present; then
   if [ "$INSTALL_POSTGRES" = true ]; then
     info "(--install-postgres ignored because Postgres exists.)"
   fi
+  PG_HERE=$(local_server_major)
+  if [ -n "$PG_HERE" ] && [ "$PG_HERE" -lt "$MIN_PG_MAJOR" ]; then
+    warn "This Postgres is version $PG_HERE; First Twenty needs $MIN_PG_MAJOR or newer. The first deploy stops at"
+    warn "migration 007 and changes nothing until Postgres is upgraded (docs/SERVER.md, \"Before you start\")."
+  fi
   DB_STATE=$(first_twenty_objects)
   case "$DB_STATE" in
     't|t|t') info "The first_twenty database and its two roles already exist; setup leaves them (and every other database) as they are." ;;
@@ -729,6 +743,11 @@ if postgres_present; then
   esac
 elif [ "$INSTALL_POSTGRES" = true ]; then
   if [ "$PKG" = apt ]; then
+    apt_update
+    PG_CANDIDATE=$(apt_postgres_major)
+    if [ -n "$PG_CANDIDATE" ] && [ "$PG_CANDIDATE" -lt "$MIN_PG_MAJOR" ]; then
+      die "This release's postgresql package is Postgres $PG_CANDIDATE; First Twenty needs $MIN_PG_MAJOR or newer. Use Ubuntu 24.04, or install Postgres $MIN_PG_MAJOR or newer from apt.postgresql.org first (docs/SERVER.md, \"Before you start\"), then run setup again without --install-postgres."
+    fi
     info "Installing the Ubuntu postgresql package (listens on localhost, scram-sha-256 passwords)."
     apt_install postgresql
     systemctl enable --now postgresql

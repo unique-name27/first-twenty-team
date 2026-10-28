@@ -109,7 +109,7 @@ describe('CI', () => {
     // A missing build must fail the check, not pass it: grep on a missing file is false in an if.
     expect(builds.text).toContain('for built in first-twenty.html dist-server; do')
     expect(builds.text).toContain(`grep -q -e '__dev/credentials' -e 'autoconnect' first-twenty.html`)
-    expect(builds.text).toContain(`grep -rq -F '/api/dev/' dist-server`)
+    expect(builds.text).toContain(`grep -rq -F '/__dev/' dist-server`)
   })
 
   it('runs every test tier in some job', () => {

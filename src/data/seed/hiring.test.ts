@@ -7,6 +7,7 @@ import { blankDB } from '@/data/blank'
 import { attentionReasons, slaState } from '@/domain/hiring/pipeline'
 import { allScorecardsOwed } from '@/domain/hiring/scorecards'
 import { median, pacificDateOf } from '@/domain/hiring/util'
+import { describeProblem, integrityProblems } from '@/domain/integrity'
 import type { DB, Person } from '@/domain/types'
 import { daysBetween, isWeekday } from '@/lib/dates'
 import { applyHiring } from './hiring'
@@ -91,10 +92,13 @@ function activeByStage(db: DB, jobId: string): Record<string, number> {
   return out
 }
 
-/** Integrity checks that hold for any people seed: references, stage ids, dates and panels. */
-function integrityProblems(db: DB): string[] {
+/**
+ * Checks of the sample's story that the shared checker (src/domain/integrity.ts) leaves out because real
+ * data may differ: ids unique across the hiring collections, every date on a weekday and on or before the
+ * anchor, closed applications told and given a reason, interviewers employed on the day, nobody booked twice.
+ */
+function storyProblems(db: DB): string[] {
   const out: string[] = []
-  const cand = new Set(db.candidates.map((c) => c.id))
   const jobs = new Map(db.jobs.map((j) => [j.id, j]))
   const apps = new Map(db.applications.map((a) => [a.id, a]))
   const interviews = new Map(db.interviews.map((i) => [i.id, i]))
@@ -108,22 +112,11 @@ function integrityProblems(db: DB): string[] {
   }
   for (const a of db.applications) {
     const job = jobs.get(a.jobId)
-    if (!cand.has(a.candidateId)) out.push(`${a.id}: missing candidate`)
-    if (!job) {
-      out.push(`${a.id}: missing job`)
-      continue
-    }
-    const stageIds = new Set(job.stages.map((s) => s.id))
-    if (!stageIds.has(a.stageId)) out.push(`${a.id}: unknown stage ${a.stageId}`)
-    let prev = ''
+    if (!job) continue
     for (const h of a.history) {
-      if (!stageIds.has(h.stageId)) out.push(`${a.id}: history stage ${h.stageId}`)
-      if (h.at < prev) out.push(`${a.id}: history out of order`)
       if (h.at > ANCHOR) out.push(`${a.id}: history after the anchor`)
       if (!isWeekday(h.at)) out.push(`${a.id}: stage date ${h.at} on a weekend`)
-      prev = h.at
     }
-    if (a.history[a.history.length - 1].stageId !== a.stageId) out.push(`${a.id}: stage does not match history`)
     if (job.openedOn && a.appliedOn < job.openedOn && a.status !== 'hired') out.push(`${a.id}: applied before the job opened`)
     if (a.status === 'active') {
       if (!a.nextStep) out.push(`${a.id}: active without a next step`)
@@ -134,10 +127,7 @@ function integrityProblems(db: DB): string[] {
   }
   for (const i of db.interviews) {
     const app = apps.get(i.applicationId)
-    if (!app) {
-      out.push(`${i.id}: missing application`)
-      continue
-    }
+    if (!app) continue
     const job = jobs.get(app.jobId)
     if (job && !job.interviewPlan.some((s) => s.id === i.stepId)) out.push(`${i.id}: unknown step`)
     const day = pacificDateOf(i.startsAt)
@@ -161,18 +151,22 @@ function integrityProblems(db: DB): string[] {
     }
   }
   for (const s of db.scorecards) {
-    const i = interviews.get(s.interviewId)
-    if (!i) out.push(`${s.id}: missing interview`)
-    else if (!i.interviewerIds.includes(s.interviewerId)) out.push(`${s.id}: interviewer not on the panel`)
+    if (!interviews.has(s.interviewId)) continue
     if (s.submittedAt && s.submittedAt > '2026-10-09T23:59:59.000Z') out.push(`${s.id}: submitted in the future`)
     if (s.submittedAt && Object.keys(s.ratings).length === 0) out.push(`${s.id}: submitted without ratings`)
   }
-  for (const o of db.offers) {
-    if (!apps.has(o.applicationId) || !cand.has(o.candidateId) || !jobs.has(o.jobId)) out.push(`${o.id}: broken reference`)
-  }
-  for (const s of db.plan) if (s.jobId && !jobs.has(s.jobId)) out.push(`${s.id}: missing job`)
-  for (const r of db.referrals) if (!cand.has(r.candidateId)) out.push(`${r.id}: missing candidate`)
   return out
+}
+
+/**
+ * The shared checker's problems in the hiring collections. The fixture has the people but not their pay
+ * rows or checklists (the people seed writes those), so a hire's comp and checklist are not looked for.
+ */
+const HIRING = new Set(['plan', 'jobs', 'candidates', 'applications', 'interviews', 'scorecards', 'offers', 'referrals'])
+function hiringIntegrity(db: DB): string[] {
+  return integrityProblems(db)
+    .filter((p) => HIRING.has(p.collection) && p.code !== 'hire_missing_comp' && p.code !== 'hire_missing_checklist')
+    .map(describeProblem)
 }
 
 describe('sample hiring seed (fixture people)', () => {
@@ -383,7 +377,8 @@ describe('sample hiring seed (fixture people)', () => {
   })
 
   it('keeps references, stage ids, dates and interview panels consistent', () => {
-    expect(integrityProblems(db)).toEqual([])
+    expect(hiringIntegrity(db)).toEqual([])
+    expect(storyProblems(db)).toEqual([])
     for (const c of db.candidates) expect((c.retainUntil ?? '') >= c.createdOn).toBe(true)
   })
 
@@ -405,7 +400,8 @@ describe('sample hiring seed (full sample)', () => {
     const db = buildSampleDB()
     expect(db.jobs).toHaveLength(22)
     expect(db.offers.find((o) => o.id === 'o-daniel-reyes')?.status).toBe('awaiting_approval')
-    expect(integrityProblems(db)).toEqual([])
+    expect(integrityProblems(db).map(describeProblem)).toEqual([])
+    expect(storyProblems(db)).toEqual([])
     expect(JSON.stringify(db).length).toBeLessThan(900_000)
   })
 })

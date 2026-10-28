@@ -49,6 +49,7 @@ codespace uses (`.devcontainer/devcontainer.json`).
 | `npm run stack -- --fresh` | Deletes the stack's database and dev login first, and starts over |
 | `npm run stack -- --offset 10` | A second stack beside the first: ports 8836 and 8797, its own database |
 | `npm run stack -- --no-seed` | A new database without the sample company (an empty server, as a new founder sees it) |
+| `npm run sql -- hires` | Reads the stack's database with SQL, never changing it ("Query the data with SQL" below) |
 | `npm run dev` | The app alone, keeping its data in the browser only (no server) |
 | `npm run server:dev` | The API alone, on its own database in `.data/pg` (docs/SERVER.md, "Develop locally") |
 | `npm test` | Every test, all four tiers; `npm test -- src/sync` runs the tests in one folder |
@@ -67,9 +68,10 @@ codespace uses (`.devcontainer/devcontainer.json`).
 | Piece | Where | Notes |
 | --- | --- | --- |
 | The app (Vite dev server) | http://127.0.0.1:8826 | Reloads on every change. Passes `/api` through to the API, so the app and the API share one address, as on the live server |
-| The API (Fastify, `tsx watch`) | http://127.0.0.1:8787 | Restarts when server code changes. Development mode, sign-up open (try making a company), Lark is the scripted fake (no key needed, nothing leaves the computer) |
+| The API (Fastify, `tsx watch`) | http://127.0.0.1:8787 | Restarts when server code changes. Development mode, sign-up open (try making a company), Lark is the scripted fake (no key needed, nothing leaves the computer). It runs `server/src/dev/index.ts`: the same server as production plus the development-only route `npm run sql` asks |
 | The database (PGlite) | `.data/dev/pg` | Real Postgres compiled to WebAssembly. Only one process can open it at a time |
 | The dev login | `.data/dev/credentials.json` | `dev@example.test` with a random password, made once. The file never leaves your computer or codespace (`.data/` is git-ignored) |
+| The `npm run sql` secret | `.data/dev/dev-tools.json` | Made anew each time the stack starts and deleted when it stops. Only `npm run sql` reads it |
 
 In a codespace, GitHub forwards port 8826 to `https://<your-codespace-name>-8826.app.github.dev`. The stack
 tells Vite to accept that address and gives the API `PUBLIC_ORIGIN` set to it, so invite links point there
@@ -104,6 +106,78 @@ When it runs:
   that, and says so instead.
 
 To sign in by hand (Settings, Server), the password is in `.data/dev/credentials.json`.
+
+## Query the data with SQL
+
+The server keeps each record whole, as JSON, in one table per collection (docs/SYNC.md). The read model
+(migration 007) adds views over those tables with one typed column per field, named in snake_case, so
+plain SQL reads them:
+
+| View | One row per |
+| --- | --- |
+| `v_people`, `v_comp`, `v_jobs`, `v_candidates`, `v_applications`, `v_offers`, `v_checklists`, `v_grants`, `v_time_off_requests`, `v_documents`, `v_activity` | record of that collection |
+| `v_checklist_tasks` | checklist task |
+| `v_application_stages` | stage move of an application |
+| `v_pay_runs` | pay period on record: marked submitted, or with the provider's totals (from the company document) |
+| `v_current_job` | person: today's title, department, pay and state (incoming, active, on leave, former) |
+| `v_hire_journey` | hire: job, application, accepted offer, person, starting pay, onboarding checklist, the pay run that holds the start date |
+| `v_pipeline_funnel` | job and stage: applications there now, and every one that ever entered it |
+| `v_headcount_by_month` | month: headcount on its last day, starts and last days |
+| `v_integrity_problems` | problem found by the checks in `src/domain/integrity.ts` (empty when the data is consistent) |
+
+Every view starts with `workspace_id`; the stack's sample company is `default`. Ready-made queries are in
+`server/deploy/browse.sql`. The views that depend on today use today's date in Pacific time, the app's own
+day, whatever time zone the database runs in: in a SQL client, run `SET first_twenty.today = '2026-10-09'`
+first to read them as of the sample's anchor day (with `npm run sql`, add `--today 2026-10-09`).
+
+### npm run sql
+
+`npm run sql` reads the stack's database from the terminal and prints a table. It never changes anything.
+
+```bash
+npm run sql -- hires                       # one row per hire, from the job to the first payday
+npm run sql -- integrity                   # the integrity problems (empty is good)
+npm run sql -- "SELECT full_name, title, salary FROM v_current_job WHERE workspace_id = 'default'"
+npm run sql -- 'SELECT full_name FROM v_people WHERE workspace_id = $1'   # $1 is the company
+npm run sql -- people --workspace acme-robotics   # another company, by id or slug
+npm run sql -- headcount --today 2026-10-09 --json
+npm run sql -- --help                      # every shortcut and option
+```
+
+The shortcuts are `people`, `headcount`, `hires`, `funnel`, `payruns` and `integrity`, each for the sample
+company unless `--workspace` names another. In a statement of your own, `$1` stands for that company; put
+such a statement in single quotes, or bash and PowerShell read `$1` as one of their own variables. Add
+`--json` for JSON instead of a table, and `--offset 10` for a stack started with `--offset 10`.
+
+How it reads the database:
+
+- **While `npm run stack` runs**, the stack's API holds the database (PGlite allows one process per
+  folder), so `npm run sql` asks the API on 127.0.0.1, with a secret the stack makes each time it starts
+  (`.data/dev/dev-tools.json`). The secret is what keeps the route private: in a codespace, a forwarded
+  port also reaches the API from 127.0.0.1, so keep port 8787 private there (the default) and never share
+  the secret. Without it the API answers 404. Only the development server has the route: production never
+  includes it.
+- **With no stack running**, it copies `.data/dev/pg` to a temporary folder, reads the copy and deletes it
+  (PGlite writes to a folder it opens, even to read). The stack stays the only process that writes the
+  folder, so starting the stack meanwhile, or running two at once, is safe.
+- It never reads `DATABASE_URL` or a `.env` file, so it never connects to any other database.
+
+The limits: one statement at a time, starting with `SELECT`, `WITH`, `VALUES`, `TABLE`, `EXPLAIN` or `SHOW`.
+It runs in a read-only transaction that is always rolled back; `BEGIN`, `COMMIT`, `ROLLBACK`, `SET` and other
+statements that would start, end or change that transaction are refused. At most 500 rows come back (add a
+`WHERE` or a `LIMIT` for the rest), and a statement may run for 5 seconds. PGlite cannot stop a statement
+that is already running, so: with no stack, `npm run sql` stops it after 5 seconds; through the stack, the
+API finishes it first, and `npm run sql` stops waiting after 8 seconds. If the stack seems stuck after
+that, stop it with Ctrl+C and start it again.
+
+To change the read model, edit `server/src/readmodel/spec.ts` (every field is a typed path into
+`src/domain/types.ts`, so a typo fails `npm run typecheck`), then run
+`npm run server:gen-sql -- --read-model --write`. It saves the whole read model as the next migration,
+`server/sql/NNN_read_model.sql`, which drops the views and creates them again, so no applied migration
+changes, and lists it in `server/sql/SHA256SUMS`. `server/src/readmodel/readmodel.test.ts` fails until the
+newest one matches. While that file is your branch's own and not on main yet, `--replace` instead of
+`--write` rewrites it; it refuses a file that is on main. Changing a check in
+`src/domain/integrity.ts` changes `v_integrity_problems` the same way.
 
 ## Claude Code in a codespace
 
@@ -151,3 +225,17 @@ inside the codespace with its settings. Stop it and start it with `npm run stack
 `npm ci` first). Wait for **First Twenty is running** in the terminal, then reload.
 
 **Database setup failed.** The terminal shows why. `npm run stack -- --fresh` starts over with a new database.
+
+**"could not open the database: Aborted()".** The stack was stopped hard (its process was killed, or the
+computer stopped) while PGlite was writing, and the folder is damaged. Stop the stack with Ctrl+C next time.
+`npm run stack -- --fresh` makes a new database (it deletes the old one and the dev login).
+
+**npm run sql: "Something answers on 127.0.0.1:8787, but .data/dev/dev-tools.json is missing".** A stack
+started before `npm run sql` existed, or `npm run server:dev`, holds the port. Stop it and start
+`npm run stack` again.
+
+**npm run sql: "The stack's API did not take the request".** The running stack's secret does not match the
+one in `.data/dev/dev-tools.json` (usually a stack started before `npm run sql` existed). Restart the stack.
+
+**npm run sql: "No answer from the stack's API".** A statement is still running in the stack's API, which
+PGlite cannot interrupt. Wait, or stop the stack with Ctrl+C and start it again.

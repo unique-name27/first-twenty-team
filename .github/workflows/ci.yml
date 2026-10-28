@@ -60,9 +60,9 @@ jobs:
             echo "::error::Development-only code (the dev auto sign-in) reached first-twenty.html."
             exit 1
           fi
-          if grep -rq -F '/api/dev/' dist-server; then
-            grep -rl -F '/api/dev/' dist-server || true
-            echo "::error::A development-only route (/api/dev/) reached dist-server."
+          if grep -rq -F '/__dev/' dist-server; then
+            grep -rl -F '/__dev/' dist-server || true
+            echo "::error::A development-only route (/__dev/, server/src/dev) reached dist-server."
             exit 1
           fi
           echo "The builds hold no development-only code."

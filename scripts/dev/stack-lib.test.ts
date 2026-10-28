@@ -9,6 +9,7 @@ import {
   codespaceAllowedHosts,
   codespaceOrigin,
   DEV_FS_DENY,
+  DEV_TOOLS_FILE,
   devDirName,
   isStackCommandLine,
   MAX_OFFSET,
@@ -95,8 +96,11 @@ describe('apiEnv', () => {
       SERVE_APP: 'false',
       SIGNUP_MODE: 'open',
       ASSISTANT_FAKE: '1',
+      DEV_TOOLS: '1',
       LOG_LEVEL: 'warn',
     })
+    // The dev routes' secret goes to the API process alone (stack.mjs), never through apiEnv.
+    expect(env).not.toHaveProperty('DEV_TOOLS_SECRET')
   })
 
   it('sets PUBLIC_ORIGIN to the codespace address, so cookies are Secure there', () => {
@@ -139,6 +143,7 @@ describe('the dev server never serves .data/', () => {
     const config = await resolveConfig({ root: ROOT, logLevel: 'silent' }, 'serve')
     const served = (file: string) => isFileLoadingAllowed(config, normalizePath(path.join(ROOT, file)))
     expect(served('.data/dev/credentials.json')).toBe(false)
+    expect(served(`.data/dev/${DEV_TOOLS_FILE}`)).toBe(false)
     expect(served('.data/dev-10/pg/PG_VERSION')).toBe(false)
     expect(served('.data/pg/PG_VERSION')).toBe(false)
     expect(served('.env')).toBe(false)
