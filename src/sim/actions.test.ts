@@ -146,6 +146,50 @@ describe('applyAction', () => {
     expect(sim.db.applications[0]).toMatchObject({ status: 'rejected', notifiedOn: '2026-03-09' })
   })
 
+  it('requests time off as the sheet sends it: Admin approves their own on save unless they switch it off', () => {
+    const sim = fresh()
+    const days = { personId: 'p-founder', policyId: 'pol-vacation', startDate: '2026-03-16', endDate: '2026-03-17' }
+    inRun(() => {
+      const own = applyAction(sim, 'requestTimeOff', days, ADMIN)
+      expect(sim.db.timeOffRequests.find((r) => r.id === own)).toMatchObject({ status: 'approved', approverId: 'p-founder', decidedOn: '2026-03-09' })
+      const later = applyAction(sim, 'requestTimeOff', { ...days, startDate: '2026-03-23', endDate: '2026-03-23', approveNow: false }, ADMIN)
+      expect(sim.db.timeOffRequests.find((r) => r.id === later)?.status).toBe('pending')
+      applyAction(sim, 'approveTimeOff', { requestId: later }, { ...ADMIN, day: '2026-03-10' })
+      expect(sim.db.timeOffRequests.find((r) => r.id === later)).toMatchObject({ status: 'approved', decidedOn: '2026-03-10' })
+      expect(() => applyAction(sim, 'approveTimeOff', { requestId: later }, ADMIN)).toThrow('is not waiting for a decision')
+      // Only Admin records time off for someone else, and only on days with work.
+      expect(() => applyAction(sim, 'requestTimeOff', days, { ...ADMIN, actorId: 'p-someone', viewingAs: 'employee' })).toThrow('Only Admin records time off for someone else.')
+      expect(() => applyAction(sim, 'requestTimeOff', { ...days, startDate: '2026-03-14', endDate: '2026-03-15' }, ADMIN)).toThrow('Pick dates with at least one workday.')
+    })
+  })
+
+  it('opens a job from a plan line, puts the hiring manager on its panel and posts it', () => {
+    const sim = fresh()
+    inRun(() => {
+      const planSlotId = applyAction(sim, 'addPlanLine', { title: 'Founding engineer', departmentId: 'd-eng', familyId: 'f-eng', levelId: 'lv-l4', targetStart: '2026-05-04' }, ADMIN)
+      const jobId = applyAction(sim, 'openJobFromPlan', { planSlotId, hiringManagerId: 'p-founder' }, ADMIN)
+      const draft = sim.db.jobs.find((j) => j.id === jobId)
+      expect(draft).toMatchObject({ status: 'draft', planSlotId, panelIds: [] })
+      const interviewers = Object.fromEntries((draft?.interviewPlan ?? []).map((s) => [s.id, ['p-founder']]))
+      applyAction(sim, 'editJob', { jobId, panelIds: ['p-founder'], interviewers }, ADMIN)
+      expect(() => applyAction(sim, 'editJob', { jobId, panelIds: ['p-founder'] }, ADMIN)).toThrow('No changes to save.')
+      applyAction(sim, 'markPosted', { jobId }, ADMIN)
+    })
+    const job = sim.db.jobs[0]
+    expect(job).toMatchObject({ status: 'open', panelIds: ['p-founder'] })
+    expect(job.interviewPlan.every((s) => s.interviewerIds.join() === 'p-founder')).toBe(true)
+    expect(sim.db.plan[0]).toMatchObject({ status: 'open', jobId: job.id })
+  })
+
+  it('applies only the inbox ops an admin clears with one button, refusing as the inbox does', () => {
+    const sim = fresh()
+    inRun(() => {
+      expect(() => applyAction(sim, 'inboxOp', { op: { type: 'backup_downloaded' } } as never, ADMIN)).toThrow('inboxOp on 2026-03-09: the args do not fit')
+      expect(() => applyAction(sim, 'inboxOp', { op: { type: 'add_holidays', year: 2026 } }, ADMIN)).toThrow('The 2026 holidays are already listed.')
+    })
+    expect(sim.trace).toEqual([])
+  })
+
   it('writes the trace as JSON lines, one action a line', () => {
     const sim = fresh()
     inRun(() => postedJob(sim))

@@ -4,10 +4,10 @@
 // with them. The screens themselves are named next to each action.
 //
 // applyAction applies one action the way the store's mutate does (Immer produce on the DB), inside the run
-// that generateCompany holds open (src/lib/runContext.ts): the pretend date is the action's day, and the run
-// acts as the action's person, in their Viewing-as mode, at its time of day. A refusal (a domain function
-// that returns false, null or { ok: false }) throws and leaves the DB as it was: a generated company never
-// carries a step the app would have refused. Every applied action adds one line to the trace.
+// that generateCompany or advance holds open (src/lib/runContext.ts): the pretend date is the action's day,
+// and the run acts as the action's person, in their Viewing-as mode, at its time of day. A refusal (a domain
+// function that returns false, null or { ok: false }) throws and leaves the DB as it was: a simulated company
+// never carries a step the app would have refused. Every applied action adds one line to the trace.
 //
 // Test and tooling code only: the app never imports src/sim (src/sim/guard.test.ts).
 import { type Draft, enablePatches, original, type Patch, produceWithPatches } from 'immer'
@@ -27,6 +27,7 @@ import {
   expireOffers,
   jobFromTemplate,
   markAccepted,
+  markDeclined,
   markNotified,
   markPosted,
   markSent,
@@ -45,13 +46,18 @@ import {
   hireFromOffer,
   markDesignationSent,
   offboardPerson,
+  openJobFromPlan,
   reassignReportsAtExit,
   startLeave,
 } from '@/domain/lifecycle'
+import { applyInboxOp, type InboxOp } from '@/domain/inbox'
 import { markPayRunSubmitted } from '@/domain/payrun/records'
 import { founder } from '@/domain/people'
+import { approveAsUnpaid, approveRequest, createRequest, policiesFor, serviceWait, workdays } from '@/domain/timeoff'
 import type { Band, DB, Department, ID, Job, Level, Location, Offer, Role } from '@/domain/types'
 import { guessTimezone } from '@/features/hiring/logic'
+import { prepareBackfillSlot } from '@/features/people/helpers'
+import { markReturned } from '@/features/timeoff/logic'
 import { type ISODate, nowISO, quarterOf, setClockOverride } from '@/lib/dates'
 import { newId } from '@/lib/id'
 import { activeRun, updateRun } from '@/lib/runContext'
@@ -649,6 +655,175 @@ const offboard = action({
 })
 
 /**
+ * Comp and plan > Plan, Open job (PlanTab.tsx), or a planned row on Hiring (HiringPage.tsx): a draft job from
+ * the plan line, its interviewers left for Edit details.
+ */
+const jobFromPlan = action({
+  name: 'openJobFromPlan',
+  args: z.strictObject({ planSlotId: id, hiringManagerId: id }),
+  run(d, a, ctx) {
+    must(d.plan.find((s) => s.id === a.planSlotId), `No plan line ${a.planSlotId}.`)
+    return openJobFromPlan(d, a.planSlotId, { date: ctx.day, hiringManagerId: a.hiringManagerId, actorId: ctx.actorId })
+  },
+})
+
+/**
+ * The Offboard wizard's Backfill? button (OffboardSheet.tsx): the plan line readied for the leaver's role
+ * (prepareBackfillSlot), then a draft job from it, with their manager (else the founder) hiring.
+ */
+const backfill = action({
+  name: 'openBackfill',
+  args: z.strictObject({ personId: id }),
+  run(d, a, ctx) {
+    const db = before(d)
+    const person = must(db.people.find((p) => p.id === a.personId), `No person ${a.personId}.`)
+    const lastDay = must(person.separation?.lastDay, `${a.personId} has no last day yet.`)
+    const hm = person.managerId && person.managerId !== person.id ? person.managerId : (founder(db)?.id ?? person.id)
+    const slotId = prepareBackfillSlot(d as DB, person.id, lastDay, ctx.day)
+    return openJobFromPlan(d, slotId, { date: ctx.day, hiringManagerId: hm, actorId: ctx.actorId })
+  },
+})
+
+/**
+ * A job's Edit details, Save (JobEditSheet.tsx), with only the interview panel and some steps' interviewers
+ * changed: what a job opened from the plan needs before its first interview.
+ */
+const editJob = action({
+  name: 'editJob',
+  args: z.strictObject({ jobId: id, panelIds: z.array(id).optional(), interviewers: z.record(z.string(), z.array(id).min(1)).optional() }),
+  run(d, a) {
+    const job = must(d.jobs.find((j) => j.id === a.jobId), `No job ${a.jobId}.`)
+    const same = (x: readonly string[], y: readonly string[]) => x.length === y.length && x.every((v, i) => v === y[i])
+    let changed = false
+    if (a.panelIds && !same(job.panelIds, a.panelIds)) {
+      job.panelIds = [...a.panelIds]
+      changed = true
+    }
+    for (const [stepId, ids] of Object.entries(a.interviewers ?? {})) {
+      const step = must(
+        job.interviewPlan.find((s) => s.id === stepId),
+        `No interview step ${stepId} on ${job.title}.`,
+      )
+      if (same(step.interviewerIds, ids)) continue
+      step.interviewerIds = [...ids]
+      changed = true
+    }
+    if (!changed) throw new Error('No changes to save.')
+    logActivity(d, { entityType: 'job', entityId: job.id, kind: 'job_updated', text: `Edited the ${job.title} job` })
+  },
+})
+
+/** The offer card, Declined (OfferDialogs.tsx DeclineModal): the reason chip, and the application closes. */
+const decline = action({
+  name: 'markDeclined',
+  args: z.strictObject({ offerId: id, reason: outcomeReason }),
+  run(d, a, ctx) {
+    ok(markDeclined(d, a.offerId, a.reason, { date: ctx.day, outcomeReason: a.reason }))
+  },
+})
+
+/**
+ * Time off, Request time off or Record time off, then Send or Save (RequestTimeOffSheet.tsx): for oneself, or
+ * by Admin for anyone. Sick leave before its service wait needs Admin's choice (waive the wait or record it
+ * unpaid). Admin's own picks are approved on save unless approveNow is false, as the sheet's switch starts.
+ */
+const requestTimeOff = action({
+  name: 'requestTimeOff',
+  args: z.strictObject({
+    personId: id,
+    policyId: id,
+    startDate: date,
+    endDate: date,
+    partial: z.enum(['am', 'pm']).optional(),
+    note: z.string().optional(),
+    approveNow: z.boolean().optional(),
+    earlyChoice: z.enum(['waive', 'unpaid']).optional(),
+  }),
+  run(d, a, ctx) {
+    const db = before(d)
+    const person = must(db.people.find((p) => p.id === a.personId), `No person ${a.personId}.`)
+    const policy = must(
+      policiesFor(db, person, ctx.day).find((p) => p.id === a.policyId),
+      `${a.policyId} is not a time off type ${person.firstName} can use.`,
+    )
+    const isAdmin = ctx.viewingAs === 'admin'
+    if (!isAdmin && ctx.actorId !== person.id) throw new Error('Only Admin records time off for someone else.')
+    if (a.endDate < a.startDate || workdays(a.startDate, a.endDate, db.holidays) === 0) throw new Error('Pick dates with at least one workday.')
+    const early = !!policy.autoApprove && !!serviceWait(db, { personId: person.id, policyId: policy.id, startDate: a.startDate })
+    if (early && isAdmin && !a.earlyChoice) throw new Error('Pick how to record it.')
+    const auto = !!policy.autoApprove && !early
+    const willApprove = !auto && !early && isAdmin && (a.approveNow ?? true)
+    const input = {
+      personId: person.id,
+      policyId: policy.id,
+      startDate: a.startDate,
+      endDate: a.endDate,
+      ...(a.partial ? { partial: a.partial } : {}),
+      ...(a.note?.trim() ? { note: a.note.trim() } : {}),
+    }
+    const by = ctx.actorId ? { approverId: ctx.actorId } : {}
+    const req = createRequest(d, input, { date: ctx.day, beforeWait: isAdmin && a.earlyChoice === 'waive' ? 'waive' : 'hold' })
+    if (early && isAdmin && a.earlyChoice === 'unpaid') approveAsUnpaid(d, req.id, { date: ctx.day, ...by })
+    if (willApprove && req.status === 'pending') approveRequest(d, req.id, { date: ctx.day, ...by })
+    return req.id
+  },
+})
+
+/** A pending request's Approve, by its manager or Admin (src/features/timeoff/actions.ts approveTimeOff). */
+const approveTimeOff = action({
+  name: 'approveTimeOff',
+  args: z.strictObject({ requestId: id }),
+  run(d, a, ctx) {
+    must(
+      approveRequest(d, a.requestId, { date: ctx.day, ...(ctx.actorId ? { approverId: ctx.actorId } : {}) }),
+      `Request ${a.requestId} is not waiting for a decision.`,
+    )
+  },
+})
+
+/** Time off, a leave case's Mark returned (src/features/timeoff/actions.ts). */
+const returned = action({
+  name: 'markReturned',
+  args: z.strictObject({ leaveId: id }),
+  run(d, a, ctx) {
+    must(markReturned(d, a.leaveId, { date: ctx.day, byId: ctx.actorId }), `Leave case ${a.leaveId} is missing or already ended.`)
+  },
+})
+
+/**
+ * The inbox ops an admin clears from Home with one button (src/features/home/Inbox.tsx), as data. Ops that
+ * need judgment or words (extend an offer, decline a job request, a rule that does not apply, a backup
+ * downloaded) are left out.
+ */
+const inboxOpArgs = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('task_status'), checklistId: id, taskId: id, status: z.literal('done') }),
+  z.strictObject({ type: z.literal('approve_offer'), offerId: id }),
+  z.strictObject({ type: z.literal('approve_timeoff'), requestId: id }),
+  z.strictObject({ type: z.literal('approve_timeoff_unpaid'), requestId: id }),
+  z.strictObject({ type: z.literal('leave_notice_sent'), leaveCaseId: id }),
+  z.strictObject({ type: z.literal('rule_action_done'), ruleId: z.string().min(1), actionId: z.string().min(1) }),
+  z.strictObject({ type: z.literal('training_done'), personId: id, kind: z.string().min(1) }),
+  z.strictObject({ type: z.literal('recurring_done'), recurringId: id }),
+  z.strictObject({ type: z.literal('access_review_done'), quarter: z.string().min(1) }),
+  z.strictObject({ type: z.literal('annual_done'), ruleId: z.string().min(1), year: z.number().int() }),
+  z.strictObject({ type: z.literal('acknowledge'), policyId: id, personId: id }),
+  z.strictObject({ type: z.literal('add_holidays'), year: z.number().int() }),
+  z.strictObject({ type: z.literal('payrun_submitted'), periodStart: date }),
+])
+
+/** The inbox op types the simulator applies (an admin's one-button clears). */
+export const INBOX_OP_TYPES: ReadonlySet<string> = new Set(inboxOpArgs.options.map((o) => o.shape.type.value))
+
+/** Home, an inbox row's button: the op it carries, applied as the person acting (applyInboxOp). */
+const inbox = action({
+  name: 'inboxOp',
+  args: z.strictObject({ op: inboxOpArgs }),
+  run(d, a, ctx) {
+    ok(applyInboxOp(d, a.op as InboxOp, { date: ctx.day, actorId: ctx.actorId }))
+  },
+})
+
+/**
  * Opening the app: the changes it makes on its own when a workspace loads, in the order applyLoadChanges
  * (src/store/db.ts) makes them. Changing nothing is fine.
  */
@@ -689,6 +864,14 @@ const LIST = [
   payRun,
   leave,
   offboard,
+  jobFromPlan,
+  backfill,
+  editJob,
+  decline,
+  requestTimeOff,
+  approveTimeOff,
+  returned,
+  inbox,
   openApp,
 ] as const
 
