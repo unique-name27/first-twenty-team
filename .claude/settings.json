@@ -6,6 +6,7 @@
       "Bash(npm run typecheck)",
       "Bash(npm test:*)",
       "Bash(npm run stack:*)",
+      "Bash(npm run sql:*)",
       "Bash(git status)",
       "Bash(git diff:*)",
       "Bash(git log:*)"

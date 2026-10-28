@@ -17,6 +17,7 @@ Read before changing code:
 | --- | --- |
 | `npm install` | Install dependencies (Node 22 or newer) |
 | `npm run stack` | The app, the server on its own PGlite database with the sample company, signed in (`docs/DEV.md`); `-- --fresh` starts over, `-- --offset 10` runs a second one |
+| `npm run sql` | Reads the stack's database with SQL and never changes it: `npm run sql -- hires`, or one SELECT in quotes (`docs/DEV.md`) |
 | `npm run dev` | The app alone at http://127.0.0.1:8826 |
 | `npm run server:dev` | The optional server on PGlite (Postgres in WebAssembly, no install) |
 | `npm test` | All unit tests (Vitest); `npm test -- src/domain/payrun` runs one folder |

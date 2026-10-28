@@ -17,6 +17,7 @@ import { WriteBudget } from './writeBudget'
 import { type Config, testConfig } from './config'
 import { CAREERS_CSP } from './csp'
 import type { Db } from './db'
+import { registerDevRoutes } from './dev/routes'
 import { applyChanges, snapshot } from './repo'
 import { WORKSPACE_ID } from './sqlgen'
 import { ADMIN, createAdmin, CSRF, login, makeApp, makeTestDb, resetDb, sessionCookie, type SignedUp, signUp } from './test/helpers'
@@ -521,6 +522,38 @@ function registeredRoutes(app: FastifyInstance): string[] {
   return out.sort()
 }
 
+/** Every route buildApp registers (HEAD twins aside): what a production server answers. */
+const ROUTES = [
+  'DELETE /api/invites/:token|:id',
+  'GET /api/assistant',
+  'GET /api/auth/me',
+  'GET /api/auth/session',
+  'GET /api/auth/signup-mode',
+  'GET /api/changes',
+  'GET /api/health',
+  'GET /api/invites',
+  'GET /api/invites/:token|:id',
+  'GET /api/workspace',
+  'GET /api/workspace/status',
+  'POST /api/assistant/chat',
+  'POST /api/auth/accept-invite',
+  'POST /api/auth/login',
+  'POST /api/auth/logout',
+  'POST /api/auth/signup',
+  'POST /api/changes',
+  'POST /api/invites',
+  'POST /api/invites/lookup',
+  'PUT /api/workspace',
+  'PUT /api/workspace/careers',
+]
+
+/**
+ * DEV-ONLY routes: registered by the development entry (server/src/dev/index.ts, which only npm run stack
+ * starts), never by buildApp. POST /__dev/sql reads any company's data for npm run sql, so it answers only
+ * on a loopback socket with the stack's secret, never with a session (server/src/dev/routes.test.ts).
+ */
+const DEV_ONLY_ROUTES = ['POST /__dev/sql']
+
 describe('tenant isolation', () => {
   let app: FastifyInstance
   let a: SignedUp
@@ -564,31 +597,21 @@ describe('tenant isolation', () => {
     const gets = routes.filter((r) => r.startsWith('GET ')).map((r) => r.slice(4))
     expect(routes.filter((r) => r.startsWith('HEAD ')).map((r) => r.slice(5))).toEqual(gets)
     // Fastify prints one node for the parameter in /api/invites/:token (GET) and /api/invites/:id (DELETE).
-    expect(routes.filter((r) => !r.startsWith('HEAD '))).toEqual(
-      [
-        'DELETE /api/invites/:token|:id',
-        'GET /api/assistant',
-        'GET /api/auth/me',
-        'GET /api/auth/session',
-        'GET /api/auth/signup-mode',
-        'GET /api/changes',
-        'GET /api/health',
-        'GET /api/invites',
-        'GET /api/invites/:token|:id',
-        'GET /api/workspace',
-        'GET /api/workspace/status',
-        'POST /api/assistant/chat',
-        'POST /api/auth/accept-invite',
-        'POST /api/auth/login',
-        'POST /api/auth/logout',
-        'POST /api/auth/signup',
-        'POST /api/changes',
-        'POST /api/invites',
-        'POST /api/invites/lookup',
-        'PUT /api/workspace',
-        'PUT /api/workspace/careers',
-      ].sort(),
-    )
+    expect(routes.filter((r) => !r.startsWith('HEAD '))).toEqual([...ROUTES].sort())
+    for (const devOnly of DEV_ONLY_ROUTES) expect(routes).not.toContain(devOnly)
+  })
+
+  it('adds only the DEV-ONLY routes on the development entry, and none of them answers a session', async () => {
+    const dev = await buildApp({ db, config: testConfig({ signupMode: 'open', devTools: true }), logger: false })
+    apps.push(dev)
+    await registerDevRoutes(dev, { db, secret: 'test-only-dev-tools-secret-0123456789abcdef' })
+    await dev.ready()
+    expect(registeredRoutes(dev).filter((r) => !r.startsWith('HEAD '))).toEqual([...ROUTES, ...DEV_ONLY_ROUTES].sort())
+    for (const route of DEV_ONLY_ROUTES) {
+      const [method, url] = route.split(' ')
+      const res = await dev.inject({ method: method as 'POST', url, headers: { ...CSRF, cookie: a.cookie }, payload: { sql: 'SELECT id FROM workspaces' } })
+      expect(res.statusCode, route).toBe(404)
+    }
   })
 
   it("never lets A read another company's data, whatever the request names", async () => {

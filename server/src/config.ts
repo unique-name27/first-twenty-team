@@ -55,6 +55,11 @@ export type Config = {
   careersOrigin: string | undefined
   /** The in-app assistant (server/src/assistant; docs/SERVER.md "Lark, the assistant"). */
   assistant: AssistantConfig
+  /**
+   * DEV_TOOLS=1, which only `npm run stack` sets: the development server (server/src/dev/index.ts) adds
+   * its development-only routes, such as the one `npm run sql` asks. Refused in production.
+   */
+  devTools: boolean
 }
 
 export type SignupMode = 'closed' | 'open'
@@ -65,7 +70,7 @@ export type AssistantEffort = (typeof ASSISTANT_EFFORTS)[number]
 
 /**
  * The assistant's settings. The API key itself (ANTHROPIC_API_KEY) is deliberately not here: it never
- * leaves the environment except into the Anthropic client index.ts builds (assistant/client.ts), so no log
+ * leaves the environment except into the Anthropic client serve.ts builds (assistant/client.ts), so no log
  * line or answer that includes the config can carry it.
  */
 export type AssistantConfig = {
@@ -307,6 +312,10 @@ export function loadConfig(env: Env = process.env, options: LoadConfigOptions = 
 
   const assistant = assistantConfig(env, production)
 
+  // The development server's own routes read any company's data (npm run sql); no production server may have them.
+  const devTools = bool(env.DEV_TOOLS, false)
+  if (devTools && production) throw new ConfigError('DEV_TOOLS is for development only (npm run stack sets it). Remove it in production.')
+
   return {
     nodeEnv,
     port: positiveInt(env, 'PORT', 8787, 65535),
@@ -332,6 +341,7 @@ export function loadConfig(env: Env = process.env, options: LoadConfigOptions = 
     careersHosts,
     careersOrigin,
     assistant,
+    devTools,
   }
 }
 
@@ -391,6 +401,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     careersHosts: [],
     careersOrigin: undefined,
     assistant: { enabled: false, ...ASSISTANT_DEFAULTS, fake: false },
+    devTools: false,
     ...overrides,
   }
 }

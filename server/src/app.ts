@@ -1,5 +1,5 @@
 // The HTTP API (docs/SYNC.md, Protocol). buildApp returns a Fastify instance that is not listening yet,
-// so tests drive it with app.inject() and index.ts calls listen().
+// so tests drive it with app.inject() and serve.ts calls listen().
 //
 // Every /api route lives in one encapsulated plugin (prefix /api) that carries the CORS, CSRF,
 // cross-site and no-store hooks, so they apply by route match: a percent-encoded path such as
@@ -21,7 +21,7 @@
 //
 // The assistant (server/src/assistant, docs/SERVER.md "Lark, the assistant"): /api/assistant and
 // /api/assistant/chat sit in the same API plugin, so they get its guards. Its model client comes from
-// options.assistantClient (index.ts builds the real one when ANTHROPIC_API_KEY is set; tests pass a fake),
+// options.assistantClient (serve.ts builds the real one when ANTHROPIC_API_KEY is set; tests pass a fake),
 // or the scripted fake when ASSISTANT_FAKE is on; with neither, the routes answer that it is off.
 import { readFileSync } from 'node:fs'
 import fastifyCookie from '@fastify/cookie'
@@ -139,7 +139,7 @@ export type BuildAppOptions = {
   careers?: CareersRoutes
   /**
    * The assistant's model client (assistant/client.ts). Default: the scripted fake when ASSISTANT_FAKE is on,
-   * else none, and the assistant answers that it is off (index.ts passes the real one when the key is set).
+   * else none, and the assistant answers that it is off (serve.ts passes the real one when the key is set).
    */
   assistantClient?: AssistantClient | null
   /** The assistant's clock (tests): today for its context note and the day its messages count under. Default: now. */
