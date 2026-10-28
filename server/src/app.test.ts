@@ -11,9 +11,10 @@ import type { DB } from '@/domain/types'
 import { RECORD_COLLECTIONS } from '../../src/sync/collections'
 import { createHash } from 'node:crypto'
 import { buildApp, LOGIN_BODY_LIMIT, REQUEST_TIMEOUT_MS } from './app'
-import { ConcurrencyGate, hashToken, LoginRateLimiter, MAX_PASSWORD_LENGTH } from './auth'
+import { ConcurrencyGate, hashToken, LoginRateLimiter, MAX_PASSWORD_LENGTH, upsertAdmin } from './auth'
 import { testConfig } from './config'
 import type { Db } from './db'
+import { ConfigError } from './errors'
 import { migrationFiles } from './migrate'
 import { pruneChangeLog } from './repo'
 import {
@@ -222,6 +223,12 @@ describe('health and headers', () => {
     const other = await dev.inject({ method: 'OPTIONS', url: '/api/changes', headers: { origin: 'https://evil.example' } })
     expect(other.headers['access-control-allow-origin']).toBeUndefined()
     await dev.close()
+  })
+
+  it('refuses to start with the test password hashing cost outside tests', async () => {
+    const cheap = testConfig()
+    await expect(buildApp({ db, config: { ...cheap, nodeEnv: 'production' }, logger: false })).rejects.toThrow(ConfigError)
+    await expect(buildApp({ db, config: { ...cheap, nodeEnv: 'development' }, logger: false })).rejects.toThrow(/for tests only/)
   })
 })
 
@@ -644,6 +651,9 @@ describe('login', () => {
   })
 
   it('refuses sign-ins while too many password checks are waiting', async () => {
+    // Hashed at the real cost, the first check still holds the only slot when the other two arrive (a
+    // check at the test cost might finish first).
+    await upsertAdmin(db, ADMIN.email, ADMIN.password)
     const gate = new ConcurrencyGate(1, 0)
     const busy = await buildApp({ db, config: testConfig(), logger: false, passwordGate: gate })
     const attempt = (i: number) =>

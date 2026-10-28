@@ -1,11 +1,12 @@
 // Test helpers: one in-memory PGlite per test file (migrated once, wiped between tests) and a fresh
-// Fastify app per test, driven with app.inject().
+// Fastify app per test, driven with app.inject(). Passwords hash at the cheap test cost (config.ts
+// TEST_SCRYPT_N), in makeApp's config and in createAdmin.
 import { PGlite } from '@electric-sql/pglite'
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify'
 import { RECORD_COLLECTIONS, tableName } from '../../../src/sync/collections'
 import { buildApp } from '../app'
 import { DEVICE_COOKIE, SECURE_DEVICE_COOKIE, SECURE_SESSION_COOKIE, SESSION_COOKIE, upsertAdmin } from '../auth'
-import { type Config, testConfig } from '../config'
+import { type Config, TEST_SCRYPT_N, testConfig } from '../config'
 import { type Db, fromPGlite } from '../db'
 import { migrate } from '../migrate'
 import { WORKSPACE_ID } from '../sqlgen'
@@ -75,8 +76,9 @@ export async function makeApp(db: Db, overrides: Partial<Config> = {}): Promise<
   return app
 }
 
+/** The test admin, its password hashed at the cheap test cost (config.ts TEST_SCRYPT_N), as makeApp's config hashes. */
 export async function createAdmin(db: Db): Promise<string> {
-  return (await upsertAdmin(db, ADMIN.email, ADMIN.password)).id
+  return (await upsertAdmin(db, ADMIN.email, ADMIN.password, WORKSPACE_ID, TEST_SCRYPT_N)).id
 }
 
 /** The session token a response sets, under either cookie name (plain http or https), or null. */
