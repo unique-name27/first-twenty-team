@@ -1,9 +1,12 @@
 // src/sim generates companies for tests and tools. The app must never import it, or the generator, its
-// scenarios and the name pools would ship in the build: only files inside src/sim and test files may (and
-// tools outside src, such as npm run sim in scripts/dev). That covers imports Vite resolves from a pattern
-// too (import.meta.glob, a template literal in import()). This reads the source instead of building (a build
-// is slow), the way src/sync/testing/guard.test.ts does. server/src/dev/structure.test.ts keeps src/sim out
-// of the server's production bundle.
+// scenarios and the name pools would ship in the build: only files inside src/sim, test files and the
+// development-only code in src/dev may (and tools outside src, such as npm run sim in scripts/dev). src/dev
+// itself never reaches a build: src/dev/guard.test.ts holds every import of it to a dynamic import inside
+// `if (import.meta.env.DEV)`. That covers imports Vite resolves from a pattern too (import.meta.glob, a
+// template literal in import()) and files it bundles from a URL (new URL('...', import.meta.url), as a
+// worker is started). This reads the source instead of building (a build is slow), the way
+// src/sync/testing/guard.test.ts does. server/src/dev/structure.test.ts keeps src/sim out of the server's
+// production bundle.
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,6 +14,8 @@ import { describe, expect, it } from 'vitest'
 
 const SIM = path.dirname(fileURLToPath(import.meta.url))
 const SRC = path.resolve(SIM, '..')
+/** The development-only folder, relative to src as the users list writes it. */
+const DEV_PREFIX = 'dev/'
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -20,10 +25,14 @@ function sourceFiles(dir: string): string[] {
   })
 }
 
-/** Every module specifier in `code`: static imports and exports, and dynamic import(). */
+/**
+ * Every module specifier in `code`: static imports and exports, dynamic import(), and files bundled from a
+ * URL (new URL('./sim.worker.ts', import.meta.url), how a worker is started).
+ */
 function specifiers(code: string): string[] {
   const out: string[] = []
   for (const m of code.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g)) out.push(m[1])
+  for (const m of code.matchAll(/\bnew\s+URL\s*\(\s*['"]([^'"]+)['"]\s*,\s*import\.meta\.url\s*\)/g)) out.push(m[1])
   for (const m of code.matchAll(/^\s*(?:import|export)\b[^'"`;]*?(?:\bfrom\s*)?['"]([^'"]+)['"]/gm)) out.push(m[1])
   return out
 }
@@ -72,8 +81,12 @@ describe('src/sim stays out of the app', () => {
     .filter((file) => importsSim(readFileSync(file, 'utf8'), file))
     .map((file) => path.relative(SRC, file).replace(/\\/g, '/'))
 
-  it('is imported by test files only, outside src/sim', () => {
-    expect(users.filter((file) => !isTestFile(file))).toEqual([])
+  it('is imported only by test files and the development-only code in src/dev, outside src/sim', () => {
+    expect(users.filter((file) => !isTestFile(file) && !file.startsWith(DEV_PREFIX))).toEqual([])
+  })
+
+  it('finds the simulator panel among its users (so the test above checks something)', () => {
+    expect(users).toContain('dev/sim/runner.ts')
   })
 
   it('finds an import of src/sim when one is there (so this test checks something)', () => {
@@ -93,5 +106,12 @@ describe('src/sim stays out of the app', () => {
     expect(importsSim("const icons = import.meta.glob('./icons/*.svg')\n", file)).toBe(false)
     expect(importsSim('const page = await import(`./pages/${name}.tsx`)\n', file)).toBe(false)
     expect(importsSim("const near = import.meta.glob('../../simple/*.ts')\n", file)).toBe(false)
+  })
+
+  it('finds src/sim bundled from a URL, as a worker is started', () => {
+    const file = path.join(SRC, 'features', 'home', 'Example.tsx')
+    expect(importsSim("const w = new Worker(new URL('../../sim/play.ts', import.meta.url), { type: 'module' })\n", file)).toBe(true)
+    expect(importsSim("const u = new URL( '@/sim/play' , import.meta.url )\n", file)).toBe(true)
+    expect(importsSim("const u = new URL('./icon.svg', import.meta.url)\n", file)).toBe(false)
   })
 })
