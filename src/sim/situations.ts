@@ -21,7 +21,7 @@ import { fullName, isEmployedOn } from '@/domain/people'
 import type { ID, Person } from '@/domain/types'
 import { effectiveDatePresets } from '@/features/comp/helpers'
 import { nextFriday } from '@/features/people/helpers'
-import { addDays, type ISODate, isUsableDate } from '@/lib/dates'
+import { addDays, fmtDayAnyYear, type ISODate, isUsableDate } from '@/lib/dates'
 import { money, num } from '@/lib/format'
 import { type AdvancePolicy, type DayHooks, type GrowTarget, LEAD_DAYS, type MachineHost, RESIGN_REASONS, storySeed } from './machine'
 
@@ -216,7 +216,9 @@ type State = {
 /** The situations between days: each one's definition (as JSON) and state, for a keyframe. */
 export type SituationsSnapshot = { readonly defs: Readonly<Record<string, string>>; readonly states: Readonly<Record<string, State>> }
 
-const AT = '08:20'
+/** When situations act: 08:20 on a business day. */
+export const SITUATION_TIME = '08:20'
+const AT = SITUATION_TIME
 
 /** The machine's DayHooks for a list of situations. `note` receives each line for the feed. */
 export class Situations implements DayHooks {
@@ -367,8 +369,8 @@ export class Situations implements DayHooks {
     }
     if (!p) return skip(`nobody in the workspace has the id ${personId}.`)
     if (p.id === host.admin.id) return skip(`${fullName(p)} is the founder, who runs the company in the simulator.`)
-    if (p.separation) return skip(`${fullName(p)} ${p.separation.lastDay < host.day ? 'has already left' : 'is already leaving'} (last day ${p.separation.lastDay}).`)
-    if (!isEmployedOn(p, host.day)) return skip(`${fullName(p)} does not work here on ${host.day} (starts ${p.startDate}).`)
+    if (p.separation) return skip(`${fullName(p)} ${p.separation.lastDay < host.day ? 'has already left' : 'is already leaving'} (last day ${when(host, p.separation.lastDay)}).`)
+    if (!isEmployedOn(p, host.day)) return skip(`${fullName(p)} does not work here yet (starts ${when(host, p.startDate)}).`)
     return p
   }
 
@@ -402,7 +404,7 @@ export class Situations implements DayHooks {
       if (slotId === null) break
       added += 1
     }
-    this.say(host, s, `Hiring push: growing to ${num(s.headcount)} by ${s.by}${dept ? ` in ${dept.name}` : ''}; ${num(added)} role${added === 1 ? '' : 's'} added to the plan today.`)
+    this.say(host, s, `Hiring push: growing to ${num(s.headcount)} by ${when(host, s.by)}${dept ? ` in ${dept.name}` : ''}; ${num(added)} role${added === 1 ? '' : 's'} added to the plan today.`)
   }
 
   private freeze(host: MachineHost, s: Extract<Situation, { kind: 'freeze' }>, state: State): void {
@@ -414,7 +416,7 @@ export class Situations implements DayHooks {
       }
     }
     state.held = held
-    this.say(host, s, `Hiring freeze through ${s.until}: no new roles or backfills${s.holdOpenJobs ? `, ${num(held.length)} open job${held.length === 1 ? '' : 's'} on hold` : ''}.`)
+    this.say(host, s, `Hiring freeze through ${when(host, s.until)}: no new roles or backfills${s.holdOpenJobs ? `, ${num(held.length)} open job${held.length === 1 ? '' : 's'} on hold` : ''}.`)
   }
 
   /** The first business day after a freeze: the jobs it held are posted again (Resume posting). */
@@ -463,7 +465,7 @@ export class Situations implements DayHooks {
       })
       if (opened) backfill = ' Backfill opened.'
     } else if (s.backfill) backfill = ' No backfill during the freeze.'
-    this.say(host, s, `${fullName(p)} resigned (${reason}), last day ${lastDay}.${backfill}`)
+    this.say(host, s, `${fullName(p)} resigned (${reason}), last day ${when(host, lastDay)}.${backfill}`)
   }
 
   private layoff(host: MachineHost, s: Extract<Situation, { kind: 'layoff' }>, rng: Rng): void {
@@ -478,7 +480,7 @@ export class Situations implements DayHooks {
       deptName = dept.name
       people = pool.filter((p) => p.departmentId === dept.id)
       if (!people.length) {
-        this.say(host, s, `Skipped the layoff: nobody but the founder works in ${dept.name} on ${host.day}.`, true)
+        this.say(host, s, `Skipped the layoff: nobody but the founder works in ${dept.name} today.`, true)
         return
       }
     } else {
@@ -507,9 +509,9 @@ export class Situations implements DayHooks {
         if (this.attempt(host, s, `closing ${job.title}`, () => host.act(host.admin, AT, 'setJobStatus', { jobId: job.id, status: 'closed' }))) closed += 1
       }
     }
-    const parts = [`Layoff${deptName ? ` in ${deptName}` : ''}: ${gone.length ? gone.join(', ') : 'nobody'}, last day ${lastDay}`]
+    const parts = [`Layoff${deptName ? ` in ${deptName}` : ''}: ${gone.length ? gone.join(', ') : 'nobody'}, last day ${when(host, lastDay)}`]
     if (s.closeJobs) parts.push(`${num(closed)} job${closed === 1 ? '' : 's'} closed`)
-    if (s.freezeDays) parts.push(`hiring frozen through ${addDays(s.on, s.freezeDays)}`)
+    if (s.freezeDays) parts.push(`hiring frozen through ${when(host, addDays(s.on, s.freezeDays))}`)
     this.say(host, s, `${parts.join('; ')}.`)
   }
 
@@ -526,21 +528,21 @@ export class Situations implements DayHooks {
         const check = leaveEligibility(host.db, person.id, s.leaveKind, host.day)
         if (!check.eligible) {
           const why = check.reasons.filter((r) => /^Needs|; needs|apply at|cover employees/.test(r)).join(' ')
-          this.say(host, s, `Skipped the ${label}: ${fullName(person)} does not qualify on ${host.day}. ${why}`.trim(), true)
+          this.say(host, s, `Skipped the ${label}: ${fullName(person)} does not qualify today. ${why}`.trim(), true)
           return
         }
       }
     } else {
       const pool = this.pickable(host).filter((p) => leaveEligibility(host.db, p.id, s.leaveKind, host.day).eligible)
       person = pool.length ? rng.pick(pool) : null
-      if (!person) this.say(host, s, `Skipped the ${label}: nobody who works here qualifies on ${host.day}.`, true)
+      if (!person) this.say(host, s, `Skipped the ${label}: nobody who works here qualifies today.`, true)
     }
     if (!person) return
     const p = person
     const startDate = businessDayOnOrAfter(host.day, host.holidays)
     const expectedReturn = businessDayOnOrAfter(addDays(startDate, 7 * s.weeks), host.holidays)
     if (this.attempt(host, s, `${fullName(p)}'s ${label}`, () => host.act(host.admin, AT, 'startLeave', { personId: p.id, kind: s.leaveKind, requestedOn: host.day, startDate, expectedReturn }))) {
-      this.say(host, s, `${fullName(p)} started a ${label} of ${num(s.weeks)} week${s.weeks === 1 ? '' : 's'}, back ${expectedReturn}.`)
+      this.say(host, s, `${fullName(p)} started a ${label} of ${num(s.weeks)} week${s.weeks === 1 ? '' : 's'}, back ${when(host, expectedReturn)}.`)
     }
   }
 
@@ -572,7 +574,7 @@ export class Situations implements DayHooks {
       }
     }
     const notes = [held ? `${num(held)} held outside the band` : '', outside ? `${num(outside)} past the band as exceptions` : ''].filter(Boolean)
-    this.say(host, s, `Raise round of ${s.percent}%: ${num(raised)} raised from ${effectiveOn}${notes.length ? `, ${notes.join(', ')}` : ''}.`)
+    this.say(host, s, `Raise round of ${s.percent}%: ${num(raised)} raised from ${when(host, effectiveOn)}${notes.length ? `, ${notes.join(', ')}` : ''}.`)
   }
 
   // ---- A senior hire ---------------------------------------------------------------------------------
@@ -628,7 +630,7 @@ export class Situations implements DayHooks {
     state.settled = true
     const dept = db.departments.find((d) => d.id === s.departmentId)
     if (!isEmployedOn(leader, host.day) || leader.separation) {
-      this.say(host, s, `Skipped moving the reports: ${fullName(leader)} is not working here on ${host.day}.`, true)
+      this.say(host, s, `Skipped moving the reports: ${fullName(leader)} is not working here today.`, true)
       return
     }
     const candidates = s.reports === 'department' ? host.staff().filter((p) => p.departmentId === s.departmentId) : s.reports.map((pid) => db.people.find((p) => p.id === pid)).filter((p): p is Person => !!p)
@@ -641,6 +643,11 @@ export class Situations implements DayHooks {
     if (dept) this.attempt(host, s, `making ${fullName(leader)} head of ${dept.name}`, () => host.act(host.admin, AT, 'saveDepartment', { id: dept.id, name: dept.name, headId: leader.id }))
     this.say(host, s, `${fullName(leader)} started as ${leader.title}; ${num(moved)} ${moved === 1 ? 'person reports' : 'people report'} to them now.`)
   }
+}
+
+/** A date in a note: "Fri, Oct 23", with the year when it is not the simulated day's. */
+function when(host: MachineHost, d: ISODate): string {
+  return fmtDayAnyYear(d, host.day)
 }
 
 function round1000(n: number): number {

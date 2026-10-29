@@ -26,8 +26,14 @@ function company(name: ScenarioName): DB {
   return db
 }
 
-type Outcome = { db: string; trace: string; report: string }
-const outcome = (sim: Simulation): Outcome => ({ db: JSON.stringify(sim.db), trace: traceToJsonLines(sim.trace), report: JSON.stringify(sim.report()) })
+type Outcome = { db: string; trace: string; report: string; events: string; points: string }
+const outcome = (sim: Simulation): Outcome => ({
+  db: JSON.stringify(sim.db),
+  trace: traceToJsonLines(sim.trace),
+  report: JSON.stringify(sim.report()),
+  events: JSON.stringify(sim.events),
+  points: JSON.stringify(sim.points),
+})
 
 const straights = new Map<string, Outcome>()
 /** The simulation lived to `to` in one step. */
@@ -63,7 +69,8 @@ describe.each(['seed-8', 'full-20'] as const)('%s over 120 days', (name) => {
   it('gives the same JSON as advance, which is one step', () => {
     setClockOverride(AS_OF)
     const r = advance(company(name), { to: END, seed: 1 })
-    expect({ db: JSON.stringify(r.db), trace: traceToJsonLines(r.trace), report: JSON.stringify(r.report) }).toEqual(straight(name))
+    const { db, trace, report } = straight(name)
+    expect({ db: JSON.stringify(r.db), trace: traceToJsonLines(r.trace), report: JSON.stringify(r.report) }).toEqual({ db, trace, report })
   })
 })
 
@@ -99,6 +106,24 @@ describe('going back', () => {
     expect(sim.db).toBe(company('seed-8'))
     sim.stepTo(END)
     expect(outcome(sim)).toEqual(straight('seed-8'))
+  })
+})
+
+describe('events and numbers', () => {
+  it('takes the numbers each day and tells the days as events, the same whichever way it stepped', () => {
+    const sim = new Simulation(company('seed-8'), { from: AS_OF, seed: 1 })
+    const first = sim.step(7)
+    expect(first.points.map((p) => p.date)).toEqual(['2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08'])
+    expect(first.points[0]).toEqual(sim.points[0])
+    expect(sim.metricsNow()).toEqual(sim.points[6])
+    expect(sim.metricsNow().headcount).toBe(8)
+    expect(first.points.every((p) => p.monthlyPayroll > 0 && p.openRoles >= 1)).toBe(true)
+    // Sunday Oct 4 has the week's line.
+    expect(first.events.filter((e) => e.kind === 'week').map((e) => e.day)).toEqual(['2026-10-04'])
+    const off = new Simulation(company('seed-8'), { from: AS_OF, seed: 1, story: false, metrics: false })
+    const quiet = off.step(7)
+    expect([quiet.events, quiet.points]).toEqual([[], []])
+    expect(traceToJsonLines(off.trace)).toBe(traceToJsonLines(sim.trace))
   })
 })
 

@@ -13,12 +13,16 @@
 // before the first change and lives forward again: nothing before that day differs, so the result equals a
 // fresh simulation with the new list.
 //
+// Each day lived also gives the feed's events (src/sim/story.ts) and the day's numbers (src/sim/metrics.ts),
+// unless they are turned off (advance needs neither).
+//
 // Test and tooling code only (src/sim/guard.test.ts).
 import { founder } from '@/domain/people'
 import type { DB } from '@/domain/types'
-import { addDays, getClockOverride, type ISODate, isUsableDate, setClockOverride } from '@/lib/dates'
+import { addDays, getClockOverride, type ISODate, isUsableDate, parseDate, setClockOverride } from '@/lib/dates'
 import { openRun, type RunHandle, type RunState, restoreRun, runIdSuffixes, runState, withRun } from '@/lib/runContext'
 import type { TraceLine } from './actions'
+import { type MetricPoint, metricsOn } from './metrics'
 import { type AdvancePolicy, type AdvanceReport, type MachineSnapshot, type PolicyInput, resolvePolicy, TimeMachine } from './machine'
 import {
   applyPace,
@@ -33,6 +37,7 @@ import {
   Situations,
   type SituationsSnapshot,
 } from './situations'
+import { dayEvents, type SimEvent, weekEvent } from './story'
 
 export type SimulationOptions = {
   /** The company's date: the last day already lived. The first step lives the day after it. */
@@ -47,6 +52,10 @@ export type SimulationOptions = {
   reportCompliance?: boolean
   /** What happens on given dates, pace changes included (src/sim/situations.ts). Each comes after `from`. */
   situations?: readonly SituationInput[]
+  /** Tell each day as events for a feed (default true). */
+  story?: boolean
+  /** Take each day's numbers (default true). */
+  metrics?: boolean
 }
 
 /** What one step lived. */
@@ -58,6 +67,10 @@ export type StepResult = {
   lines: TraceLine[]
   /** What the situations did on the days lived, or why they skipped a step. */
   notes: SituationNote[]
+  /** The feed's events for the days lived (empty with story off). */
+  events: SimEvent[]
+  /** Each day's numbers (empty with metrics off). */
+  points: MetricPoint[]
 }
 
 /** What a change of situations did: the days lived again (from the keyframe it went back to), or none. */
@@ -72,6 +85,8 @@ export type Keyframe = {
   readonly run: RunState
   readonly situations: SituationsSnapshot
   readonly notesLength: number
+  readonly eventsLength: number
+  readonly pointsLength: number
 }
 
 export class Simulation {
@@ -85,6 +100,10 @@ export class Simulation {
   private readonly frames: Keyframe[] = []
   private readonly situations: Situations
   private noteList: SituationNote[] = []
+  private eventList: SimEvent[] = []
+  private pointList: MetricPoint[] = []
+  private readonly tellStory: boolean
+  private readonly takeMetrics: boolean
   private paceCount = 0
   private stopped: Error | null = null
 
@@ -104,6 +123,8 @@ export class Simulation {
     this.from = from
     this.seed = seed
     this.keepKeyframes = (options.keyframes ?? 'month') === 'month'
+    this.tellStory = options.story ?? true
+    this.takeMetrics = options.metrics ?? true
     this.handle = openRun({ seed: `advance ${seed} from ${from}`, actorId: admin.id, viewingAs: 'admin', timeOfDay: '08:00', avoid: runIdSuffixes(db) })
     this.situations = new Situations(list, seed, (n) => this.noteList.push(n))
     this.machine = new TimeMachine(db, from, seed, this.policy, admin.id, { reportCompliance: options.reportCompliance ?? true, hooks: this.situations })
@@ -130,6 +151,21 @@ export class Simulation {
     return this.noteList
   }
 
+  /** The feed's events so far, in order. */
+  get events(): readonly SimEvent[] {
+    return this.eventList
+  }
+
+  /** Each day's numbers so far, from the first day lived. */
+  get points(): readonly MetricPoint[] {
+    return this.pointList
+  }
+
+  /** The numbers on the last day lived (also on the start day, before any step). */
+  metricsNow(): MetricPoint {
+    return metricsOn(this.db, this.day, this.from)
+  }
+
   /** The situations, in date order (pace changes included). */
   situationList(): readonly Situation[] {
     return this.situations.all
@@ -151,10 +187,9 @@ export class Simulation {
     if (!isUsableDate(to)) throw new Error(`The date to step to is a date written YYYY-MM-DD, not '${to}'.`)
     const from = this.day
     if (to < from) throw new Error(`Time only moves forward: the company's date is ${from}, so it cannot step to ${to}. rewindTo goes back.`)
-    const traced = this.trace.length
-    const noted = this.noteList.length
+    const mark = this.mark()
     this.live(to)
-    return { from, to, lines: this.trace.slice(traced), notes: this.noteList.slice(noted) }
+    return this.since(from, to, mark)
   }
 
   /**
@@ -168,7 +203,7 @@ export class Simulation {
     const frame = this.frameOnOrBefore(day)
     this.restore(frame, this.situations.all)
     this.live(day)
-    return { from: frame.day, to: day, lines: this.trace.slice(frame.traceLength), notes: this.noteList.slice(frame.notesLength) }
+    return this.since(frame.day, day, frameMark(frame))
   }
 
   /**
@@ -185,13 +220,13 @@ export class Simulation {
     const changedOn = firstChange(this.situations.all, list)
     if (changedOn === null || changedOn > day) {
       this.situations.replaceList(list)
-      return { from: day, to: day, lines: [], notes: [], replayed: false }
+      return { ...this.since(day, day, this.mark()), replayed: false }
     }
     let frame = this.frames[0]
     for (const f of this.frames) if (f.day < changedOn) frame = f
     this.restore(frame, list)
     this.live(day)
-    return { from: frame.day, to: day, lines: this.trace.slice(frame.traceLength), notes: this.noteList.slice(frame.notesLength), replayed: true }
+    return { ...this.since(frame.day, day, frameMark(frame)), replayed: true }
   }
 
   /** A change of pace from the next day on, kept in the situations as a pace entry, so the run replays exactly. */
@@ -219,6 +254,14 @@ export class Simulation {
 
   // ---- Inside ----------------------------------------------------------------------------------
 
+  private mark(): Mark {
+    return { trace: this.trace.length, notes: this.noteList.length, events: this.eventList.length, points: this.pointList.length }
+  }
+
+  private since(from: ISODate, to: ISODate, m: Mark): StepResult {
+    return { from, to, lines: this.trace.slice(m.trace), notes: this.noteList.slice(m.notes), events: this.eventList.slice(m.events), points: this.pointList.slice(m.points) }
+  }
+
   private mustBeGoing(): void {
     if (this.stopped) throw new Error(`The simulation stopped on ${this.day}: ${this.stopped.message} Go back to an earlier day with rewindTo to go on.`)
   }
@@ -230,8 +273,10 @@ export class Simulation {
     try {
       withRun(this.handle, () => {
         for (let day = addDays(this.day, 1); day <= to; day = addDays(day, 1)) {
+          const m = this.mark()
           this.paceFor(day)
           this.machine.liveDay(day)
+          this.tell(day, m)
           if (this.keepKeyframes && addDays(day, 1).endsWith('-01')) this.keep()
         }
       })
@@ -242,6 +287,27 @@ export class Simulation {
     } finally {
       setClockOverride(clock)
     }
+  }
+
+  /** The day's events and numbers. */
+  private tell(day: ISODate, m: Mark): void {
+    if (this.tellStory) {
+      this.eventList.push(...dayEvents(day, this.trace.slice(m.trace), this.db, this.noteList.slice(m.notes)))
+      if (parseDate(day).getDay() === 0) {
+        const week = weekEvent(day, this.lastWeek(day))
+        if (week) this.eventList.push(week)
+      }
+    }
+    if (this.takeMetrics) this.pointList.push(metricsOn(this.db, day, this.from))
+  }
+
+  /** The trace lines of the seven days ending on `day`. */
+  private lastWeek(day: ISODate): TraceLine[] {
+    const from = addDays(day, -6)
+    const trace = this.trace
+    let i = trace.length
+    while (i > 0 && trace[i - 1].day >= from) i -= 1
+    return trace.slice(i)
   }
 
   /** The policy for a day, at the pace the pace entries dated on or before it set. */
@@ -264,6 +330,8 @@ export class Simulation {
       run: runState(this.handle),
       situations: this.situations.snapshot(),
       notesLength: this.noteList.length,
+      eventsLength: this.eventList.length,
+      pointsLength: this.pointList.length,
     })
   }
 
@@ -280,10 +348,19 @@ export class Simulation {
     restoreRun(this.handle, frame.run)
     this.situations.restore(frame.situations, list)
     this.noteList = this.noteList.slice(0, frame.notesLength)
+    this.eventList = this.eventList.slice(0, frame.eventsLength)
+    this.pointList = this.pointList.slice(0, frame.pointsLength)
     this.paceCount = list.filter((s) => s.kind === 'pace' && s.on <= frame.day).length
     this.frames.splice(this.frames.indexOf(frame) + 1)
     this.stopped = null
   }
+}
+
+/** How long each list was at a moment, so a step returns only what it added. */
+type Mark = { trace: number; notes: number; events: number; points: number }
+
+function frameMark(f: Keyframe): Mark {
+  return { trace: f.traceLength, notes: f.notesLength, events: f.eventsLength, points: f.pointsLength }
 }
 
 /** The earliest date a change touches between two lists of situations (added, removed or edited), or null. */

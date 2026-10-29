@@ -50,7 +50,7 @@ export function advance(db: DB, options: AdvanceOptions): AdvanceResult {
   const { to, seed } = options
   if (!isUsableDate(to)) throw new Error(`The date to advance to is a date written YYYY-MM-DD, not '${to}'.`)
   if (to < from) throw new Error(`Time only moves forward: the company's date is ${from}, so it cannot advance to ${to}.`)
-  const sim = new Simulation(db, { from, seed, policy: options.policy, keyframes: 'none' })
+  const sim = new Simulation(db, { from, seed, policy: options.policy, keyframes: 'none', story: false, metrics: false })
   try {
     sim.stepTo(to)
   } catch (e) {

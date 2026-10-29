@@ -108,7 +108,7 @@ describe('on seed-8, 60 days', () => {
       expect(args<{ personId: string; change: { reason: string; effectiveOn: string } }>(t)).toMatchObject({ change: { reason: 'market', effectiveOn: '2026-10-16' } })
       expect(args<{ personId: string }>(t).personId).not.toBe('p-founder')
     }
-    expect(notesOf(sim, 'raise')[0].text).toMatch(/^Raise round of 4%: \d+ raised from 2026-10-16/)
+    expect(notesOf(sim, 'raise')[0].text).toMatch(/^Raise round of 4%: \d+ raised from Fri, Oct 16/)
   })
 
   it('a freeze puts open jobs on hold, plans and opens nothing, and posts the jobs again after it', () => {
@@ -200,8 +200,8 @@ describe('notes for steps the app would refuse', () => {
       ['nobody', true],
       ['no-dept', true],
     ])
-    expect(notesOf(sim, 'second')[0].text).toMatch(/^Skipped the resignation: Keiko \w+ has already left \(last day 2026-10-05\)\.$/)
-    expect(notesOf(sim, 'new-leave')[0].text).toMatch(/does not qualify on 2026-10-07\. Needs more than 12 months of service/)
+    expect(notesOf(sim, 'second')[0].text).toMatch(/^Skipped the resignation: Keiko \w+ has already left \(last day Mon, Oct 5\)\.$/)
+    expect(notesOf(sim, 'new-leave')[0].text).toMatch(/does not qualify today\. Needs more than 12 months of service/)
     expect(notesOf(sim, 'nobody')[0].text).toBe('Skipped the resignation: nobody in the workspace has the id p-nobody.')
     expect(at820(sim, '2026-10-06')).toEqual([])
     expect(integrityFailures(sim.db)).toEqual([])
