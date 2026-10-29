@@ -51,9 +51,12 @@ export function Controls({ locked, onEditSituation }: { locked: boolean; onEditS
         <Button size="sm" onClick={() => simulator.step(7)} disabled={goOff || playing || atEnd} aria-keyshortcuts="w" title="Step a week (W)">
           +1 week
         </Button>
-        <Button size="sm" className="hidden sm:inline-flex" onClick={() => simulator.step(30)} disabled={goOff || playing || atEnd} aria-keyshortcuts="m" title="Step a month (M)">
-          +1 month
-        </Button>
+        {/* A phone keeps one row of buttons: the month step waits for a wider window (M still works). */}
+        <span className="hidden sm:contents">
+          <Button size="sm" onClick={() => simulator.step(30)} disabled={goOff || playing || atEnd} aria-keyshortcuts="m" title="Step a month (M)">
+            +1 month
+          </Button>
+        </span>
         <Button
           size="sm"
           variant="ghost"
@@ -61,8 +64,10 @@ export function Controls({ locked, onEditSituation }: { locked: boolean; onEditS
           onClick={() => date && from && simulator.rewind(monthBack(date, from))}
           disabled={off || working || !date || date === from}
           aria-keyshortcuts="["
+          aria-label="Back a month"
         >
-          Back a month
+          <span className="sm:hidden">Back</span>
+          <span className="hidden sm:inline">Back a month</span>
         </Button>
         <Segmented<Speed>
           label="Speed"
