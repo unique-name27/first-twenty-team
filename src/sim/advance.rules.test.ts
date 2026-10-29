@@ -186,4 +186,17 @@ describe('job posts at 15 people', () => {
     expect(db.activity.some((a) => a.entityId === job.id && a.kind === 'job_posted')).toBe(true)
     expect(integrityFailures(db)).toEqual([])
   })
+
+  it('keeps hiring for a year: a job whose candidates were all turned down gets new ones, and a role on hold keeps no place', () => {
+    // In the sample, the Engineering manager role is on hold and the Product manager draft is next. Both used
+    // to hold the founder's open-role places, and a job that reached its candidate cap got no more candidates.
+    const sample = company('ledgerlark')
+    const { db, report } = lived(sample, '2026-10-09', '2027-10-09')
+    expect(report.hiring.planned).toBeGreaterThan(0)
+    expect(report.hiring.hires).toBeGreaterThanOrEqual(5)
+    expect(report.headcount.to).toBeGreaterThanOrEqual(19)
+    const pm = db.jobs.find((j) => j.id === 'j-pm')!
+    expect(db.applications.some((a) => a.jobId === pm.id && a.status === 'hired')).toBe(true)
+    expect(integrityFailures(db)).toEqual([])
+  })
 })

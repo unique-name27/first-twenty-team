@@ -577,7 +577,9 @@ export class TimeMachine implements MachineHost {
     if (p.openRoles <= 0) return
     const db = this.db
     const unfilled = unfilledPlan(db)
-    if (unfilled >= p.openRoles) return
+    // A role whose job is on hold is not being worked on, so it does not take one of the openRoles places
+    // (it still counts toward maxHeadcount, as the seat it keeps).
+    if (unfilledPlan(db, { onHold: false }) >= p.openRoles) return
     if (employedOn(db, this.day).length + incomingOn(db, this.day).length + unfilled >= p.maxHeadcount) return
     this.planRole(this.rng, '08:30')
   }
@@ -665,13 +667,17 @@ export class TimeMachine implements MachineHost {
 
   // ---- Candidates --------------------------------------------------------------------------------
 
-  /** New candidates on each open job (Quick add), until it is full or an offer is out. */
+  /**
+   * New candidates on each open job (Quick add), until it has maxCandidatesPerJob still in play or an offer is
+   * out. Closed applications do not count: a job whose candidates were all turned down keeps getting new ones,
+   * as a posted job does, instead of standing open and empty for the rest of the run.
+   */
   private candidatesArrive(): void {
     for (const job of this.db.jobs) {
       if (job.status !== 'open' || this.liveOffer(job.id)) continue
       const n = this.draws(this.policy.candidatesPerJobPerWeek / 5)
       for (let i = 0; i < n; i++) {
-        if (this.db.applications.filter((a) => a.jobId === job.id).length >= this.policy.maxCandidatesPerJob) break
+        if (this.db.applications.filter((a) => a.jobId === job.id && a.status === 'active').length >= this.policy.maxCandidatesPerJob) break
         this.arrive(job)
       }
     }
@@ -1268,8 +1274,9 @@ const UNFILLED = new Set<PlanSlot['status']>(['planned', 'open', 'offer'])
  * Plan lines planned, open or with an offer out: roles the company means to fill. Read the way Comp and
  * plan reads them (planSlotStatus), so a line whose job was closed without hiring counts as cut.
  */
-function unfilledPlan(db: DB): number {
-  return db.plan.filter((s) => UNFILLED.has(planSlotStatus(db, s))).length
+function unfilledPlan(db: DB, opts: { onHold?: boolean } = {}): number {
+  const held = (s: PlanSlot) => !!s.jobId && db.jobs.find((j) => j.id === s.jobId)?.status === 'on_hold'
+  return db.plan.filter((s) => UNFILLED.has(planSlotStatus(db, s)) && (opts.onHold !== false || !held(s))).length
 }
 
 /** Empties a set and fills it with `values`, in their order. */
