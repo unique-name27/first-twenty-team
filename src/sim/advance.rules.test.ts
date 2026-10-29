@@ -1,5 +1,5 @@
-// The time machine's rules, on small companies: the policy presets (a quiet one changes little), the
-// refusals (stale law, going backwards, no company date), a clock in the middle of a pay period, people who
+// The time machine's rules, on small companies: the policy presets (a quiet one changes little), dates past
+// 2026, the refusals (going backwards, no company date), a clock in the middle of a pay period, people who
 // resign (and their backfills), go on leave and come back, and next year's holidays in December.
 import { afterEach, describe, expect, it } from 'vitest'
 import { businessDayOnOrAfter, dbHolidays } from '@/domain/hiring'
@@ -67,15 +67,15 @@ describe('policies', () => {
   })
 })
 
-describe('refusals', () => {
-  it('refuses a date past the law coverage unless allowStaleLaw, and leaves the clock where it was', () => {
+describe('dates', () => {
+  it("lives past 2026 on the rules it has, with next year's holidays", () => {
     const db = company('blank')
     setClockOverride('2026-12-20')
-    expect(() => advance(db, { to: '2027-01-04', seed: 1 })).toThrow('2027-01-04 is after the dates the built-in rules cover (2025-01-01 to 2026-12-31). Pass allowStaleLaw to advance anyway.')
-    expect(getClockOverride()).toBe('2026-12-20')
-    const stale = advance(db, { to: '2027-01-04', seed: 1, allowStaleLaw: true })
-    expect(stale.report.days).toBe(15)
+    const r = advance(db, { to: '2027-01-04', seed: 1 })
+    expect(r.report.days).toBe(15)
     expect(getClockOverride()).toBe('2027-01-04')
+    expect(r.db.holidays.some((h) => h.date.startsWith('2027'))).toBe(true)
+    expect(integrityFailures(r.db)).toEqual([])
   })
 
   it('never moves backwards, needs the company date, and never runs inside another run', () => {

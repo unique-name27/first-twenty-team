@@ -46,8 +46,6 @@ export type GenerateOptions = {
   seed?: number
   /** Default: the scenario's own as-of date. */
   asOf?: ISODate
-  /** Generate past the dates the law tables and holidays cover. The company is then built on stale rules. */
-  allowStaleLaw?: boolean
 }
 
 export type GeneratedCompany = {
@@ -61,20 +59,7 @@ export type GeneratedCompany = {
   summary: string
 }
 
-/**
- * The dates the built-in rules cover: from the first holiday on the list to the end of the law tables'
- * year or the last holiday, whichever comes first (2025-01-01 to 2026-12-31 today).
- */
-export function lawCoverage(): { from: ISODate; to: ISODate } {
-  const days = defaultHolidays()
-    .map((h) => h.date)
-    .sort()
-  const yearEnd = `${DEFAULT_LAW.year}-12-31`
-  const last = days[days.length - 1]
-  return { from: `${days[0].slice(0, 4)}-01-01`, to: last < yearEnd ? last : yearEnd }
-}
-
-/** Generates a scenario's company. Throws on dates outside the law coverage unless allowStaleLaw is set. */
+/** Generates a scenario's company. Any as-of date works: dates outside 2026 use the rules the app has (the 2026 law tables). */
 export function generateCompany(options: GenerateOptions): GeneratedCompany {
   const scenario: Scenario | undefined = SCENARIOS[options.scenario]
   if (!scenario) throw new Error(`No scenario named ${options.scenario}.`)
@@ -93,12 +78,6 @@ export function generateCompany(options: GenerateOptions): GeneratedCompany {
 
   const plan = scenario.company as CompanyPlan
   const foundedOn = foundingDate(plan, asOf)
-  if (!options.allowStaleLaw) {
-    const { from, to } = lawCoverage()
-    const covered = `the dates the built-in rules cover (${from} to ${to}: the ${DEFAULT_LAW.year} law tables and the holiday list). Pass allowStaleLaw to generate it anyway.`
-    if (asOf > to) throw new Error(`The as-of date ${asOf} is after ${covered}`)
-    if (foundedOn < from) throw new Error(`${scenario.name} as of ${asOf} would be founded on ${foundedOn}, before ${covered}`)
-  }
 
   const previous = getClockOverride()
   try {

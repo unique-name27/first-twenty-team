@@ -1,5 +1,5 @@
-// The companies the simulator generates (src/sim/generate.ts). Each scenario has a fixed default seed and an
-// as-of date inside the law coverage. A plan is written relative to its as-of date (days or months before
+// The companies the simulator generates (src/sim/generate.ts). Each scenario has a fixed default seed and a
+// default as-of date. A plan is written relative to its as-of date (days or months before
 // it), so the same scenario can be generated as of another date; the seed picks the names, pipelines,
 // interview times and outcomes. Every company and person is invented.
 import type { ID } from '@/domain/types'

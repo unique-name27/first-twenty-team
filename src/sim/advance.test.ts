@@ -1,7 +1,7 @@
 // The time machine on two generated companies, 30 and 90 days at the normal policy: the result is valid by
 // the shared integrity checks, every pay run that came due was submitted once, people took time off and the
 // company hired, everything happened inside the days lived through, and the same input gives byte-identical
-// output. The companies are generated as of 2026-10-01, so 90 days stays inside the law coverage.
+// output. The companies are generated as of 2026-10-01.
 // More cases (policies, refusals, a clock mid pay period, leavers, December) are in advance.rules.test.ts.
 import { afterEach, describe, expect, it } from 'vitest'
 import { integrityFailures } from '@/domain/integrity'

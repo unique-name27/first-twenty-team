@@ -67,7 +67,7 @@ import { addBusinessDays, addDays, getClockOverride, type ISODate, isUsableDate,
 import { money, num } from '@/lib/format'
 import { runIdSuffixes, withRunContext } from '@/lib/runContext'
 import { type ActionName, type ArgsOf, applyAction, INBOX_OP_TYPES, type ResultOf, type SimState, type TraceLine } from './actions'
-import { lawCoverage, profileFor, slug } from './generate'
+import { profileFor, slug } from './generate'
 
 // ---------------------------------------------------------------------------------------------
 // Policy
@@ -208,8 +208,6 @@ export type AdvanceOptions = {
   seed: number | string
   /** Default normal. */
   policy?: PolicyInput
-  /** Advance past the dates the law tables and holidays cover (lawCoverage). The days run on stale rules. */
-  allowStaleLaw?: boolean
 }
 
 /** What happened, counted: the summary's numbers, for tests and tools. */
@@ -261,9 +259,10 @@ export type AdvanceResult = {
 
 /**
  * Lives through the days after the company's current date (the clock override) up to `to`, and leaves the
- * clock on `to`. Refuses with no clock override (a simulation never follows the real clock), a `to` before
- * the current date, and a `to` past the law coverage unless allowStaleLaw. Throws when an action the people
- * take is refused (a bug in the simulator or the app); the clock is then left as it was.
+ * clock on `to`. Refuses with no clock override (a simulation never follows the real clock) and a `to` before
+ * the current date. Days past 2026 run on the rules the app has (the 2026 law tables); holidays roll over each
+ * December. Throws when an action the people take is refused (a bug in the simulator or the app); the clock
+ * is then left as it was.
  */
 export function advance(db: DB, options: AdvanceOptions): AdvanceResult {
   const from = getClockOverride()
@@ -273,12 +272,6 @@ export function advance(db: DB, options: AdvanceOptions): AdvanceResult {
   if (to < from) throw new Error(`Time only moves forward: the company's date is ${from}, so it cannot advance to ${to}.`)
   if (typeof seed === 'number' ? !Number.isSafeInteger(seed) : typeof seed !== 'string' || !seed) throw new Error(`A seed is a whole number or some text, not ${String(seed)}.`)
   const policy = resolvePolicy(options.policy)
-  if (!options.allowStaleLaw) {
-    const coverage = lawCoverage()
-    const covered = `the dates the built-in rules cover (${coverage.from} to ${coverage.to}). Pass allowStaleLaw to advance anyway.`
-    if (to > coverage.to) throw new Error(`${to} is after ${covered}`)
-    if (from < coverage.from) throw new Error(`The company's date ${from} is before ${covered}`)
-  }
   const admin = founder(db)
   if (!admin) throw new Error('The workspace has no founder to act as Admin.')
 

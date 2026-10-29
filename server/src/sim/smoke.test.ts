@@ -7,9 +7,8 @@
 // runs only with SIM_STRESS=1 (SIM_STRESS=1 npx vitest run server/src/sim/smoke.test.ts -t stress): it has
 // not yet been timed on any computer, so it stays out of the required CI check until it has been.
 //
-// 90 days from the scenarios' as-of date (2026-10-09) end on 2027-01-07, a week past the law tables' year, so
-// the advance passes allowStaleLaw: those days run on the 2026 values, as for a company that has not yet
-// reviewed Settings > Rules and rates in January. The holiday list already covers 2027.
+// 90 days from the scenarios' as-of date (2026-10-09) end on 2027-01-07: the days in 2027 run on the rules the
+// app has (the 2026 law tables).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { DB } from '@/domain/types'
 import { addDays, getClockOverride, setClockOverride } from '@/lib/dates'
@@ -41,7 +40,7 @@ function simulate(name: ScenarioName): { generated: string; advanced: string; hi
   const previous = getClockOverride()
   setClockOverride(asOf)
   try {
-    const a = advance(g.db, { to: addDays(asOf, DAYS), seed: `smoke ${name}`, policy: 'normal', allowStaleLaw: true })
+    const a = advance(g.db, { to: addDays(asOf, DAYS), seed: `smoke ${name}`, policy: 'normal' })
     return { generated: JSON.stringify(g.db), advanced: JSON.stringify(a.db), hires: a.db.applications.filter((x) => x.status === 'hired').length }
   } finally {
     setClockOverride(previous)

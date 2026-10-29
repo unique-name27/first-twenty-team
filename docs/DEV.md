@@ -347,8 +347,7 @@ with its day, time, actor, Viewing-as, action, args and the ids of the records i
 | `stress` | Thousands of candidates, past the demo limits: for the server only, never loaded into a browser |
 
 Each scenario has its own seed and the as-of date 2026-10-09. Another seed gives another company of the same
-shape. The built-in rules cover 2025 to 2026 (the 2026 law tables and the holiday list), so a company founded
-before them or an as-of date after them is refused unless you pass `allowStaleLaw`.
+shape. Runs past 2026 use the rules the app has (the 2026 law tables); holidays roll over each December.
 
 ```ts
 import { traceToJsonLines } from '@/sim/actions'
@@ -399,8 +398,7 @@ screen makes:
 `policy` is `'quiet'`, `'normal'` (the default) or `'busy'`, or rates changed from one:
 `{ preset: 'busy', attritionPerYear: 0.3 }`. It returns `{ db, trace, report, summary }`: the trace has the
 generator's format, the report counts what happened and the summary says it in plain lines. The same
-workspace, date, seed and policy give byte-identical output, and a `to` past the law coverage is refused
-unless you pass `allowStaleLaw`.
+workspace, date, seed and policy give byte-identical output.
 
 ```ts
 import { setClockOverride } from '@/lib/dates'
@@ -414,7 +412,8 @@ const { db: later, summary } = advance(db, { to: '2026-12-30', seed: 1 })   // 9
 
 `src/sim/advance.test.ts` advances seed-8 and full-20 by 30 and 90 days and checks the integrity, the pay runs,
 that time off and hiring happened, and that a second run is byte-identical; `src/sim/advance.rules.test.ts`
-covers the presets, the refusals, a clock in the middle of a pay period, leavers and leave, and December.
+covers the presets, dates past 2026, the refusals, a clock in the middle of a pay period, leavers and leave,
+and December.
 
 ## Simulate a company
 
@@ -457,8 +456,8 @@ as-of date), then lives the 0 to 6 days left with the time machine (normal polic
 today. Because the company is generated for that date, rather than made for another date and moved, every
 date rule holds as it does in the app: starts and interviews skip company holidays, plan lines sit in the
 quarter of their target start, pay runs follow the real pay periods, and payroll-edge's start, leave and last
-day fall inside pay periods. The summary reset prints names the as-of date it used. Today after 2026-12-31
-(the dates the built-in rules cover) is refused. `--no-shift` loads the scenario on its own as-of date instead:
+day fall inside pay periods. The summary reset prints names the as-of date it used. `--no-shift` loads the
+scenario on its own as-of date instead:
 the app still shows today, and Settings > Data > Pretend today is shows the as-of date. `ledgerlark` is the
 sample as the app loads it, moved by the app's own rule.
 
@@ -474,7 +473,7 @@ days it sends and approves time off, hires through the pipeline, gives anniversa
 someone resign (with a backfill) or start a leave, prepares and marks pay runs submitted, and on Mondays clears
 the inbox's one-button items and checks the compliance rules ("The time machine" above has the details). It
 never declines time off, terminates anyone, adds contractors, extends offers, enters provider totals, approves
-grants at a board meeting or changes Settings > Rules and rates, and it refuses dates past 2026-12-31.
+grants at a board meeting or changes Settings > Rules and rates.
 
 **Saves.** `npm run sim -- save <name>` writes `.data/dev/saves/<name>.json`: the company as the server holds
 it, and its date. A save with the same name is replaced. restore keeps the saved company's identity, so the
@@ -494,8 +493,8 @@ seed 2020, as of 2026-10-23, reset on 2026-10-28, then advance 30d --policy busy
 it as a failing test on a fixed as-of date: a generated company, `advance` if needed, and the check.
 
 `server/src/sim/smoke.test.ts` (server tier, on CI) generates every scenario but `stress`, loads it into the
-server as an Import would, advances it 90 days at the normal policy (the last week runs into January 2027 on
-the 2026 law values, with `allowStaleLaw`) and loads it again. Then `v_integrity_problems` must be empty,
+server as an Import would, advances it 90 days at the normal policy (the last week runs into January 2027)
+and loads it again. Then `v_integrity_problems` must be empty,
 `v_hire_journey` must have a row for every hire, the server must give back exactly what it was sent, and a
 second run must give the same JSON. With `SIM_STRESS=1` it also generates `stress` and loads it once, to prove
 the server takes it: `SIM_STRESS=1 npx vitest run server/src/sim/smoke.test.ts -t stress`. That case is left

@@ -101,26 +101,26 @@ describe('durations', () => {
 })
 
 describe('weekShift', () => {
-  const coverage = { from: '2025-01-01', to: '2026-12-31' }
   const weekday = (d: string) => new Date(`${d}T12:00:00Z`).getUTCDay()
 
   it('picks the same weekday on or before today, whole weeks away, and the days left', () => {
     // 2026-10-09 is a Friday; 2026-10-28 a Wednesday.
-    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-28', coverage })).toEqual({ days: 14, movedAsOf: '2026-10-23', rest: 5 })
-    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-30', coverage })).toEqual({ days: 21, movedAsOf: '2026-10-30', rest: 0 })
-    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-09', coverage })).toEqual({ days: 0, movedAsOf: '2026-10-09', rest: 0 })
+    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-28' })).toEqual({ days: 14, movedAsOf: '2026-10-23', rest: 5 })
+    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-30' })).toEqual({ days: 21, movedAsOf: '2026-10-30', rest: 0 })
+    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-09' })).toEqual({ days: 0, movedAsOf: '2026-10-09', rest: 0 })
     // Today before the as-of date: back to the Friday before today.
-    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-01', coverage })).toEqual({ days: -14, movedAsOf: '2026-09-25', rest: 6 })
+    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-01' })).toEqual({ days: -14, movedAsOf: '2026-09-25', rest: 6 })
     for (const today of ['2026-10-10', '2026-11-03', '2026-12-31', '2026-08-14']) {
-      const s = weekShift({ asOf: '2026-10-09', today, coverage })
+      const s = weekShift({ asOf: '2026-10-09', today })
       expect(s.days % 7 === 0, today).toBe(true)
       expect(weekday(s.movedAsOf), today).toBe(weekday('2026-10-09'))
       expect(s.rest >= 0 && s.rest <= 6, today).toBe(true)
     }
   })
 
-  it('refuses a today past the law coverage', () => {
-    expect(() => weekShift({ asOf: '2026-10-09', today: '2027-01-04', coverage })).toThrow(/2027-01-04, is after the dates the built-in rules cover \(2025-01-01 to 2026-12-31/)
+  it('puts a company on a 2027 today', () => {
+    // 2027-01-04 is a Monday: back to Friday 2027-01-01, then three days to live.
+    expect(weekShift({ asOf: '2026-10-09', today: '2027-01-04' })).toEqual({ days: 84, movedAsOf: '2027-01-01', rest: 3 })
   })
 })
 

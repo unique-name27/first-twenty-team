@@ -8,7 +8,6 @@ import type { DB } from '../../src/domain/types'
 import { addDays, addMonths, daysBetween, getClockOverride, type ISODate, isUsableDate, setClockOverride } from '../../src/lib/dates'
 import { num } from '../../src/lib/format'
 import { advance, type PolicyName, POLICIES } from '../../src/sim/advance'
-import { lawCoverage } from '../../src/sim/generate'
 import { SCENARIO_NAMES, SCENARIOS, type ScenarioName } from '../../src/sim/scenarios'
 import { MAX_OFFSET } from './stack-lib.mjs'
 
@@ -171,14 +170,11 @@ export type WeekShift = {
 /**
  * The date reset generates a scenario on so that the company's date can be `today`: the latest day on or
  * before today with the as-of date's weekday, whole weeks away, so the plan's weekdays keep their names.
- * Today past the dates the built-in rules cover is refused.
  */
-export function weekShift(input: { asOf: ISODate; today: ISODate; coverage: { from: ISODate; to: ISODate } }): WeekShift {
-  const { asOf, today, coverage } = input
+export function weekShift(input: { asOf: ISODate; today: ISODate }): WeekShift {
+  const { asOf, today } = input
   const gap = daysBetween(asOf, today)
   const days = Math.floor(gap / 7) * 7
-  const rules = `the dates the built-in rules cover (${coverage.from} to ${coverage.to}: the law tables and the holiday list)`
-  if (today > coverage.to) throw new Error(`Today, ${today}, is after ${rules}, so reset cannot put a company on today. Use --no-shift to load it on its as-of date.`)
   return { days, movedAsOf: addDays(asOf, days), rest: gap - days }
 }
 
@@ -206,7 +202,7 @@ export function resetCompany(
     const note = `Kept on its as-of date, ${asOf} (--no-shift). The app shows it on today's date; Settings > Data > Pretend today is shows ${asOf}.`
     return { db: generated.db, companyDate: asOf, generated, note }
   }
-  const plan = weekShift({ asOf, today, coverage: lawCoverage() })
+  const plan = weekShift({ asOf, today })
   const generated = generate(plan.movedAsOf)
   const on =
     plan.days === 0 ? `On its as-of date, ${asOf}` : `Generated as of ${plan.movedAsOf}, the last ${WEEKDAYS[new Date(`${asOf}T12:00:00Z`).getUTCDay()]} on or before today`
