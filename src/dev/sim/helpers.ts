@@ -161,16 +161,17 @@ const FILTER_AREAS: Record<Exclude<FeedFilter, 'headlines' | 'all'>, EventArea[]
 }
 
 /** The feed's events for a filter, newest first. Headlines are importance 1 (what situations did included). */
-export function feedEvents(events: readonly SimEvent[], filter: FeedFilter): SimEvent[] {
+export function feedEvents<E extends SimEvent>(events: readonly E[], filter: FeedFilter): E[] {
   const keep = filter === 'all' ? () => true : filter === 'headlines' ? (e: SimEvent) => e.importance === 1 : (e: SimEvent) => FILTER_AREAS[filter].includes(e.area)
-  const out: SimEvent[] = []
+  const out: E[] = []
   for (let i = events.length - 1; i >= 0; i--) if (keep(events[i])) out.push(events[i])
   return out
 }
 
 /**
  * The headcount chart's two series: employees, and employees plus people starting. Each keeps a point only
- * where its value changes (a step chart holds a value until the next point), from the start day on.
+ * where its value changes (a step chart holds a value until the next point), from the start day on, and
+ * ends on the last day lived (a dashed series stops at its last point).
  */
 export function headcountSeries(start: MetricPoint | null, points: readonly MetricPoint[]): { employees: Array<{ date: ISODate; value: number }>; withStarting: Array<{ date: ISODate; value: number }> } {
   const employees: Array<{ date: ISODate; value: number }> = []
@@ -180,6 +181,11 @@ export function headcountSeries(start: MetricPoint | null, points: readonly Metr
     if (employees.at(-1)?.value !== p.headcount) employees.push({ date: p.date, value: p.headcount })
     const v = p.headcount + p.incoming
     if (withStarting.at(-1)?.value !== v) withStarting.push({ date: p.date, value: v })
+  }
+  const last = all.at(-1)
+  for (const series of [employees, withStarting]) {
+    const end = series.at(-1)
+    if (last && end && end.date !== last.date) series.push({ date: last.date, value: end.value })
   }
   return { employees, withStarting }
 }

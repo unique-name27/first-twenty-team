@@ -50,6 +50,13 @@ describe('the panel state', () => {
     expect(s.events).toHaveLength(1)
   })
 
+  it('numbers events as they arrive, so a row keeps its key while older ones drop off', () => {
+    const tick = (day: string, n: number): FromWorker => ({ type: 'tick', date: day, playing: true, metrics: point(day), points: [], events: [event(day, n), event(day, n + 1)], notes: [] })
+    const s = run(ready, tick('2026-10-02', 0), tick('2026-10-03', 2))
+    expect(s.events.map((e) => e.seq)).toEqual([0, 1, 2, 3])
+    expect(s.nextSeq).toBe(4)
+  })
+
   it('keeps the newest events only', () => {
     const many = Array.from({ length: EVENTS_KEPT + 20 }, (_, i) => event('2026-10-02', i))
     const s = run(ready, { type: 'tick', date: '2026-10-02', playing: true, metrics: point('2026-10-02'), points: [], events: many, notes: [] })

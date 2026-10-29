@@ -77,16 +77,26 @@ export const simulator = {
     if (useSim.getState().playing) send({ type: 'play', speed })
   },
   step(days: number): void {
-    if (ready()) send({ type: 'step', days })
+    if (!ready()) return
+    useSim.setState({ working: true })
+    send({ type: 'step', days })
+  },
+  /** Plays as fast as it goes to a later day, then pauses there (the timeline's scrubber). */
+  playTo(to: ISODate): void {
+    if (ready()) send({ type: 'play', speed: 'max', stopAt: to })
   },
   setPace(changes: PaceChanges): void {
     if (ready()) send({ type: 'setPace', changes })
   },
   setSituations(situations: SituationInput[]): void {
-    if (ready()) send({ type: 'setSituations', situations })
+    if (!ready()) return
+    useSim.setState({ working: true })
+    send({ type: 'setSituations', situations })
   },
   rewind(to: ISODate): void {
-    if (ready()) send({ type: 'rewind', to })
+    if (!ready()) return
+    useSim.setState({ working: true })
+    send({ type: 'rewind', to })
   },
   /** The whole simulated workspace now (Open in the app, Download company). */
   snapshot(): Promise<Snapshot> {

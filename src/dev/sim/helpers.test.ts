@@ -92,17 +92,20 @@ describe('feed and chart', () => {
     expect(feedEvents(events, 'all')).toHaveLength(5)
   })
 
-  it('keeps a chart point only where a value changes', () => {
+  it('keeps a chart point only where a value changes, and ends each series on the last day', () => {
     const p = (date: string, headcount: number, incoming: number) => ({ date, headcount, incoming }) as MetricPoint
-    const { employees, withStarting } = headcountSeries(p('2026-10-01', 8, 1), [p('2026-10-02', 8, 1), p('2026-10-03', 8, 2), p('2026-10-05', 9, 1)])
+    const { employees, withStarting } = headcountSeries(p('2026-10-01', 8, 1), [p('2026-10-02', 8, 1), p('2026-10-03', 8, 2), p('2026-10-05', 9, 1), p('2026-10-06', 9, 1)])
     expect(employees).toEqual([
       { date: '2026-10-01', value: 8 },
       { date: '2026-10-05', value: 9 },
+      { date: '2026-10-06', value: 9 },
     ])
     expect(withStarting).toEqual([
       { date: '2026-10-01', value: 9 },
       { date: '2026-10-03', value: 10 },
+      { date: '2026-10-06', value: 10 },
     ])
+    expect(headcountSeries(p('2026-10-01', 8, 1), []).employees).toEqual([{ date: '2026-10-01', value: 8 }])
   })
 
   it('places days on the timeline and bounds a run at about three years', () => {
