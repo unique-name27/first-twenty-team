@@ -459,9 +459,10 @@ simulator's actions, and draws its own random numbers, so adding one never chang
 | `pace` | `changes` to hiring pace, time off, attrition or offer acceptance from that day on |
 
 When the app refuses a step (someone who already left quits again, a leave for someone who does not qualify,
-a layoff of more people than there are), the step is skipped with a note and the run goes on. Changing the
-situations after some days were lived goes back to the last keyframe before the first change and lives
-forward again, so the result equals a fresh run with the new list.
+a layoff of more people than there are), the step is skipped with a note and the run goes on. A crash inside
+a step, or args that do not fit an action, is a bug: the run stops with it, as it does for the machine's own
+steps. Changing the situations after some days were lived goes back to the last keyframe before the first
+change and lives forward again, so the result equals a fresh run with the new list.
 
 ### Play a run
 

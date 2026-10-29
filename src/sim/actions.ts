@@ -109,6 +109,22 @@ function action<const N extends string, S extends z.ZodType, R>(spec: ActionSpec
 
 // ---- Refusals ---------------------------------------------------------------------------------
 
+/**
+ * The app said no: a rule refused the step, or it changed nothing. The DB stays as it was. `reason` is the
+ * app's own words. Anything else applyAction throws (args that do not fit, a TypeError inside a domain
+ * function) is a bug in the simulator or the app.
+ */
+export class ActionRefused extends Error {
+  constructor(
+    message: string,
+    readonly reason: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options)
+    this.name = 'ActionRefused'
+  }
+}
+
 /** A domain function's { ok: false, reason } as a thrown refusal. */
 function ok<T extends { ok: boolean }>(result: T): Extract<T, { ok: true }> {
   if (!result.ok) throw new Error((result as { reason?: string }).reason ?? 'Refused.')
@@ -949,7 +965,8 @@ function createdIds(patches: Patch[], prev: DB): ID[] {
 /**
  * Applies one action to the simulation: checks its args, sets the pretend date and the run's actor, mode
  * and time of day, runs it in one Immer produce and records the trace line. Returns what the action
- * returns. Throws when no run is on, on args zod refuses, and on a refusal (the DB stays as it was).
+ * returns. Throws when no run is on, on args zod refuses, on a crash inside the action, and on a refusal
+ * (an ActionRefused); the DB stays as it was in every case.
  */
 export function applyAction<N extends ActionName>(sim: SimState, name: N, args: ArgsOf<N>, ctx: ActionContext): ResultOf<N> {
   const spec = ACTIONS[name] as unknown as ActionSpec<N, z.ZodType, ResultOf<N>>
@@ -970,11 +987,15 @@ export function applyAction<N extends ActionName>(sim: SimState, name: N, args: 
       result = spec.run(d, parsed.data, ctx)
     })
   } catch (e) {
-    throw new Error(`${name} on ${ctx.day} ${ctx.time} was refused: ${e instanceof Error ? e.message : String(e)}`, { cause: e })
+    const message = e instanceof Error ? e.message : String(e)
+    // The app refuses with a plain Error; a TypeError, RangeError and the like is a crash in the code it ran.
+    if (!(e instanceof Error) || e.constructor !== Error) throw new Error(`${name} on ${ctx.day} ${ctx.time} failed: ${e instanceof Error ? `${e.name}: ` : ''}${message}`, { cause: e })
+    throw new ActionRefused(`${name} on ${ctx.day} ${ctx.time} was refused: ${message}`, message, { cause: e })
   }
   if (next === sim.db) {
     if (spec.quiet) return result as ResultOf<N>
-    throw new Error(`${name} on ${ctx.day} ${ctx.time} changed nothing.`)
+    const message = `${name} on ${ctx.day} ${ctx.time} changed nothing.`
+    throw new ActionRefused(message, message)
   }
   sim.trace.push({ day: ctx.day, time: ctx.time, actor: ctx.actorId, viewingAs: ctx.viewingAs, action: name, args: parsed.data, created: createdIds(patches, sim.db) })
   sim.db = next

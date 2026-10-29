@@ -1,10 +1,10 @@
 // The simulator's actions: each runs inside a run as the store's mutate would, checks its args, refuses the
 // way the app refuses (the DB stays as it was) and adds one trace line with the ids it created.
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { blankDB } from '@/data/blank'
 import { setClockOverride } from '@/lib/dates'
 import { withRunContext } from '@/lib/runContext'
-import { ACTIONS, type ActionContext, applyAction, type SimState, traceToJsonLines } from './actions'
+import { ACTIONS, type ActionContext, ActionRefused, applyAction, type SimState, traceToJsonLines } from './actions'
 
 const FOUNDED = '2026-03-02'
 const ADMIN: ActionContext = { day: '2026-03-09', time: '10:30', actorId: 'p-founder', viewingAs: 'admin' }
@@ -28,7 +28,10 @@ function postedJob(sim: SimState): string {
 
 const NOOR = { firstName: 'Noor', lastName: 'Lindqvist', email: 'noor.lindqvist@example.com', location: 'Sunnyvale, CA', source: 'inbound' as const }
 
-afterEach(() => setClockOverride(null))
+afterEach(() => {
+  setClockOverride(null)
+  vi.restoreAllMocks()
+})
 
 describe('applyAction', () => {
   it('lists every action under its own name', () => {
@@ -91,6 +94,33 @@ describe('applyAction', () => {
     expect(sim.trace.slice(0, trace.length)).toEqual(trace)
     expect(sim.trace).toHaveLength(trace.length + 1)
     expect(db.jobs).toEqual(sim.db.jobs)
+  })
+
+  it("tells the app's refusals (ActionRefused, with the app's words) from a crash or args that do not fit", () => {
+    const sim = fresh()
+    const jobId = inRun(() => postedJob(sim))
+    const before = sim.db
+    const thrown = (fn: () => unknown): unknown => {
+      try {
+        fn()
+      } catch (e) {
+        return e
+      }
+      throw new Error('expected a throw')
+    }
+    inRun(() => {
+      const refusal = thrown(() => applyAction(sim, 'markPosted', { jobId: 'j-missing' }, ADMIN))
+      expect(refusal).toBeInstanceOf(ActionRefused)
+      expect((refusal as ActionRefused).reason).toBe('Job not found.')
+      vi.spyOn(ACTIONS.setJobStatus, 'run').mockImplementationOnce(() => {
+        throw new TypeError("Cannot read properties of undefined (reading 'status')")
+      })
+      const crash = thrown(() => applyAction(sim, 'setJobStatus', { jobId, status: 'on_hold' }, ADMIN))
+      expect(crash).not.toBeInstanceOf(ActionRefused)
+      expect((crash as Error).message).toBe("setJobStatus on 2026-03-09 10:30 failed: TypeError: Cannot read properties of undefined (reading 'status')")
+      expect(thrown(() => applyAction(sim, 'markPosted', {} as never, ADMIN))).not.toBeInstanceOf(ActionRefused)
+    })
+    expect(sim.db).toBe(before)
   })
 
   it('lets opening the app on a day nothing is due change nothing, with no trace line', () => {

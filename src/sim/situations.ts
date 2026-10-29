@@ -23,6 +23,7 @@ import { effectiveDatePresets } from '@/features/comp/helpers'
 import { nextFriday } from '@/features/people/helpers'
 import { addDays, fmtDayAnyYear, type ISODate, isUsableDate } from '@/lib/dates'
 import { money, num } from '@/lib/format'
+import { ActionRefused } from './actions'
 import { type AdvancePolicy, type DayHooks, type GrowTarget, LEAD_DAYS, type MachineHost, RESIGN_REASONS, storySeed } from './machine'
 
 // ---------------------------------------------------------------------------------------------
@@ -304,18 +305,17 @@ export class Situations implements DayHooks {
   }
 
   /**
-   * Runs one step of a situation: true when it happened. A refusal by the app (the action was refused,
-   * changed nothing or did not fit) becomes a note; anything else is a bug and stops the run.
+   * Runs one step of a situation: true when it happened. A refusal by the app (the action was refused or
+   * changed nothing) becomes a note, ending with `landed` when earlier steps already happened; anything
+   * else (args that do not fit, a crash) is a bug and stops the run.
    */
-  private attempt(host: MachineHost, s: Situation, what: string, step: () => void): boolean {
+  private attempt(host: MachineHost, s: Situation, what: string, step: () => void, landed = ''): boolean {
     try {
       step()
       return true
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
-      const refused = /was refused: (.*)$/s.exec(message)?.[1] ?? (/changed nothing\.$|the args do not fit/.test(message) ? message : null)
-      if (refused === null) throw e
-      this.say(host, s, `Skipped ${what}: ${refused}`, true)
+      if (!(e instanceof ActionRefused)) throw e
+      this.say(host, s, `Skipped ${what}: ${e.reason}${landed ? ` ${landed}` : ''}`, true)
       return false
     }
   }
@@ -459,11 +459,15 @@ export class Situations implements DayHooks {
     if (!done) return
     let backfill = ''
     if (s.backfill && !this.frozen(host.day)) {
+      let jobId: ID | null = null
       const opened = this.attempt(host, s, `the backfill for ${fullName(p)}`, () => {
-        const jobId = host.act(host.admin, AT, 'openBackfill', { personId: p.id })
-        host.readyAndPost(jobId, AT)
+        jobId = host.act(host.admin, AT, 'openBackfill', { personId: p.id })
       })
-      if (opened) backfill = ' Backfill opened.'
+      if (opened && jobId !== null) {
+        const backfillId: ID = jobId
+        const posted = this.attempt(host, s, `posting the backfill for ${fullName(p)}`, () => host.readyAndPost(backfillId, AT), 'The job stays as a draft.')
+        backfill = posted ? ' Backfill opened.' : ' Backfill opened as a draft.'
+      }
     } else if (s.backfill) backfill = ' No backfill during the freeze.'
     this.say(host, s, `${fullName(p)} resigned (${reason}), last day ${when(host, lastDay)}.${backfill}`)
   }
@@ -593,6 +597,7 @@ export class Situations implements DayHooks {
       return
     }
     const familyId = template.familyId
+    let savedNow = false
     if (!bandFor(db, familyId, s.levelId)) {
       const top = db.bands.filter((b) => b.familyId === familyId).sort((a, b) => b.mid - a.mid)[0]
       const figures = s.band ?? (top ? { min: round1000(top.min * 1.25), mid: round1000(top.mid * 1.25), max: round1000(top.max * 1.25) } : null)
@@ -602,20 +607,40 @@ export class Situations implements DayHooks {
       }
       const band = { familyId, levelId: s.levelId, ...figures, equityMinPct: top?.equityMinPct ?? 0, equityMaxPct: top?.equityMaxPct ?? 0, flsaDefault: 'exempt' as const }
       if (!this.attempt(host, s, 'the band', () => host.act(host.admin, AT, 'saveBand', band))) return
+      savedNow = true
     }
     const title = s.title ?? `${s.levelId === 'lv-x1' ? 'VP' : 'Head'} of ${dept.name}`
+    const savedBand = savedNow ? ` The ${s.levelId === 'lv-x1' ? 'X1' : 'M2'} band it saved stays.` : ''
     // As the founder hires any role: a line in the headcount plan, then New job from that line, then Mark posted.
+    let planSlotId: ID | null = null
+    const planned = this.attempt(
+      host,
+      s,
+      `the ${title} line in the plan`,
+      () => {
+        const band = bandFor(host.db, familyId, s.levelId)
+        const targetStart = businessDayOnOrAfter(addDays(host.day, LEAD_DAYS), host.holidays)
+        planSlotId = host.act(host.admin, AT, 'addPlanLine', { title, departmentId: dept.id, familyId, levelId: s.levelId, targetStart, ...(band ? { budgetBase: band.mid } : {}) })
+      },
+      savedBand.trim(),
+    )
+    if (!planned || planSlotId === null) return
+    const slotId: ID = planSlotId
     let jobId: ID | null = null
-    const opened = this.attempt(host, s, `the ${title} job`, () => {
-      const band = bandFor(host.db, familyId, s.levelId)
-      const targetStart = businessDayOnOrAfter(addDays(host.day, LEAD_DAYS), host.holidays)
-      const planSlotId = host.act(host.admin, AT, 'addPlanLine', { title, departmentId: dept.id, familyId, levelId: s.levelId, targetStart, ...(band ? { budgetBase: band.mid } : {}) })
-      jobId = host.act(host.admin, AT, 'createJob', { templateId: template.id, hiringManagerId: host.admin.id, planSlotId })
-      host.readyAndPost(jobId, AT)
-    })
+    const opened = this.attempt(
+      host,
+      s,
+      `the ${title} job`,
+      () => {
+        jobId = host.act(host.admin, AT, 'createJob', { templateId: template.id, hiringManagerId: host.admin.id, planSlotId: slotId })
+      },
+      `The line it added to the plan stays.${savedBand}`,
+    )
     if (!opened || jobId === null) return
-    state.jobId = jobId
-    const job = host.db.jobs.find((j) => j.id === jobId)
+    const newJobId: ID = jobId
+    state.jobId = newJobId
+    this.attempt(host, s, `posting the ${title} job`, () => host.readyAndPost(newJobId, AT), 'The job stays as a draft.')
+    const job = host.db.jobs.find((j) => j.id === newJobId)
     this.say(host, s, `Senior hire: the ${title} job ${job?.status === 'open' ? 'is open' : 'waits to be posted'}${job?.payMin && job.payMax ? `, ${money(job.payMin)} to ${money(job.payMax)}` : ''}.`)
   }
 
@@ -643,8 +668,10 @@ export class Situations implements DayHooks {
       const change = { effectiveOn: host.day, reason: 'manager_change' as const, managerId: leader.id }
       if (this.attempt(host, s, `moving ${fullName(p)}`, () => host.act(host.admin, AT, 'changeJobOrPay', { personId: p.id, change }))) moved += 1
     }
-    if (dept) this.attempt(host, s, `making ${fullName(leader)} head of ${dept.name}`, () => host.act(host.admin, AT, 'saveDepartment', { id: dept.id, name: dept.name, headId: leader.id }))
-    this.say(host, s, `${fullName(leader)} started as ${leader.title}; ${num(moved)} ${moved === 1 ? 'person reports' : 'people report'} to them now.`)
+    const heads = !!dept && this.attempt(host, s, `making ${fullName(leader)} head of ${dept.name}`, () => host.act(host.admin, AT, 'saveDepartment', { id: dept.id, name: dept.name, headId: leader.id }))
+    // The feed already tells the first day ("started as ..."), so the note tells what the situation did.
+    const who = `${fullName(leader)}${heads && dept ? `, who heads ${dept.name}` : ''}`
+    this.say(host, s, moved ? `${num(moved)} ${moved === 1 ? 'person now reports' : 'people now report'} to ${who}.` : `Nobody moved under ${who}.`)
   }
 }
 

@@ -3,12 +3,12 @@
 // the same situations is byte-identical twice. Changing the situations after some days were lived goes back
 // and lives them again, equal to a fresh run with the new list. seed-8 and full-20 as of 2026-10-01; each run
 // is 60 to 90 days.
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { integrityFailures } from '@/domain/integrity'
 import { employedOn, incomingOn } from '@/domain/people'
 import type { DB } from '@/domain/types'
 import { addDays, parseDate, setClockOverride } from '@/lib/dates'
-import { type TraceLine, traceToJsonLines } from './actions'
+import { ACTIONS, type TraceLine, traceToJsonLines } from './actions'
 import { POLICIES, resolvePolicy } from './advance'
 import { generateCompany } from './generate'
 import type { ScenarioName } from './scenarios'
@@ -38,7 +38,10 @@ const at820 = (sim: Simulation, day: string): TraceLine[] => sim.trace.filter((t
 const args = <T,>(t: TraceLine) => t.args as T
 const notesOf = (sim: Simulation, id: string) => sim.notes.filter((n) => n.situationId === id)
 
-afterEach(() => setClockOverride(null))
+afterEach(() => {
+  setClockOverride(null)
+  vi.restoreAllMocks()
+})
 
 // seed-8: the founder, Engineering (Keiko leads it) and a few more; one job open.
 const SEED8: SituationInput[] = [
@@ -176,6 +179,14 @@ describe('on full-20, 90 days', () => {
     expect(sim.db.departments.find((d) => d.id === 'd-gtm')?.headId).toBe(leader?.id)
   })
 
+  it("tells the senior hire's first day once in the headlines, and the note says who moved under them", () => {
+    const sim = full20()
+    const leader = sim.db.people.find((p) => p.title === 'Head of Go to market')
+    const headlines = sim.events.filter((e) => e.importance === 1 && e.day === leader?.startDate).map((e) => e.text)
+    expect(headlines.filter((t) => t.includes('started as Head of Go to market'))).toHaveLength(1)
+    expect(headlines).toContainEqual(expect.stringMatching(/^\d+ (people now report|person now reports) to .+, who heads Go to market\.$/))
+  })
+
   it('a push to a headcount fills the plan to it on the day, with every start by the date', () => {
     const sim = full20()
     const lines = at820(sim, '2026-11-02').filter((t) => t.action === 'addPlanLine')
@@ -220,6 +231,32 @@ describe('notes for steps the app would refuse', () => {
     expect(notesOf(sim, 'nobody')[0].text).toBe('Skipped the resignation: nobody in the workspace has the id p-nobody.')
     expect(at820(sim, '2026-10-06')).toEqual([])
     expect(integrityFailures(sim.db)).toEqual([])
+  })
+})
+
+describe('a bug in a step stops the run; a step after one that landed says so', () => {
+  it('stops on a crash inside an action, instead of a note saying the step was skipped', () => {
+    const sim = new Simulation(company('seed-8'), { from: AS_OF, seed: 1, situations: [{ id: 'close', on: '2026-10-05', kind: 'layoff', count: 1, closeJobs: true }] })
+    sim.stepTo('2026-10-04')
+    vi.spyOn(ACTIONS.setJobStatus, 'run').mockImplementationOnce(() => {
+      throw new TypeError("Cannot read properties of undefined (reading 'status')")
+    })
+    expect(() => sim.step(1)).toThrow(/setJobStatus on 2026-10-05 08:20 failed: TypeError: Cannot read properties of undefined/)
+    expect(sim.notes.filter((n) => n.skipped)).toEqual([])
+  })
+
+  it('keeps the resignation and the backfill job when posting the backfill is refused, and says the job stays a draft', () => {
+    const sim = new Simulation(company('seed-8'), { from: AS_OF, seed: 1, situations: [{ id: 'quit', on: '2026-10-07', kind: 'quit', personId: null }] })
+    sim.stepTo('2026-10-06')
+    vi.spyOn(ACTIONS.markPosted, 'run').mockImplementationOnce(() => {
+      throw new Error('Add a pay range before posting.')
+    })
+    sim.step(1)
+    expect(at820(sim, '2026-10-07').map((t) => t.action)).toEqual(expect.arrayContaining(['offboardPerson', 'openBackfill']))
+    expect(notesOf(sim, 'quit').map((n) => [n.skipped, n.text])).toEqual([
+      [true, expect.stringMatching(/^Skipped posting the backfill for .+: Add a pay range before posting\. The job stays as a draft\.$/)],
+      [false, expect.stringMatching(/resigned .+ Backfill opened as a draft\.$/)],
+    ])
   })
 })
 
