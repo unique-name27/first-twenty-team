@@ -1,12 +1,14 @@
 // Open in the app, Back to my company and Keep. With stand-ins, the order of the steps and each refusal; with
 // a real sync engine on the fake server, that nothing reaches the server while the simulated company is open,
-// even with an edit queued from before, and that Back leaves the store and the outbox exactly as they were.
+// even with an edit queued from before, that Back leaves the store and the outbox exactly as they were and
+// syncing goes again by itself, that Open waits for a running sync on the real date, and that it refuses
+// while a connect flow is on the wire.
 import type { Draft } from 'immer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DB } from '@/domain/types'
 import { getClockOverride, setClockOverride } from '@/lib/dates'
 import type { HistoryEntry } from '@/store/db'
-import { createSyncEngine, DEBOUNCE_MS } from '@/sync/engine'
+import { createSyncEngine, DEBOUNCE_MS, type SyncEngine } from '@/sync/engine'
 import { FakeServer } from '@/sync/testing/fakeServer'
 import { createStatusStore, createTestStore, makeDB, makePerson, memoryStorage, testEnv } from '@/sync/testing/kit'
 import { KEEP_LIMIT } from './helpers'
@@ -45,6 +47,9 @@ function standIns(over: Partial<SandboxDeps> = {}) {
     syncNow: async () => {
       log.push(`syncNow (clock ${clock})`)
     },
+    whenIdle: async () => {
+      log.push(`whenIdle (clock ${clock})`)
+    },
     holdPersisting: () => {
       log.push('hold')
       held += 1
@@ -77,11 +82,11 @@ function standIns(over: Partial<SandboxDeps> = {}) {
 }
 
 describe('the sandbox, step by step', () => {
-  it('sets the clock before anything else, waits for a running sync, then holds saving and swaps the company in', async () => {
+  it('waits for a running sync on the real date, then sets the clock, then holds saving and swaps the company in', async () => {
     const t = standIns()
     const sim = simulated()
     expect(await t.sandbox.open({ db: sim, date: SIM_DATE, companyName: 'Tidebeam' })).toMatchObject({ ok: true })
-    expect(t.log).toEqual([`clock ${SIM_DATE}`, `syncNow (clock ${SIM_DATE})`, 'hold', 'store Tidebeam', 'go #home'])
+    expect(t.log).toEqual(['whenIdle (clock null)', `clock ${SIM_DATE}`, `syncNow (clock ${SIM_DATE})`, 'hold', 'store Tidebeam', 'go #home'])
     expect(t.state().past).toEqual([])
     expect((t.state().db.meta as { workspaceId?: string }).workspaceId).toBe(`ws-sim-${SIM_DATE}`)
     expect(t.state().db.people).toBe(sim.people)
@@ -104,12 +109,23 @@ describe('the sandbox, step by step', () => {
     // Back again does nothing.
     t.sandbox.back()
     expect(t.log).toHaveLength(4)
+    // Connected, Back then asks for a sync: timers that came due meanwhile scheduled nothing.
+    const c = standIns({ connected: () => true })
+    await c.sandbox.open({ db: simulated(), date: SIM_DATE, companyName: 'Tidebeam' })
+    c.log.length = 0
+    c.sandbox.back()
+    expect(c.log).toEqual(['store Ledgerlark', 'clock null', 'release', 'syncNow (clock null)', 'go #sim'])
   })
 
-  it('refuses to open twice, or while something else holds the connection', async () => {
+  it('refuses to open twice, or while something else holds the connection, also once a running sync is done', async () => {
     const busy = standIns({ blocked: () => 'The dev sign-in is still connecting.' })
     expect(await busy.sandbox.open({ db: simulated(), date: SIM_DATE, companyName: 'Tidebeam' })).toEqual({ ok: false, message: 'The dev sign-in is still connecting.' })
     expect(busy.log).toEqual([])
+    let flowStarted = false
+    const later = standIns({ blocked: () => (flowStarted ? 'A sign-in or server step in Settings is still running.' : null), whenIdle: async () => void (flowStarted = true) })
+    expect(await later.sandbox.open({ db: simulated(), date: SIM_DATE, companyName: 'Tidebeam' })).toMatchObject({ ok: false, message: 'A sign-in or server step in Settings is still running.' })
+    expect(later.log).toEqual([])
+    expect(later.clock()).toBeNull()
     const t = standIns()
     await t.sandbox.open({ db: simulated(), date: SIM_DATE, companyName: 'Tidebeam' })
     expect(await t.sandbox.open({ db: simulated(), date: SIM_DATE, companyName: 'Tidebeam' })).toMatchObject({ ok: false })
@@ -165,8 +181,55 @@ describe('keeping the simulated company', () => {
   })
 })
 
+/** A sandbox wired to a real sync engine, as appSandbox.ts wires it to the app's. */
+function sandboxFor(store: ReturnType<typeof createTestStore>, engine: SyncEngine) {
+  return createSandbox({
+    store,
+    getClock: getClockOverride,
+    setClock: setClockOverride,
+    syncNow: () => engine.syncNow(),
+    whenIdle: () => engine.whenIdle(),
+    holdPersisting: () => () => {},
+    blocked: () => (engine.busy() ? 'A sign-in or server step in Settings is still running.' : null),
+    connected: () => true,
+    replaceWorkspace: async () => ({ ok: true }),
+    replaceLocal: () => {},
+    download: () => true,
+    pretendToday: () => {},
+    newWorkspaceId: () => 'ws-kept',
+    go: () => {},
+  })
+}
+
+/** Holds one kind of call to the fake server on the wire until the returned function lets it go. */
+function onTheWire(server: FakeServer, name: 'getChanges' | 'getWorkspace'): () => void {
+  let release!: () => void
+  const gate = new Promise<void>((r) => (release = r))
+  const real = (server[name] as (...a: unknown[]) => Promise<unknown>).bind(server)
+  ;(server as unknown as Record<string, unknown>)[name] = async (...a: unknown[]) => {
+    await gate
+    return real(...a)
+  }
+  return release
+}
+
+const rename = (id: string, title: string) => (d: Draft<DB>) => {
+  d.people.find((p) => p.id === id)!.title = title
+}
+
 describe('the sandbox with a real sync engine', () => {
   const stops: Array<() => void> = []
+  /** A browser connected to the fake server with `db` uploaded. */
+  async function connected(server: FakeServer, db: DB) {
+    const store = createTestStore(db)
+    const page = testEnv()
+    const status = createStatusStore()
+    const engine = createSyncEngine({ store, api: server, storage: memoryStorage(), env: page.env, status, clockOverride: getClockOverride })
+    stops.push(() => engine.stop())
+    expect(await engine.uploadLocal()).toEqual({ ok: true })
+    await engine.whenIdle()
+    return { store, page, status, engine }
+  }
   beforeEach(() => {
     vi.useFakeTimers({ now: new Date('2026-10-28T17:00:00.000Z') })
     setClockOverride(null)
@@ -181,16 +244,7 @@ describe('the sandbox with a real sync engine', () => {
     const server = new FakeServer()
     const db = makeDB()
     db.people.push(makePerson('p-1'), makePerson('p-2'))
-    const store = createTestStore(db)
-    const page = testEnv()
-    const status = createStatusStore()
-    const engine = createSyncEngine({ store, api: server, storage: memoryStorage(), env: page.env, status, clockOverride: getClockOverride })
-    stops.push(() => engine.stop())
-    expect(await engine.uploadLocal()).toEqual({ ok: true })
-    await engine.whenIdle()
-    const rename = (id: string, title: string) => (d: Draft<DB>) => {
-      d.people.find((p) => p.id === id)!.title = title
-    }
+    const { store, page, status, engine } = await connected(server, db)
     // An edit queued from before (the server could not be reached).
     server.online = false
     store.getState().mutate('Edit', rename('p-1', 'Queued before'))
@@ -200,21 +254,7 @@ describe('the sandbox with a real sync engine', () => {
     server.online = true
     const before = { db: store.getState().db, past: store.getState().past, pending: status.getState().pending }
 
-    const sandbox = createSandbox({
-      store,
-      getClock: getClockOverride,
-      setClock: setClockOverride,
-      syncNow: () => engine.syncNow(),
-      holdPersisting: () => () => {},
-      blocked: () => null,
-      connected: () => true,
-      replaceWorkspace: async () => ({ ok: true }),
-      replaceLocal: () => {},
-      download: () => true,
-      pretendToday: () => {},
-      newWorkspaceId: () => 'ws-kept',
-      go: () => {},
-    })
+    const sandbox = sandboxFor(store, engine)
     const calls = server.calls.length
     const sim = simulated()
     expect(await sandbox.open({ db: sim, date: SIM_DATE, companyName: 'Tidebeam' })).toMatchObject({ ok: true })
@@ -231,7 +271,8 @@ describe('the sandbox with a real sync engine', () => {
     expect(store.getState().past).toBe(before.past)
     expect(status.getState().pending).toBe(before.pending)
     expect(getClockOverride()).toBeNull()
-    await engine.syncNow()
+    // Back asks for a sync itself: nobody presses Sync now.
+    await vi.advanceTimersByTimeAsync(0)
     await engine.whenIdle()
     expect(status.getState().pending).toBe(0)
     expect(server.snapshot().people.find((p) => p.id === 'p-1')?.title).toBe('Queued before')
@@ -242,5 +283,80 @@ describe('the sandbox with a real sync engine', () => {
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS)
     await engine.whenIdle()
     expect(server.snapshot().people.find((p) => p.id === 'p-2')?.title).toBe('After the sandbox')
+  })
+
+  it('pushes an edit made just before Open once Back comes, with no Sync now', async () => {
+    const server = new FakeServer()
+    const db = makeDB()
+    db.people.push(makePerson('p-1'))
+    const { store, status, engine } = await connected(server, db)
+    // Queued, its push not yet due: the timer comes due while the simulated company is open.
+    store.getState().mutate('Edit', rename('p-1', 'Edited just before'))
+    const sandbox = sandboxFor(store, engine)
+    expect(await sandbox.open({ db: simulated(), date: SIM_DATE, companyName: 'Tidebeam' })).toMatchObject({ ok: true })
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(server.snapshot().people.find((p) => p.id === 'p-1')?.title).not.toBe('Edited just before')
+    sandbox.back()
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS)
+    await engine.whenIdle()
+    expect(server.snapshot().people.find((p) => p.id === 'p-1')?.title).toBe('Edited just before')
+    expect(status.getState().pending).toBe(0)
+  })
+
+  it('waits for a sync on the wire on the real date, so an edit made meanwhile is queued and reaches the server', async () => {
+    const server = new FakeServer()
+    const db = makeDB()
+    db.people.push(makePerson('p-1'))
+    const { store, status, engine } = await connected(server, db)
+    const release = onTheWire(server, 'getChanges')
+    const cycle = engine.syncNow()
+    await vi.advanceTimersByTimeAsync(5)
+    const sandbox = sandboxFor(store, engine)
+    const opening = sandbox.open({ db: simulated(), date: SIM_DATE, companyName: 'Tidebeam' })
+    await vi.advanceTimersByTimeAsync(5)
+    // Still the real company on the real date: an edit now is an ordinary edit.
+    expect(getClockOverride()).toBeNull()
+    expect(sandbox.isOpen()).toBe(false)
+    store.getState().mutate('Edit', rename('p-1', 'Edited while opening'))
+    expect(status.getState().pending).toBeGreaterThan(0)
+    release()
+    await cycle
+    expect(await opening).toMatchObject({ ok: true })
+    sandbox.back()
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS)
+    await engine.whenIdle()
+    expect(server.snapshot().people.find((p) => p.id === 'p-1')?.title).toBe('Edited while opening')
+    expect(status.getState().pending).toBe(0)
+  })
+
+  it("refuses while Use the server's copy is on the wire, so it can never land on the simulated company", async () => {
+    const server = new FakeServer()
+    const other = makeDB({ company: 'Wavecrest' })
+    other.people.push(makePerson('p-w1'))
+    await connected(server, other)
+    const local = makeDB({ company: 'Localco' })
+    local.people.push(makePerson('p-l1'))
+    const store = createTestStore(local)
+    const status = createStatusStore()
+    const engine = createSyncEngine({ store, api: server, storage: memoryStorage(), env: testEnv().env, status, clockOverride: getClockOverride })
+    stops.push(() => engine.stop())
+    const release = onTheWire(server, 'getWorkspace')
+    const flow = engine.useServerCopy()
+    await vi.advanceTimersByTimeAsync(5)
+    const sandbox = sandboxFor(store, engine)
+    expect(await sandbox.open({ db: simulated(), date: SIM_DATE, companyName: 'Tidebeam' })).toEqual({ ok: false, message: 'A sign-in or server step in Settings is still running.' })
+    expect(getClockOverride()).toBeNull()
+    release()
+    expect(await flow).toMatchObject({ ok: true })
+    expect(store.getState().db.company.name).toBe('Wavecrest')
+    // Once it is done, the sandbox opens and Back puts the server's company back.
+    expect(await sandbox.open({ db: simulated(), date: SIM_DATE, companyName: 'Tidebeam' })).toMatchObject({ ok: true })
+    sandbox.back()
+    expect(store.getState().db.company.name).toBe('Wavecrest')
+    store.getState().mutate('Edit', rename('p-w1', 'After the sandbox'))
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS)
+    await engine.whenIdle()
+    expect(server.snapshot().people.map((p) => `${p.id}:${p.title}`)).toContain('p-w1:After the sandbox')
+    expect(server.snapshot().people.some((p) => p.id === 'p-l1')).toBe(false)
   })
 })

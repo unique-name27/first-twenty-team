@@ -15,15 +15,19 @@ export function Footer({ locked }: { locked: boolean }) {
   const date = useSim((s) => s.date)
   const working = useSim((s) => s.working)
   const [files, setFiles] = useState(false)
+  const [opening, setOpening] = useState(false)
   const ready = phase === 'ready'
   const openInApp = async () => {
     simulator.pause()
+    setOpening(true)
     try {
       const snap = await simulator.snapshot()
       const done = await sandbox.open(snap)
       toast({ text: done.message, tone: done.ok ? 'neutral' : 'bad' })
     } catch (e) {
       toast({ text: e instanceof Error ? e.message : String(e), tone: 'bad' })
+    } finally {
+      setOpening(false)
     }
   }
   const downloadCompany = async () => {
@@ -44,8 +48,8 @@ export function Footer({ locked }: { locked: boolean }) {
   return (
     <Panel>
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="primary" icon="external" onClick={openInApp} disabled={!ready || locked || working}>
-          Open in the app
+        <Button variant="primary" icon="external" onClick={openInApp} disabled={!ready || locked || working || opening}>
+          {opening ? 'Opening...' : 'Open in the app'}
         </Button>
         <Button icon="file" onClick={() => setFiles(true)}>
           Run files

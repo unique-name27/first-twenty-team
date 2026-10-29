@@ -633,11 +633,13 @@ company* saves the simulated workspace as a backup that Settings, Data, Import r
 
 **Open in the app.** Shows the simulated company in the app on its simulated date: Home, People, Hiring,
 Comp and plan all show it, with a banner saying it is simulated. Nothing is saved or synced meanwhile, even
-when this browser syncs with a server: the panel sets the clock to the simulated date first (on a pretend
-date the sync engine sends and queues nothing, `docs/SYNC.md`), waits for a sync already running, holds
-the store's saving, and only then swaps the company in. You can click around and edit it; edits stay in
-that copy. *Back to my company* puts your company back exactly (the same Undo history, the same changes
-waiting to sync, the saved copy never changed), and so does reloading the page. While it is open the
+when this browser syncs with a server: the panel waits for a sync already running, then sets the clock to
+the simulated date (on a pretend date the sync engine sends and queues nothing, `docs/SYNC.md`), holds the
+store's saving, and only then swaps the company in. It refuses while a sign-in or server step in Settings is
+still running. You can click around and edit it; edits stay in that copy. *Back to my company* puts your
+company back exactly (the same Undo history, the same changes waiting to sync, the saved copy never
+changed) and syncs again, and so does reloading the page. An Undo toast left from an edit in the simulated
+company closes on Back and never touches your company. While it is open the
 simulator waits; *Back to my company and continue* goes back and plays on (edits made in the app are not
 part of the run).
 

@@ -2,15 +2,20 @@
 // simulated company on its simulated date, and nothing of it is saved or synced unless the team member keeps it.
 //
 // The order is what makes it safe:
-// - Open sets the clock to the simulated date first. While a pretend date is on, the sync engine starts no
-//   cycle and queues no change (docs/SYNC.md, "Demo clock"), so from here nothing reaches the server. It then
-//   waits for a cycle already in flight (syncNow returns it and starts no new one), so a pull that was landing
-//   is in the store before the company is put aside. Then it holds the store's saving (holdPersisting: the
-//   saved copy stays the real company, and the engine's own save refuses too) and swaps the simulated company
-//   in, under an identity of its own and with no Undo back across the swap.
+// - Open refuses while a connect flow or the session check runs: those check for a pretend date only when
+//   they start, and one landing later would replace the store under the sandbox. It waits for a sync cycle
+//   already running, on the real date, so an edit made meanwhile is queued as usual. Then it sets the clock
+//   to the simulated date: while a pretend date is on, the sync engine starts no cycle and queues no change
+//   (docs/SYNC.md, "Demo clock"), so from here nothing reaches the server. syncNow then catches a cycle
+//   started in that same moment (it starts no new one). Then it holds the store's saving (holdPersisting:
+//   the saved copy stays the real company, and the engine's own save refuses too) and swaps the simulated
+//   company in, under an identity of its own and with no Undo back across the swap.
 // - Back puts the real company back while the clock is still the simulated date, so the engine ignores that
 //   change too, then the clock, then the saving. The store holds the very same objects as before (the
-//   company, its Undo history), the outbox was never touched, and storage still holds the saved copy.
+//   company, its Undo history), the outbox was never touched, and storage still holds the saved copy. Then
+//   it asks for a sync: the push and pull timers that came due meanwhile scheduled nothing.
+// - An Undo toast shown for an edit in the simulated company is bound to that edit's history entry, which
+//   the real company's history never holds: after Back it closes, and its Undo touches nothing.
 // - Keep goes back first, then replaces the company the way Import does: one Undo step when not connected,
 //   or every device through the server (replaceWorkspace) when connected.
 // A reload at any moment ends the sandbox: storage holds the real company and the clock is in memory only.
@@ -26,8 +31,10 @@ export type SandboxDeps = {
   setClock: (date: ISODate | null) => void
   /** The sync engine's syncNow: with the clock on, it only waits for a cycle already running. */
   syncNow: () => Promise<void>
+  /** Resolves once no sync cycle is running (the sync engine's whenIdle). */
+  whenIdle: () => Promise<void>
   holdPersisting: () => () => void
-  /** Why the sandbox cannot open now (a connect flow running, syncing on hold), or null. */
+  /** Why the sandbox cannot open now (a connect flow or the session check running, syncing on hold), or null. */
   blocked: () => string | null
   connected: () => boolean
   /** Connected: the server's workspace for every device (src/sync replaceWorkspace). */
@@ -81,6 +88,11 @@ export function createSandbox(deps: SandboxDeps): Sandbox {
     view.setState({ open: false, date: null, companyName: '', originalName: '' })
   }
 
+  /** Syncing goes again: timers that came due while the clock was on scheduled nothing. */
+  function resumeSync(): void {
+    if (deps.connected()) deps.syncNow().catch(() => {})
+  }
+
   return {
     view,
     isOpen: () => session !== null,
@@ -91,12 +103,23 @@ export function createSandbox(deps: SandboxDeps): Sandbox {
       const blocked = deps.blocked()
       if (blocked) return { ok: false, message: blocked }
       opening = true
-      const prevClock = deps.getClock()
-      deps.setClock(snapshot.date)
+      let prevClock: ISODate | null
       try {
-        await deps.syncNow()
-      } catch {
-        /* nothing more can start while the clock is on; whatever was running is done */
+        try {
+          await deps.whenIdle()
+        } catch {
+          /* a cycle that failed is over too */
+        }
+        // A flow may have started while the cycle finished.
+        const now = deps.blocked()
+        if (now) return { ok: false, message: now }
+        prevClock = deps.getClock()
+        deps.setClock(snapshot.date)
+        try {
+          await deps.syncNow()
+        } catch {
+          /* nothing more can start while the clock is on; whatever was running is done */
+        }
       } finally {
         opening = false
       }
@@ -114,6 +137,7 @@ export function createSandbox(deps: SandboxDeps): Sandbox {
     back() {
       if (!session) return
       restore(session)
+      resumeSync()
       deps.go('#sim')
     },
 
@@ -131,7 +155,10 @@ export function createSandbox(deps: SandboxDeps): Sandbox {
       const kept = withNewIdentity(db, deps.newWorkspaceId())
       if (deps.connected()) {
         const done = await deps.replaceWorkspace(kept, KEEP_LABEL)
-        if (!done.ok) return { ok: false, message: `${done.message} Your company is as it was.` }
+        if (!done.ok) {
+          resumeSync()
+          return { ok: false, message: `${done.message} Your company is as it was.` }
+        }
       } else {
         deps.replaceLocal(kept, KEEP_LABEL)
       }

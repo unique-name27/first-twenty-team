@@ -536,6 +536,16 @@ export function syncNow(): Promise<void> {
   return getSyncEngine().syncNow()
 }
 
+/** Resolves once no push or pull is running. */
+export function whenSyncIdle(): Promise<void> {
+  return engine ? engine.whenIdle() : Promise.resolve()
+}
+
+/** A connect flow, the session check or another step that can replace this browser's copy is running. */
+export function syncBusy(): boolean {
+  return engine ? engine.busy() : false
+}
+
 /** The UI showed "N items were refreshed from the server"; reset the count. */
 export function clearRefreshed(): void {
   getSyncEngine().clearRefreshed()

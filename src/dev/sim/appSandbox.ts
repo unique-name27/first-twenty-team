@@ -7,7 +7,7 @@ import { downloadFile } from '@/lib/files'
 import { newId } from '@/lib/id'
 import { backupFileName } from '@/store/backup'
 import { holdPersisting, useDB } from '@/store/db'
-import { replaceWorkspace, syncNow, useSyncStatus } from '@/sync'
+import { replaceWorkspace, syncBusy, syncNow, useSyncStatus, whenSyncIdle } from '@/sync'
 import { autoconnectBusy } from '../autoconnect'
 import { createSandbox } from './sandbox'
 
@@ -16,9 +16,11 @@ export const sandbox = createSandbox({
   getClock: getClockOverride,
   setClock: setClockOverride,
   syncNow,
+  whenIdle: whenSyncIdle,
   holdPersisting,
   blocked: () => {
     if (autoconnectBusy()) return 'The dev sign-in is still connecting this browser. Try again in a moment.'
+    if (syncBusy()) return 'A sign-in or server step in Settings is still running. Try again when it is done.'
     // These holds are reconsidered on every store change, even on a pretend date: the swap would move them.
     const hold = useSyncStatus.getState().hold
     if (hold === 'sample' || hold === 'replaced') return 'Syncing is paused for this browser (see the banner at the top). Sort that out first, then open the simulated company.'
