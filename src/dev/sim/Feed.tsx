@@ -35,15 +35,18 @@ export function Feed() {
   const list = feedEvents(events, filter)
   const shown = narrow && !more ? list.slice(0, PHONE_ROWS) : list
   return (
-    <Panel title="What happened" actions={<ChipGroup<FeedFilter> label="Show in the feed" size="sm" value={filter} onChange={setFilter} options={FEED_FILTERS} />} bodyClassName="max-h-[560px] overflow-y-auto">
+    <Panel title="What happened" actions={<ChipGroup<FeedFilter> label="Show in the feed" size="sm" value={filter} onChange={setFilter} options={FEED_FILTERS} />}>
       {shown.length === 0 ? (
         <p className="py-6 text-center text-[14px] text-ink-3">{events.length === 0 ? 'Nothing yet. Press Play or step a day.' : 'Nothing of this kind yet.'}</p>
       ) : (
-        <ol aria-label="Events, newest first">
-          {shown.map((e, i) => (
-            <Row key={e.seq} e={e} year={i === 0 || shown[i - 1].day.slice(0, 4) !== e.day.slice(0, 4)} />
-          ))}
-        </ol>
+        // A scrolling region takes focus, so its rows scroll by keyboard too (WCAG 2.1.1).
+        <div role="region" aria-label="Events, newest first" tabIndex={0} className="-mx-1 max-h-[560px] overflow-y-auto px-1">
+          <ol>
+            {shown.map((e, i) => (
+              <Row key={e.seq} e={e} year={i === 0 || shown[i - 1].day.slice(0, 4) !== e.day.slice(0, 4)} />
+            ))}
+          </ol>
+        </div>
       )}
       {narrow && list.length > PHONE_ROWS && (
         <Button size="sm" variant="ghost" className="mt-2" onClick={() => setMore((v) => !v)}>

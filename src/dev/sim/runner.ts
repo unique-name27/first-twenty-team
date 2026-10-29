@@ -224,7 +224,9 @@ export function createRunner(deps: RunnerDeps): Runner {
   function play(next: Speed, at?: ISODate): void {
     if (!sim || !run) return
     speed = next
+    // A day asked for is kept through a change of speed; a new play without one plays to the end.
     if (at !== undefined) stopAt = at > sim.day ? at : null
+    else if (!playing) stopAt = null
     if (sim.day >= endDay()) {
       stopAt = null
       postPaused('until')

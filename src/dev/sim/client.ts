@@ -65,8 +65,9 @@ export const simulator = {
   play(stopAt?: ISODate): void {
     if (ready()) send({ type: 'play', speed: useSim.getState().speed, ...(stopAt ? { stopAt } : {}) })
   },
+  /** Pauses (the worker ignores it when not playing, so a play still on its way is caught too). */
   pause(): void {
-    if (worker && useSim.getState().playing) send({ type: 'pause' })
+    if (worker) send({ type: 'pause' })
   },
   toggle(): void {
     if (useSim.getState().playing) simulator.pause()

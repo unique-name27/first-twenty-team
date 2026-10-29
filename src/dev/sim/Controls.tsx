@@ -41,17 +41,17 @@ export function Controls({ locked, onEditSituation }: { locked: boolean; onEditS
           title={atEnd ? 'The run is at its end. Start over with a later end date to go further.' : undefined}
         >
           {playing ? 'Pause' : 'Play'}
-          <span className="hidden sm:inline-flex">
+          <span aria-hidden className="hidden sm:inline-flex">
             <Kbd>K</Kbd>
           </span>
         </Button>
-        <Button size="sm" onClick={() => simulator.step(1)} disabled={goOff || playing || atEnd} aria-keyshortcuts="." aria-label="Step a day">
+        <Button size="sm" onClick={() => simulator.step(1)} disabled={goOff || playing || atEnd} aria-keyshortcuts="." title="Step a day (.)">
           +1 day
         </Button>
-        <Button size="sm" onClick={() => simulator.step(7)} disabled={goOff || playing || atEnd} aria-keyshortcuts="w" aria-label="Step a week">
+        <Button size="sm" onClick={() => simulator.step(7)} disabled={goOff || playing || atEnd} aria-keyshortcuts="w" title="Step a week (W)">
           +1 week
         </Button>
-        <Button size="sm" className="hidden sm:inline-flex" onClick={() => simulator.step(30)} disabled={goOff || playing || atEnd} aria-keyshortcuts="m" aria-label="Step a month">
+        <Button size="sm" className="hidden sm:inline-flex" onClick={() => simulator.step(30)} disabled={goOff || playing || atEnd} aria-keyshortcuts="m" title="Step a month (M)">
           +1 month
         </Button>
         <Button

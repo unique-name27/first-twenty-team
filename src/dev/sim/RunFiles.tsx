@@ -6,7 +6,7 @@ import { copyText, downloadFile } from '@/lib/files'
 import { Button, Field, Panel, Sheet, TextArea, TextInput, toast } from '@/ui'
 import { sandbox } from './appSandbox'
 import { simulator, useSim } from './client'
-import { BROWSER_LIMIT, browserStorage, bugReport, fmtSize, loadSavedRuns, readRunText, removeSavedRun, runFile, type SavedRun, saveRun, simFileName } from './helpers'
+import { BROWSER_LIMIT, browserStorage, bugReport, fmtSimDay, fmtSize, loadSavedRuns, readRunText, removeSavedRun, runFile, type SavedRun, saveRun, simFileName } from './helpers'
 
 export function Footer({ locked }: { locked: boolean }) {
   const phase = useSim((s) => s.phase)
@@ -60,7 +60,7 @@ export function Footer({ locked }: { locked: boolean }) {
       {ready && size !== null && (
         <p className="mt-3 text-[13px] text-ink-3">
           Size {fmtSize(size)} of about {fmtSize(BROWSER_LIMIT)} a browser keeps.{' '}
-          {integrity === 0 ? 'Integrity: no problems.' : `Integrity: ${integrity} ${integrity === 1 ? 'problem' : 'problems'} on ${date}.`}
+          {integrity === 0 ? 'Integrity: no problems.' : `Integrity: ${integrity} ${integrity === 1 ? 'problem' : 'problems'} on ${date ? fmtSimDay(date) : 'the start day'}.`}
         </p>
       )}
       <RunFilesSheet open={files} onClose={() => setFiles(false)} />

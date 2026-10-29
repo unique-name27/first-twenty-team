@@ -137,6 +137,18 @@ describe('the simulator loop', () => {
     expect(h.of('tick').flatMap((t) => t.points).map((p) => p.date).at(-1)).toBe('2026-10-20')
   })
 
+  it('forgets a day asked for once paused short of it: the next play goes to the end', () => {
+    const h = harness(4)
+    h.send({ type: 'start', run: { ...RUN, until: '2026-11-05' } })
+    h.send({ type: 'play', speed: 'max', stopAt: '2026-10-20' })
+    h.pass(0)
+    h.send({ type: 'pause' })
+    expect(h.last('paused')!.date < '2026-10-20').toBe(true)
+    h.send({ type: 'play', speed: 'max' })
+    h.pass(10_000)
+    expect(h.last('paused')).toMatchObject({ reason: 'until', date: '2026-11-05' })
+  })
+
   it('records a change of pace from the next day, one entry however often the slider moves that day', () => {
     const h = harness()
     h.send({ type: 'start', run: RUN })
