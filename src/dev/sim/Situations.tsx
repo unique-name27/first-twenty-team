@@ -139,7 +139,7 @@ function SituationSheet({
       open
       onClose={onClose}
       title={`${isNew ? 'Add' : 'Edit'}: ${KIND_LABELS[kind]}`}
-      subtitle="Saving lives the days again from the last month start before it, when it is in the past."
+      subtitle="When it is before today in the run, saving lives the days again from the last month end before it."
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>

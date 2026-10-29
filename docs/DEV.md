@@ -595,9 +595,9 @@ simulation runs in a Web Worker, so the page stays usable while it plays and the
 touched. Leaving the page pauses it. Keys (in the ? sheet under Simulator, off when single-key shortcuts
 are off): `k` play or pause, `.` a day, `w` a week, `m` a month, `1` to `4` the speed, `[` back a month.
 
-**The timeline** runs from the start to the end. The ticks are the first of each simulated month: click
-one to go back to it. Diamonds are situations (click to edit), shaded bands are hiring freezes, and the
-line is today in the run. The slider under it does the same by keyboard: an earlier day goes back to it (a
+**The timeline** runs from the start to the end. The ticks are the run's start and the end of each
+simulated month, the days it keeps a copy of: click one to go back to it. Diamonds are situations (click to edit),
+shaded bands are hiring freezes, and the line is today in the run. The slider under it does the same by keyboard: an earlier day goes back to it (a
 monthly point, then at most a month of days lived again, under a second), a later day plays there at Max.
 
 **What you see.** Tiles for employees (and people starting), open roles (and jobs on hold), the pipeline,
