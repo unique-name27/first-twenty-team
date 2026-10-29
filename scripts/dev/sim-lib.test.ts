@@ -15,6 +15,7 @@ import {
   cacheFileName,
   cachePrefix,
   companyDateFor,
+  eventLines,
   type Generated,
   parseDuration,
   parseSimArgs,
@@ -27,7 +28,22 @@ import {
   workspaceJson,
 } from './sim-lib'
 
-const base = { scenario: null, seed: null, asOf: null, out: null, shift: true, duration: null, policy: 'normal', name: null, offset: 0 }
+const base = {
+  scenario: null,
+  file: null,
+  to: null,
+  quiet: false,
+  events: 'headlines',
+  load: false,
+  seed: null,
+  asOf: null,
+  out: null,
+  shift: true,
+  duration: null,
+  policy: 'normal',
+  name: null,
+  offset: 0,
+}
 
 describe('parseSimArgs', () => {
   it('reads each command', () => {
@@ -46,6 +62,17 @@ describe('parseSimArgs', () => {
     expect(parseSimArgs(['save', 'before-payroll'])).toEqual({ ...base, command: 'save', name: 'before-payroll' })
     expect(parseSimArgs(['restore', 'before-payroll'])).toEqual({ ...base, command: 'restore', name: 'before-payroll' })
     expect(parseSimArgs(['saves'])).toEqual({ ...base, command: 'saves' })
+    expect(parseSimArgs(['run', 'seed-8', '--to', '24m', '--policy', 'busy'])).toEqual({ ...base, command: 'run', scenario: 'seed-8', to: '24m', policy: 'busy' })
+    expect(parseSimArgs(['play', 'run.json', '--to', '2027-06-01', '--out', 'co.json', '--events', 'all', '--quiet', '--load'])).toEqual({
+      ...base,
+      command: 'play',
+      file: 'run.json',
+      to: '2027-06-01',
+      out: 'co.json',
+      events: 'all',
+      quiet: true,
+      load: true,
+    })
   })
 
   it('takes --offset anywhere, and --help over everything', () => {
@@ -77,8 +104,28 @@ describe('parseSimArgs', () => {
       [['reset', 'seed-8', '--no-shift=yes'], /takes no value/],
       [['save', '../outside'], /name is 1 to 64/],
       [['save', 'a/b'], /name is 1 to 64/],
+      [['play'], /play needs a run file, like run\.json/],
+      [['play', 'run.json', '--to', 'soon'], /30d, 12w, 3m/],
+      [['play', 'run.json', '--events', 'some'], /--events is all or headlines/],
+      [['play', 'run.json', '--quiet=yes'], /--quiet takes no value/],
+      [['play', 'run.json', '--seed', '3'], /play does not take --seed/],
+      [['advance', '30d', '--to', '3m'], /advance does not take --to/],
     ]
     for (const [argv, message] of wrong) expect(() => parseSimArgs(argv), argv.join(' ')).toThrow(message)
+  })
+})
+
+describe('eventLines', () => {
+  const events = [
+    { day: '2027-03-04', kind: 'started' as const, importance: 1 as const, area: 'people' as const, text: 'Maya Chen started as Account executive.' },
+    { day: '2027-03-05', kind: 'week' as const, importance: 2 as const, area: 'routine' as const, text: 'This week: 3 applications.' },
+  ]
+
+  it('lists the headlines, every event with --events all, or their count with --quiet', () => {
+    expect(eventLines(events, { all: false, quiet: false })).toEqual(['2027-03-04  Maya Chen started as Account executive.'])
+    expect(eventLines(events, { all: true, quiet: false })).toEqual(['2027-03-04  Maya Chen started as Account executive.', '2027-03-05  This week: 3 applications.'])
+    expect(eventLines(events, { all: false, quiet: true })).toEqual(['2 events, 1 of them headlines.'])
+    expect(eventLines([], { all: false, quiet: false })).toEqual(['Nothing to tell: no events on these days.'])
   })
 })
 
@@ -101,26 +148,26 @@ describe('durations', () => {
 })
 
 describe('weekShift', () => {
-  const coverage = { from: '2025-01-01', to: '2026-12-31' }
   const weekday = (d: string) => new Date(`${d}T12:00:00Z`).getUTCDay()
 
   it('picks the same weekday on or before today, whole weeks away, and the days left', () => {
     // 2026-10-09 is a Friday; 2026-10-28 a Wednesday.
-    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-28', coverage })).toEqual({ days: 14, movedAsOf: '2026-10-23', rest: 5 })
-    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-30', coverage })).toEqual({ days: 21, movedAsOf: '2026-10-30', rest: 0 })
-    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-09', coverage })).toEqual({ days: 0, movedAsOf: '2026-10-09', rest: 0 })
+    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-28' })).toEqual({ days: 14, movedAsOf: '2026-10-23', rest: 5 })
+    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-30' })).toEqual({ days: 21, movedAsOf: '2026-10-30', rest: 0 })
+    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-09' })).toEqual({ days: 0, movedAsOf: '2026-10-09', rest: 0 })
     // Today before the as-of date: back to the Friday before today.
-    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-01', coverage })).toEqual({ days: -14, movedAsOf: '2026-09-25', rest: 6 })
+    expect(weekShift({ asOf: '2026-10-09', today: '2026-10-01' })).toEqual({ days: -14, movedAsOf: '2026-09-25', rest: 6 })
     for (const today of ['2026-10-10', '2026-11-03', '2026-12-31', '2026-08-14']) {
-      const s = weekShift({ asOf: '2026-10-09', today, coverage })
+      const s = weekShift({ asOf: '2026-10-09', today })
       expect(s.days % 7 === 0, today).toBe(true)
       expect(weekday(s.movedAsOf), today).toBe(weekday('2026-10-09'))
       expect(s.rest >= 0 && s.rest <= 6, today).toBe(true)
     }
   })
 
-  it('refuses a today past the law coverage', () => {
-    expect(() => weekShift({ asOf: '2026-10-09', today: '2027-01-04', coverage })).toThrow(/2027-01-04, is after the dates the built-in rules cover \(2025-01-01 to 2026-12-31/)
+  it('puts a company on a 2027 today', () => {
+    // 2027-01-04 is a Monday: back to Friday 2027-01-01, then three days to live.
+    expect(weekShift({ asOf: '2026-10-09', today: '2027-01-04' })).toEqual({ days: 84, movedAsOf: '2027-01-01', rest: 3 })
   })
 })
 

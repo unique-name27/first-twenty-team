@@ -37,6 +37,7 @@ import { defaultStepFor, formatForStage } from '@/features/hiring/interviews/log
 import { addBusinessDays, addDays, addMonths, getClockOverride, type ISODate, isUsableDate, pacificDateOf, setClockOverride } from '@/lib/dates'
 import { withRunContext } from '@/lib/runContext'
 import { type ActionName, type ArgsOf, applyAction, type ResultOf, type SimState, type TraceLine } from './actions'
+import { profileFor, slug } from './profiles'
 import { type CompanyPlan, type PayPeriodDay, type RolePlan, SCENARIOS, type Scenario, type ScenarioName } from './scenarios'
 import { summarize } from './summary'
 
@@ -46,8 +47,6 @@ export type GenerateOptions = {
   seed?: number
   /** Default: the scenario's own as-of date. */
   asOf?: ISODate
-  /** Generate past the dates the law tables and holidays cover. The company is then built on stale rules. */
-  allowStaleLaw?: boolean
 }
 
 export type GeneratedCompany = {
@@ -61,20 +60,7 @@ export type GeneratedCompany = {
   summary: string
 }
 
-/**
- * The dates the built-in rules cover: from the first holiday on the list to the end of the law tables'
- * year or the last holiday, whichever comes first (2025-01-01 to 2026-12-31 today).
- */
-export function lawCoverage(): { from: ISODate; to: ISODate } {
-  const days = defaultHolidays()
-    .map((h) => h.date)
-    .sort()
-  const yearEnd = `${DEFAULT_LAW.year}-12-31`
-  const last = days[days.length - 1]
-  return { from: `${days[0].slice(0, 4)}-01-01`, to: last < yearEnd ? last : yearEnd }
-}
-
-/** Generates a scenario's company. Throws on dates outside the law coverage unless allowStaleLaw is set. */
+/** Generates a scenario's company. Any as-of date works: dates outside 2026 use the rules the app has (the 2026 law tables). */
 export function generateCompany(options: GenerateOptions): GeneratedCompany {
   const scenario: Scenario | undefined = SCENARIOS[options.scenario]
   if (!scenario) throw new Error(`No scenario named ${options.scenario}.`)
@@ -93,12 +79,6 @@ export function generateCompany(options: GenerateOptions): GeneratedCompany {
 
   const plan = scenario.company as CompanyPlan
   const foundedOn = foundingDate(plan, asOf)
-  if (!options.allowStaleLaw) {
-    const { from, to } = lawCoverage()
-    const covered = `the dates the built-in rules cover (${from} to ${to}: the ${DEFAULT_LAW.year} law tables and the holiday list). Pass allowStaleLaw to generate it anyway.`
-    if (asOf > to) throw new Error(`The as-of date ${asOf} is after ${covered}`)
-    if (foundedOn < from) throw new Error(`${scenario.name} as of ${asOf} would be founded on ${foundedOn}, before ${covered}`)
-  }
 
   const previous = getClockOverride()
   try {
@@ -195,30 +175,6 @@ type RoleState = {
 }
 
 type Who = { id: ID; as: Role }
-
-/** The profile (titles, employers, scorecard notes in pools.ts) for a role template. */
-export function profileFor(plan: Pick<RolePlan, 'template' | 'title'>): ProfileKey {
-  if (plan.title === 'Office coordinator') return 'coord'
-  const by: Record<string, ProfileKey> = {
-    'rt-fullstack': 'eng',
-    'rt-ml': 'ml',
-    'rt-designer': 'design',
-    'rt-pm': 'pm',
-    'rt-ae-founding': 'ae',
-    'rt-csm': 'csm',
-    'rt-solutions': 'solutions',
-    'rt-finance': 'acct',
-    'rt-ops-people': 'ops',
-  }
-  return by[plan.template] ?? 'eng'
-}
-
-export function slug(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^a-z0-9]+/g, '')
-}
 
 /** A 32-bit seed for the story's random choices from the scenario name and seed (FNV-1a). */
 function storySeed(name: string, seed: number): number {

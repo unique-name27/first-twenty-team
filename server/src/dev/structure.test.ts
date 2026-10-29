@@ -4,7 +4,8 @@
 // (the ones vite.server.config.ts bundles, which include server/src/index.ts, and app.ts on its own) and
 // fails if any path reaches this folder. The folders only tests and dev tools use (the journey kit in
 // server/src/e2e, the server test helpers, src/sync/testing, the simulator in src/sim) are held to the same
-// rule. It reads the source instead of building (a build is slow).
+// rule, and so is the browser's development-only code in src/dev (the dev sign-in and the simulator panel). It
+// reads the source instead of building (a build is slow).
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -21,6 +22,8 @@ const TEST_ONLY = [
   path.join(ROOT, 'src', 'sync', 'testing'),
   // The simulator: its generator, scenarios and name pools must never ship in dist-server.
   path.join(ROOT, 'src', 'sim'),
+  // The browser's development-only code (the dev sign-in, the simulator panel and its worker).
+  path.join(ROOT, 'src', 'dev'),
 ]
 const insideTestOnly = (file: string) => TEST_ONLY.some((dir) => file === dir || file.startsWith(dir + path.sep))
 
@@ -84,7 +87,7 @@ describe('server/src/dev and the test-only folders stay out of production', () =
       const reached = [...graph.entries()].filter(([file]) => insideDev(file)).map(([, chain]) => chain.join(' -> '))
       expect(reached, 'production code must not import server/src/dev').toEqual([])
       const testOnly = [...graph.entries()].filter(([file]) => insideTestOnly(file)).map(([, chain]) => chain.join(' -> '))
-      expect(testOnly, 'production code must not import server/src/e2e, server/src/test, src/sync/testing or src/sim').toEqual([])
+      expect(testOnly, 'production code must not import server/src/e2e, server/src/test, src/sync/testing, src/sim or src/dev').toEqual([])
     })
   }
 
@@ -94,9 +97,11 @@ describe('server/src/dev and the test-only folders stay out of production', () =
     for (const [name, command] of Object.entries(scripts)) expect(command, `npm run ${name}`).not.toContain('server/src/dev')
   })
 
-  it('holds the simulator to the test-only rule', () => {
+  it('holds the simulator and the development-only code in src/dev to the test-only rule', () => {
     expect(insideTestOnly(path.join(ROOT, 'src', 'sim', 'generate.ts'))).toBe(true)
+    expect(insideTestOnly(path.join(ROOT, 'src', 'dev', 'sim', 'runner.ts'))).toBe(true)
     expect(insideTestOnly(path.join(ROOT, 'src', 'simple.ts'))).toBe(false)
+    expect(insideTestOnly(path.join(ROOT, 'src', 'device.ts'))).toBe(false)
   })
 
   it('reads the import forms this test relies on', () => {

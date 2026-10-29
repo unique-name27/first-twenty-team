@@ -5,6 +5,7 @@ import { usePrefs } from '@/store/prefs'
 import { LOOKS } from '@/themes/registry'
 import { EmptyState, focusPageStart, toast, Toaster } from '@/ui'
 import { CommandPalette } from './CommandPalette'
+import { useDevPage } from './devSlots'
 import { sectionOf } from './nav'
 import { links, replaceRoute, useRoute } from './router'
 import { ALIASES, ROUTES } from './routes'
@@ -150,8 +151,11 @@ const TAB_TITLES: Record<string, string> = {
   job: 'Job and pay',
 }
 
-/** Browser tab title for a route: the record or section, then the tab, then the app name (WCAG 2.4.2). */
-function usePageTitle(view: string, segments: string[]) {
+/**
+ * Browser tab title for a route: the record or section, then the tab, then the app name (WCAG 2.4.2).
+ * `otherTitle` names a page the route table does not have (a development page, src/app/devSlots.ts).
+ */
+function usePageTitle(view: string, segments: string[], otherTitle?: string) {
   const viewer = useViewer()
   const title = useDB((s) => {
     const db = s.db
@@ -167,7 +171,7 @@ function usePageTitle(view: string, segments: string[]) {
     }
     if (view === 'checklist') return 'Checklist'
     if (view === 'contractor') return canSeeSection(viewer, 'people') ? (db.contractors.find((k) => k.id === id)?.name ?? 'Contractor') : 'Contractor'
-    return SECTION_TITLES[view] ?? 'First Twenty'
+    return SECTION_TITLES[view] ?? otherTitle ?? 'First Twenty'
   })
   const tab = !RECORD_VIEWS.has(view) ? segments[1] : segments[2]
   const tabText = tab && !SHEET_SEGMENTS.has(tab) && !/^[a-z]+-/.test(tab) ? (TAB_TITLES[`${view}.${tab}`] ?? TAB_TITLES[tab] ?? tab[0].toUpperCase() + tab.slice(1).replace(/-/g, ' ')) : ''
@@ -191,7 +195,9 @@ export function App() {
   // Employees land on Me; everyone else on Home.
   const view = route.view === '' || (route.view === 'home' && viewer.role === 'employee') ? (viewer.role === 'employee' ? 'me' : 'home') : route.view
   const key = pageKey(view, route.segments)
-  usePageTitle(view, route.segments)
+  // A development page (src/app/devSlots.ts) for a view the route table does not have; none in a build.
+  const devPage = useDevPage(view)
+  usePageTitle(view, route.segments, devPage?.title)
 
   // Scroll to the top for a new page or tab, but not when a sheet opens or closes over the page.
   // When the route change removed the element that held focus, move focus to the page title, not <body>.
@@ -211,7 +217,7 @@ export function App() {
     return () => clearTimeout(t)
   }, [key, route.segments])
 
-  const Page = ROUTES[view]
+  const Page = ROUTES[view] ?? devPage?.component
   const section = sectionOf(view)
   // Interviewers in Employee view reach a candidate's profile through their interviews (access.ts).
   const candidateId = view === 'candidate' ? route.segments[1] : undefined

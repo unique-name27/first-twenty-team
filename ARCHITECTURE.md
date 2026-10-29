@@ -41,9 +41,12 @@ src/
               them, server/src/dev/structure.test.ts the server). Contract: docs/SYNC.md
   careers/    careers pages (no React): render.ts (the HTML for the static demo site, scripts/careers, and
               the server's live pages), application.ts (the live apply form), careers.css
-  dev/        development only, never in a build: the npm run stack auto sign-in (autoconnect.ts), imported
-              by main.tsx behind import.meta.env.DEV (guard.test.ts checks it). Guide: docs/DEV.md
-  sim/        tests and tools only, never the app (guard.test.ts checks it): generated companies, built
+  dev/        development only, never in a build: the npm run stack auto sign-in (autoconnect.ts) and the
+              simulator panel at #sim (sim/: a worker that plays a simulation, the page, the sandbox that
+              shows a simulated company in the app), imported by main.tsx behind import.meta.env.DEV
+              (guard.test.ts checks it). They reach the Shell through app/devSlots.ts, empty in a build.
+              Guide: docs/DEV.md
+  sim/        tests, tools and src/dev only, never the app (guard.test.ts checks it): generated companies, built
               through the same steps the screens take (generate.ts, actions.ts, scenarios.ts), and the time
               machine that lives a workspace's next days the same way (advance.ts). Guide: docs/DEV.md
 scripts/dev/  npm run stack: the dev stack runner, its database setup and the Vite dev sign-in endpoint;

@@ -347,8 +347,7 @@ with its day, time, actor, Viewing-as, action, args and the ids of the records i
 | `stress` | Thousands of candidates, past the demo limits: for the server only, never loaded into a browser |
 
 Each scenario has its own seed and the as-of date 2026-10-09. Another seed gives another company of the same
-shape. The built-in rules cover 2025 to 2026 (the 2026 law tables and the holiday list), so a company founded
-before them or an as-of date after them is refused unless you pass `allowStaleLaw`.
+shape. Runs past 2026 use the rules the app has (the 2026 law tables); holidays roll over each December.
 
 ```ts
 import { traceToJsonLines } from '@/sim/actions'
@@ -399,8 +398,7 @@ screen makes:
 `policy` is `'quiet'`, `'normal'` (the default) or `'busy'`, or rates changed from one:
 `{ preset: 'busy', attritionPerYear: 0.3 }`. It returns `{ db, trace, report, summary }`: the trace has the
 generator's format, the report counts what happened and the summary says it in plain lines. The same
-workspace, date, seed and policy give byte-identical output, and a `to` past the law coverage is refused
-unless you pass `allowStaleLaw`.
+workspace, date, seed and policy give byte-identical output.
 
 ```ts
 import { setClockOverride } from '@/lib/dates'
@@ -414,19 +412,95 @@ const { db: later, summary } = advance(db, { to: '2026-12-30', seed: 1 })   // 9
 
 `src/sim/advance.test.ts` advances seed-8 and full-20 by 30 and 90 days and checks the integrity, the pay runs,
 that time off and hiring happened, and that a second run is byte-identical; `src/sim/advance.rules.test.ts`
-covers the presets, the refusals, a clock in the middle of a pay period, leavers and leave, and December.
+covers the presets, dates past 2026, the refusals, a clock in the middle of a pay period, leavers and leave,
+and December.
+
+### A simulation that steps
+
+`advance` is one step of a `Simulation` (`src/sim/simulation.ts`). A simulation holds the time machine
+(`src/sim/machine.ts`) and one run open between steps, so it can live a day, a week or a month at a time and
+still give exactly the JSON one long step gives:
+
+```ts
+import { Simulation } from '@/sim/simulation'
+
+const sim = new Simulation(db, { from: '2026-10-01', seed: 1, policy: 'normal' })
+sim.step(7)                      // a week: { from, to, lines, notes, events, points }
+sim.stepTo('2027-03-31')
+sim.rewindTo('2026-12-15')       // back to the end of that day, as if it had never gone past it
+sim.setPace({ attritionPerYear: 0.3 })   // from the next day, written down as a pace situation
+sim.report()                     // advance's report, so far
+```
+
+It keeps a keyframe at the start and at the end of each simulated month (the workspace is an Immer value, so
+a keyframe costs little). `rewindTo` restores the nearest keyframe on or before the day and lives forward from
+there. Each day it also tells the day as events for a feed (`src/sim/story.ts`: "Priya Shah accepted the offer
+for Account executive, starting Mon, Mar 15.", with an importance, an area and a weekly line for the routine)
+and takes the day's numbers (`src/sim/metrics.ts`: headcount, people starting, open roles, the pipeline,
+offers out, starts and departures, people on leave, the loaded monthly payroll). `reportCompliance: false`
+skips the weekly compliance evaluation, which feeds only the report and changes nothing in the workspace.
+
+### Situations
+
+Situations (`src/sim/situations.ts`) are things a simulation lives through, each plain JSON with an `id` and a
+date `on`. Each happens on the first business day on or after its date, at 08:20, only through the
+simulator's actions, and draws its own random numbers, so adding one never changes what happens before it.
+
+| Kind | What happens |
+| --- | --- |
+| `hiringPush` | `roles` roles added to the plan (in `departmentId`, or any) and opened and posted that morning |
+| `growTo` | The founder keeps enough roles in the plan to reach `headcount` people by `by` |
+| `freeze` | No roles planned or opened and no backfills through `until`; `holdOpenJobs` puts open jobs on hold and posts them again after |
+| `quit` | Someone resigns (`personId`, or at random), with two weeks' notice or none, and a backfill unless `backfill: false` |
+| `layoff` | `count` people at random, a `departmentId` or `personIds`; `noticeDays`, `closeJobs` and `freezeDays` |
+| `leave` | A bonding, CFRA or other leave of `weeks` weeks, for someone who qualifies (`personId`, or at random) |
+| `raiseRound` | A market raise of `percent` for everyone; `respectBands` holds raises that would leave the band |
+| `leaderHire` | A Head of (`lv-m2`) or executive (`lv-x1`) hired through the pipeline; on their first day `reports` move under them |
+| `pace` | `changes` to hiring pace, time off, attrition or offer acceptance from that day on |
+
+When the app refuses a step (someone who already left quits again, a leave for someone who does not qualify,
+a layoff of more people than there are), the step is skipped with a note and the run goes on. A crash inside
+a step, or args that do not fit an action, is a bug: the run stops with it, as it does for the machine's own
+steps. Changing the situations after some days were lived goes back to the last keyframe before the first
+change and lives forward again, so the result equals a fresh run with the new list.
+
+### Play a run
+
+A run file (`src/sim/play.ts`) writes a simulation down so anyone can play it again exactly:
+
+```json
+{
+  "version": 1,
+  "start": { "kind": "scenario", "scenario": "full-20", "seed": 2020, "asOf": "2026-10-23" },
+  "seed": 1,
+  "pace": { "preset": "normal", "attritionPerYear": 0.2 },
+  "situations": [
+    { "id": "push", "on": "2027-01-04", "kind": "hiringPush", "roles": 3, "departmentId": "d-eng" },
+    { "id": "freeze", "on": "2027-03-01", "kind": "freeze", "until": "2027-04-30", "holdOpenJobs": true }
+  ],
+  "until": "2027-10-28"
+}
+```
+
+`start` is a scenario (with its seed and as-of date), `{ "kind": "sample" }` or `{ "kind": "workspace", "date",
+"db" }`. `npm run sim -- play run.json` plays it in one step and prints the headlines, the summary and the
+integrity lines; a day at a time gives the same company (`src/sim/play.test.ts`). Never put a workspace with
+real data in a run file you share.
 
 ## Simulate a company
 
 `npm run sim` puts a generated company (above) into the stack, moves it through time and keeps copies of it,
-so you can try the app on a company of 8, 15 or 20 people instead of the sample.
+so you can try the app on a company of 8, 15 or 20 people instead of the sample. To watch a company play
+forward and set up what happens to it, use the simulator panel in the app instead ("The simulator panel"
+below).
 
 | Command | What it does |
 | --- | --- |
 | `npm run sim -- list` | The scenarios, one line each |
-| `npm run sim -- run full-20` | Generates a scenario and prints its summary. `--seed N` and `--as-of YYYY-MM-DD` pick another seed or date; `--out co.json` also writes it as a backup that Settings > Data > Import reads. Needs no stack |
+| `npm run sim -- run full-20` | Generates a scenario and prints its summary. `--seed N` and `--as-of YYYY-MM-DD` pick another seed or date; `--to 24m` (or a date) then lives it forward from its as-of date, with `--policy`; `--out co.json` also writes it as a backup that Settings > Data > Import reads. Needs no stack |
 | `npm run sim -- reset full-20` | Replaces the stack's company with the scenario, on today's date (below). Takes `--seed`, `--as-of` and `--no-shift` |
 | `npm run sim -- advance 30d` | Lives the stack's company through the next 30 days: `12w`, `3m` or a date work too. `--policy quiet`, `normal` (the default) or `busy`; `--seed N` (default 1) |
+| `npm run sim -- play run.json` | Plays a run file (above) and prints its headlines and summary. `--to 6m` or a date stops elsewhere; `--events all` lists every event, `--quiet` only counts them; `--out co.json` writes the result; `--load` puts it in the stack, as reset does |
 | `npm run sim -- save before-payroll` | Keeps a copy of the stack's company in `.data/dev/saves` |
 | `npm run sim -- restore before-payroll` | Puts that copy back |
 | `npm run sim -- saves` | Lists the copies |
@@ -457,8 +531,8 @@ as-of date), then lives the 0 to 6 days left with the time machine (normal polic
 today. Because the company is generated for that date, rather than made for another date and moved, every
 date rule holds as it does in the app: starts and interviews skip company holidays, plan lines sit in the
 quarter of their target start, pay runs follow the real pay periods, and payroll-edge's start, leave and last
-day fall inside pay periods. The summary reset prints names the as-of date it used. Today after 2026-12-31
-(the dates the built-in rules cover) is refused. `--no-shift` loads the scenario on its own as-of date instead:
+day fall inside pay periods. The summary reset prints names the as-of date it used. `--no-shift` loads the
+scenario on its own as-of date instead:
 the app still shows today, and Settings > Data > Pretend today is shows the as-of date. `ledgerlark` is the
 sample as the app loads it, moved by the app's own rule.
 
@@ -474,7 +548,7 @@ days it sends and approves time off, hires through the pipeline, gives anniversa
 someone resign (with a backfill) or start a leave, prepares and marks pay runs submitted, and on Mondays clears
 the inbox's one-button items and checks the compliance rules ("The time machine" above has the details). It
 never declines time off, terminates anyone, adds contractors, extends offers, enters provider totals, approves
-grants at a board meeting or changes Settings > Rules and rates, and it refuses dates past 2026-12-31.
+grants at a board meeting or changes Settings > Rules and rates.
 
 **Saves.** `npm run sim -- save <name>` writes `.data/dev/saves/<name>.json`: the company as the server holds
 it, and its date. A save with the same name is replaced. restore keeps the saved company's identity, so the
@@ -494,12 +568,101 @@ seed 2020, as of 2026-10-23, reset on 2026-10-28, then advance 30d --policy busy
 it as a failing test on a fixed as-of date: a generated company, `advance` if needed, and the check.
 
 `server/src/sim/smoke.test.ts` (server tier, on CI) generates every scenario but `stress`, loads it into the
-server as an Import would, advances it 90 days at the normal policy (the last week runs into January 2027 on
-the 2026 law values, with `allowStaleLaw`) and loads it again. Then `v_integrity_problems` must be empty,
+server as an Import would, advances it 90 days at the normal policy (the last week runs into January 2027)
+and loads it again. Then `v_integrity_problems` must be empty,
 `v_hire_journey` must have a row for every hire, the server must give back exactly what it was sent, and a
 second run must give the same JSON. With `SIM_STRESS=1` it also generates `stress` and loads it once, to prove
 the server takes it: `SIM_STRESS=1 npx vitest run server/src/sim/smoke.test.ts -t stress`. That case is left
 out of CI until it has been timed (it has never finished on the computers it was written on).
+
+### The simulator panel
+
+A development build of the app (`npm run dev` or `npm run stack`) has a simulator at `#sim`: the
+**Simulator (dev)** link under the navigation, in the rail and in the phone menu. It plays a company forward
+in fast time, lets you set up situations and change the pace while it plays, and opens the result in the
+real screens. A build never has it: `main.tsx` loads `src/dev/sim/register.ts` only behind
+`import.meta.env.DEV`, and the guards and CI's build check prove it ("Where it lives" below).
+
+**Start a run.** Pick where it starts: *This company, now* (a copy of the workspace this browser holds, on
+the app's today; your company is not touched), *A scenario* with its seed and, if you like, an as-of date
+(`stress` is left out: it is too big for a browser), or *The sample*. Then the run's seed, the pace (quiet,
+normal or busy) and the day it runs until (a year by default, about three at most). The same start, seed,
+pace and situations always play the same run.
+
+**Play it.** Play and Pause, +1 day, +1 week and +1 month, and four speeds: 1 day, 1 week or 1 month a
+second, or Max (as fast as the computer goes; two years of full-20 took 5 to 8 seconds in Node on the computer it
+was measured on). The
+simulation runs in a Web Worker, so the page stays usable while it plays and the app's own clock is never
+touched. Leaving the page pauses it. Keys (in the ? sheet under Simulator, off when single-key shortcuts
+are off): `k` play or pause, `.` a day, `w` a week, `m` a month, `1` to `4` the speed, `[` back a month.
+
+**The timeline** runs from the start to the end. The ticks are the run's start and the end of each
+simulated month, the days it keeps a copy of: click one to go back to it. Diamonds are situations (click to
+edit), shaded bands are hiring freezes, and the line is today in the run. The slider under it does the same
+by keyboard: an earlier day goes back to it (a monthly point, then at most a month of days lived again, under
+a second), a later day plays there at Max. A day the run has already passed by the time the slider settles
+is gone back to.
+
+**What you see.** Tiles for employees (and people starting), open roles (and jobs on hold), the pipeline,
+starts and departures since the run began, people on leave and the loaded monthly payroll; headcount over
+time (solid: employees, dashed: with people starting, the 5, 15 and 20 lines, the situations marked); and
+a feed of what happened, newest first, filtered by Headlines, Hiring, People, Pay or Everything (the
+newest 500 events). A screen reader hears the date and headcount when the simulation pauses, never while
+it plays.
+
+**Situations** ("Situations" above for what each kind does). *Add a situation* lists hiring push, grow to a
+headcount, hiring freeze, someone quits, layoff, leave, raise round and senior hire. The sheet has fields
+for the kind; people and departments come from the simulated company as of the last pause, and "Someone at
+random" is the default. When the app refuses a step (someone who already left, a leave they do not
+qualify for), the list shows the note under the situation and the run goes on. A situation added, changed
+or removed before today in the run goes back to the monthly point before it and plays to today again at Max
+("Living the days again to ..." under the date; Pause works meanwhile), so what you see is what a fresh run
+with the new list gives. While the simulated company is open in the app, situations cannot be added or
+edited.
+
+**Pace.** Sliders for hiring pace (0 to 3 times), attrition (0 to 40% a year), time off (0 to 3 times) and
+offer acceptance (0 to 100%), playing or paused. A change applies from the next simulated day and is kept
+in the run as a pace situation, so a saved run plays the same again.
+
+**Run files.** *Run files* copies or downloads the run as a run file (the same JSON `npm run sim -- play`
+reads, "Play a run" above), keeps up to eight small runs in this browser, and plays a run you paste or
+open. A run that starts from this company carries the company, so this browser never keeps it (download
+it), and to share one, send a bug report instead: *Copy bug report* gives where it stopped, the last
+actions and a run file with the company left out. *Download
+company* saves the simulated workspace as a backup that Settings, Data, Import reads.
+
+**Open in the app.** Shows the simulated company in the app on its simulated date: Home, People, Hiring,
+Comp and plan all show it, with a banner saying it is simulated. Nothing is saved or synced meanwhile, even
+when this browser syncs with a server: the panel waits for a sync already running, then sets the clock to
+the simulated date (on a pretend date the sync engine sends and queues nothing, `docs/SYNC.md`), holds the
+store's saving, and only then swaps the company in. It refuses while a sign-in or server step in Settings is
+still running. You can click around and edit it; edits stay in that copy. *Back to my company* puts your
+company back exactly (the same Undo history, the same changes waiting to sync, the saved copy never
+changed) and syncs again, and so does reloading the page. An Undo toast left from an edit in the simulated
+company closes on Back and never touches your company. While it is open the
+simulator waits; *Back to my company and continue* goes back and plays on (edits made in the app are not
+part of the run).
+
+**Keep it.** The banner's *Keep it...* makes the simulated company your company, with a two-step press in
+the dialog. It goes back first, then replaces your company the way Import does: one Undo step when this
+browser is not connected, or the server's workspace for everyone who signs in when it is. The kept company
+gets a new identity (another company, never merged with yours), and the dialog offers to download a copy
+of your company first and to pretend today is the simulated date afterwards (Settings, Data). A company
+over 4 MB is refused: a browser keeps about 5 MB for a site; download it instead.
+
+**Time zones.** Simulated people act on California time (`src/lib/runContext.ts`). In a browser from about
+Central Europe eastwards, a California afternoon is already the next day, so the panel refuses to start and
+says so: use `npm run sim -- play` (it runs in California time) or set the browser's location to Los
+Angeles in DevTools (Sensors).
+
+**Where it lives.** `src/dev/sim`: `runner.ts` (the loop the worker runs, tested without a Worker),
+`sim.worker.ts`, `protocol.ts` (the messages), `client.ts` and `panelState.ts` (the panel's store),
+`sandbox.ts` (Open in the app, Back, Keep), `helpers.ts` and the page's components. It reaches the Shell
+through `src/app/devSlots.ts` (a page at a route the route table does not have, the banner, the link),
+which stays empty in a build. `src/dev/guard.test.ts` holds every import of `src/dev` to
+`if (import.meta.env.DEV)`, `src/sim/guard.test.ts` lets only tests, tools and `src/dev` import the
+simulator, both read worker URLs (`new URL('...', import.meta.url)`), and CI fails if `first-twenty.html`
+holds `ft-dev-simulator` (the panel's marker), `Simulator (dev)` or an error message only `src/sim` has.
 
 ## Claude Code in a codespace
 

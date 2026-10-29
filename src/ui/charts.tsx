@@ -239,7 +239,16 @@ export function StepChart({
         {todayDate && todayDate >= from && todayDate <= to && (
           <g>
             <line x1={x(todayDate)} x2={x(todayDate)} y1={padT - 4} y2={y(0)} stroke="var(--ink-3)" strokeWidth={1} />
-            <text x={x(todayDate)} y={padT - 6} textAnchor="middle" fontSize={11} fill="var(--ink-2)" fontWeight={700} className="ft-chart__today">
+            {/* Ends at the line near the right edge, and starts at it near the left, so it never runs into the end labels. */}
+            <text
+              x={x(todayDate)}
+              y={padT - 6}
+              textAnchor={padL + innerW - x(todayDate) < 24 ? 'end' : x(todayDate) - padL < 24 ? 'start' : 'middle'}
+              fontSize={11}
+              fill="var(--ink-2)"
+              fontWeight={700}
+              className="ft-chart__today"
+            >
               Today
             </text>
           </g>

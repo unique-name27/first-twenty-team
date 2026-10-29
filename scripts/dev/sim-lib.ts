@@ -1,18 +1,19 @@
 // The pure parts of `npm run sim` (scripts/dev/sim.ts, docs/DEV.md "Simulate a company"): the command line,
-// how long an advance runs, the company reset puts on today's date, the company's date between commands,
-// the cache key and the names of saves. No file, network or database access (the cache key reads files, and
+// how long an advance or a play runs, the company reset puts on today's date, the company's date between
+// commands, the cache key, the names of saves and the lines play prints. No file, network or database access (the cache key reads files, and
 // reset gets its generated company, through functions the caller passes), so tests import it directly.
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import type { DB } from '../../src/domain/types'
-import { addDays, addMonths, daysBetween, getClockOverride, type ISODate, isUsableDate, setClockOverride } from '../../src/lib/dates'
+import { addDays, addMonths, getClockOverride, type ISODate, isUsableDate, setClockOverride } from '../../src/lib/dates'
 import { num } from '../../src/lib/format'
 import { advance, type PolicyName, POLICIES } from '../../src/sim/advance'
-import { lawCoverage } from '../../src/sim/generate'
+import { startDateFor } from '../../src/sim/play'
+import type { SimEvent } from '../../src/sim/story'
 import { SCENARIO_NAMES, SCENARIOS, type ScenarioName } from '../../src/sim/scenarios'
 import { MAX_OFFSET } from './stack-lib.mjs'
 
-export const COMMANDS = ['list', 'run', 'reset', 'advance', 'save', 'restore', 'saves'] as const
+export const COMMANDS = ['list', 'run', 'reset', 'advance', 'play', 'save', 'restore', 'saves'] as const
 export type Command = (typeof COMMANDS)[number]
 
 /** The seed an advance uses when none is given: the same command on the same company tells the same story. */
@@ -23,11 +24,16 @@ export const USAGE = `Usage: npm run sim -- <command> [options]
   list                                 the scenarios, one line each
   run <scenario>                       generate a scenario and print its summary
       [--seed N] [--as-of YYYY-MM-DD]  another seed or as-of date than the scenario's own
+      [--to 24m|YYYY-MM-DD]            then live it forward from its as-of date (--policy too)
       [--out file.json]                also write the workspace, as Settings > Data > Import reads it
   reset <scenario> [--seed N]          replace the stack's company with the scenario, on today's date
       [--as-of YYYY-MM-DD] [--no-shift]  (--no-shift keeps it on its as-of date)
   advance <30d|12w|3m|YYYY-MM-DD>      live the stack's company through the next days
       [--policy quiet|normal|busy] [--seed N]
+  play <run.json>                      play a saved run (a run file) and print its story and summary
+      [--to 24m|YYYY-MM-DD]            stop on another day than the run's own end
+      [--events all] [--quiet]         every event, not only the headlines; or only their count
+      [--out file.json] [--load]       write the workspace; or put it in the stack, as reset does
   save <name>                          keep a copy of the stack's company in <data folder>/saves
   restore <name>                       put a saved copy back
   saves                                list the saved copies
@@ -41,6 +47,16 @@ company on its next sync. With no stack running, they open the stack's database 
 export type SimArgs = {
   command: Command | 'help'
   scenario: ScenarioName | null
+  /** play: the run file. */
+  file: string | null
+  /** run and play: how far to live, from the start (24m, 30d, a date). */
+  to: string | null
+  /** play: only the count of events. */
+  quiet: boolean
+  /** play: the headlines (default) or every event. */
+  events: 'headlines' | 'all'
+  /** play: put the result in the stack. */
+  load: boolean
   seed: number | null
   asOf: ISODate | null
   out: string | null
@@ -52,11 +68,12 @@ export type SimArgs = {
 }
 
 /** What each command takes after its name, and which options. */
-const SHAPES: Record<Command, { positional: 'scenario' | 'duration' | 'name' | null; options: readonly string[] }> = {
+const SHAPES: Record<Command, { positional: 'scenario' | 'duration' | 'name' | 'file' | null; options: readonly string[] }> = {
   list: { positional: null, options: [] },
-  run: { positional: 'scenario', options: ['--seed', '--as-of', '--out'] },
+  run: { positional: 'scenario', options: ['--seed', '--as-of', '--out', '--to', '--policy'] },
   reset: { positional: 'scenario', options: ['--seed', '--as-of', '--no-shift'] },
   advance: { positional: 'duration', options: ['--policy', '--seed'] },
+  play: { positional: 'file', options: ['--to', '--out', '--quiet', '--events', '--load'] },
   save: { positional: 'name', options: [] },
   restore: { positional: 'name', options: [] },
   saves: { positional: null, options: [] },
@@ -64,7 +81,23 @@ const SHAPES: Record<Command, { positional: 'scenario' | 'duration' | 'name' | n
 
 /** The command line (process.argv.slice(2)), or an Error saying what is wrong (the caller prints USAGE too). */
 export function parseSimArgs(argv: readonly string[]): SimArgs {
-  const out: SimArgs = { command: 'help', scenario: null, seed: null, asOf: null, out: null, shift: true, duration: null, policy: 'normal', name: null, offset: 0 }
+  const out: SimArgs = {
+    command: 'help',
+    scenario: null,
+    file: null,
+    to: null,
+    quiet: false,
+    events: 'headlines',
+    load: false,
+    seed: null,
+    asOf: null,
+    out: null,
+    shift: true,
+    duration: null,
+    policy: 'normal',
+    name: null,
+    offset: 0,
+  }
   const positionals: string[] = []
   const given = new Set<string>()
   for (let i = 0; i < argv.length; i++) {
@@ -96,6 +129,18 @@ export function parseSimArgs(argv: readonly string[]): SimArgs {
     } else if (flag === '--no-shift') {
       if (eq > 0) throw new Error('--no-shift takes no value.')
       out.shift = false
+    } else if (flag === '--to') {
+      const v = value()
+      parseDuration(v)
+      out.to = v
+    } else if (flag === '--events') {
+      const v = value()
+      if (v !== 'all' && v !== 'headlines') throw new Error(`--events is all or headlines (got "${v}").`)
+      out.events = v
+    } else if (flag === '--quiet' || flag === '--load') {
+      if (eq > 0) throw new Error(`${flag} takes no value.`)
+      if (flag === '--quiet') out.quiet = true
+      else out.load = true
     } else throw new Error(`Unknown option "${flag}".`)
   }
 
@@ -111,7 +156,8 @@ export function parseSimArgs(argv: readonly string[]): SimArgs {
     if (rest.length > 0) throw new Error(`${command} takes nothing after it (got "${rest.join(' ')}").`)
     return out
   }
-  if (rest.length !== 1) throw new Error(`${command} needs ${shape.positional === 'duration' ? 'how far to go, like 30d' : `a ${shape.positional}`}${rest.length > 1 ? `, once (got "${rest.join(' ')}")` : ''}.`)
+  const needs = shape.positional === 'duration' ? 'how far to go, like 30d' : shape.positional === 'file' ? 'a run file, like run.json' : `a ${shape.positional}`
+  if (rest.length !== 1) throw new Error(`${command} needs ${needs}${rest.length > 1 ? `, once (got "${rest.join(' ')}")` : ''}.`)
   const [arg] = rest
   if (shape.positional === 'scenario') {
     if (!(SCENARIO_NAMES as readonly string[]).includes(arg)) throw new Error(`No scenario named "${arg}". npm run sim -- list shows them.`)
@@ -119,6 +165,8 @@ export function parseSimArgs(argv: readonly string[]): SimArgs {
   } else if (shape.positional === 'duration') {
     parseDuration(arg)
     out.duration = arg
+  } else if (shape.positional === 'file') {
+    out.file = arg
   } else {
     const problem = saveNameProblem(arg)
     if (problem) throw new Error(problem)
@@ -170,16 +218,11 @@ export type WeekShift = {
 
 /**
  * The date reset generates a scenario on so that the company's date can be `today`: the latest day on or
- * before today with the as-of date's weekday, whole weeks away, so the plan's weekdays keep their names.
- * Today past the dates the built-in rules cover is refused.
+ * before today with the as-of date's weekday, whole weeks away, so the plan's weekdays keep their names
+ * (startDateFor in src/sim/play.ts, which the simulator panel uses too).
  */
-export function weekShift(input: { asOf: ISODate; today: ISODate; coverage: { from: ISODate; to: ISODate } }): WeekShift {
-  const { asOf, today, coverage } = input
-  const gap = daysBetween(asOf, today)
-  const days = Math.floor(gap / 7) * 7
-  const rules = `the dates the built-in rules cover (${coverage.from} to ${coverage.to}: the law tables and the holiday list)`
-  if (today > coverage.to) throw new Error(`Today, ${today}, is after ${rules}, so reset cannot put a company on today. Use --no-shift to load it on its as-of date.`)
-  return { days, movedAsOf: addDays(asOf, days), rest: gap - days }
+export function weekShift(input: { asOf: ISODate; today: ISODate }): WeekShift {
+  return startDateFor(input.asOf, input.today)
 }
 
 /** A generated company as reset receives it (sim.ts reads it from its cache or generates it). */
@@ -206,7 +249,7 @@ export function resetCompany(
     const note = `Kept on its as-of date, ${asOf} (--no-shift). The app shows it on today's date; Settings > Data > Pretend today is shows ${asOf}.`
     return { db: generated.db, companyDate: asOf, generated, note }
   }
-  const plan = weekShift({ asOf, today, coverage: lawCoverage() })
+  const plan = weekShift({ asOf, today })
   const generated = generate(plan.movedAsOf)
   const on =
     plan.days === 0 ? `On its as-of date, ${asOf}` : `Generated as of ${plan.movedAsOf}, the last ${WEEKDAYS[new Date(`${asOf}T12:00:00Z`).getUTCDay()]} on or before today`
@@ -306,6 +349,20 @@ export function saveNameProblem(name: string): string | null {
 /** The workspace as the app's backup JSON (Settings > Data > Import reads it). */
 export function workspaceJson(db: unknown): string {
   return `${JSON.stringify(db, null, 2)}\n`
+}
+
+/**
+ * The lines play prints for a run's events: each headline (or every event) as "2027-03-04  Hired ...", or,
+ * with `quiet`, how many there were.
+ */
+export function eventLines(events: readonly SimEvent[], options: { all: boolean; quiet: boolean }): string[] {
+  const shown = options.all ? events : events.filter((e) => e.importance === 1)
+  if (options.quiet) {
+    const headlines = events.filter((e) => e.importance === 1).length
+    return [`${num(events.length)} events, ${num(headlines)} of them headlines.`]
+  }
+  if (!shown.length) return ['Nothing to tell: no events on these days.']
+  return shown.map((e) => `${e.day}  ${e.text}`)
 }
 
 /** One line per scenario for `list`. */

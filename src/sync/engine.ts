@@ -264,6 +264,12 @@ export type SyncEngine = {
   syncNow(): Promise<void>
   /** Resolves once no push or pull is running (timers may still be waiting). */
   whenIdle(): Promise<void>
+  /**
+   * A step that can replace this browser's copy or its connection is running: a connect flow (upload, the
+   * server's copy, replace, disconnect, sign out), the session check on start or the look at an emptied
+   * server. Such a step checks for a pretend date only when it starts.
+   */
+  busy(): boolean
   /** Sends queued changes with fetch keepalive (page hiding or closing). */
   flush(): void
   checkServer(): Promise<CheckServerResult>
@@ -2892,6 +2898,7 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
       // they end: wait for all of them.
       for (let p = confirming ?? recheck ?? running; p; p = confirming ?? recheck ?? running) await p
     },
+    busy: () => exclusive > 0 || confirming !== null || recheck !== null,
     flush,
     checkServer,
     signIn,

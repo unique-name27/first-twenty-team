@@ -13,6 +13,8 @@ initSync()
 // Development only (docs/DEV.md): with `npm run stack`, signs this browser in to the dev server's sample
 // company. Vite replaces import.meta.env.DEV with false in a build, so the branch and the module go.
 if (import.meta.env.DEV) void import('./dev/autoconnect').then((m) => m.startAutoconnect())
+// The simulator panel at #sim (docs/DEV.md, "The simulator panel"), the same way: never in a build.
+if (import.meta.env.DEV) void import('./dev/sim/register').then((m) => m.registerSimulator())
 
 /**
  * The server's offline worker (docs/SERVER.md): keeps the app page, so the app still opens from this
