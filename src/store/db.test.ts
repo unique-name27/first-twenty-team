@@ -1,7 +1,8 @@
 // The sample company's moving dates: only loadSample moves them, so the banner's promise holds only
-// while a loaded copy still matches this week (r2-39). And migrate's upgrade of role template names saved
-// before posting qualifiers moved to the hint.
-import { afterEach, describe, expect, it } from 'vitest'
+// while a loaded copy still matches this week (r2-39). migrate's upgrade of role template names saved
+// before posting qualifiers moved to the hint. And holdPersisting, which keeps a simulated company out of
+// this browser's saved copy.
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RENAMED_ROLE_TEMPLATES } from '@/data/roleTemplates'
 import type { DB } from '@/domain/types'
 import { addDays, setClockOverride } from '@/lib/dates'
@@ -99,5 +100,66 @@ describe('migrate: role template names from before qualifiers moved to the hint'
     const db = loadSample()
     const bare = { ...db, settings: { ...db.settings, roleTemplates: undefined } } as unknown as DB
     expect(migrate(bare).settings).toBe(bare.settings)
+  })
+})
+
+describe('holdPersisting (the simulator shows a simulated company that is never saved)', () => {
+  /** db.ts as a browser loads it: a window, a localStorage and timers this test moves. */
+  async function browserStore() {
+    vi.resetModules()
+    vi.useFakeTimers()
+    const saved = new Map<string, string>()
+    const listeners: Array<() => void> = []
+    vi.stubGlobal('localStorage', { getItem: (k: string) => saved.get(k) ?? null, setItem: (k: string, v: string) => void saved.set(k, v), removeItem: (k: string) => void saved.delete(k) })
+    vi.stubGlobal('window', { addEventListener: (type: string, fn: () => void) => type === 'beforeunload' && listeners.push(fn) })
+    const mod = await import('./db')
+    const stored = () => {
+      const raw = saved.get(mod.STORAGE_KEY)
+      return raw ? (JSON.parse(raw) as DB).company.name : null
+    }
+    const rename = (name: string) =>
+      mod.useDB.getState().mutate(`Rename to ${name}`, (d) => {
+        d.company.name = name
+      })
+    return { ...mod, stored, rename, unload: () => listeners.forEach((fn) => fn()) }
+  }
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    vi.resetModules()
+  })
+
+  it('writes a waiting save first, then saves nothing while held, on the way out included', async () => {
+    const s = await browserStore()
+    s.rename('Before the hold')
+    const release = s.holdPersisting()
+    // The save that was waiting went out at once: the saved copy is the workspace from before the hold.
+    expect(s.stored()).toBe('Before the hold')
+    expect(s.persistingHeld()).toBe(true)
+    s.useDB.setState({ db: { ...s.useDB.getState().db, company: { ...s.useDB.getState().db.company, name: 'Simulated' } } })
+    s.rename('Edited while held')
+    vi.advanceTimersByTime(5000)
+    s.unload()
+    expect(s.stored()).toBe('Before the hold')
+    release()
+    expect(s.persistingHeld()).toBe(false)
+    // Releasing saves nothing by itself; the next change saves as usual.
+    vi.advanceTimersByTime(5000)
+    expect(s.stored()).toBe('Before the hold')
+    s.rename('After the hold')
+    vi.advanceTimersByTime(400)
+    expect(s.stored()).toBe('After the hold')
+  })
+
+  it('counts holds, and a release called twice lets go of its own hold only', async () => {
+    const s = await browserStore()
+    const a = s.holdPersisting()
+    const b = s.holdPersisting()
+    a()
+    a()
+    expect(s.persistingHeld()).toBe(true)
+    b()
+    expect(s.persistingHeld()).toBe(false)
   })
 })

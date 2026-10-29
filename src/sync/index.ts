@@ -50,7 +50,7 @@ import { useEffect } from 'react'
 import { useStore } from 'zustand'
 import type { DB } from '@/domain/types'
 import { getClockOverride } from '@/lib/dates'
-import { applyLoadChanges, loadSample, migrate, stopPersisting, STORAGE_KEY, useDB } from '@/store/db'
+import { applyLoadChanges, loadSample, migrate, persistingHeld, stopPersisting, STORAGE_KEY, useDB } from '@/store/db'
 import { type AccountLoader, createAccountLoader, type ServerAccount } from './account'
 import { type AcceptInviteInput, type ApiFailure, createApi, describeFailure, type LoginOptions, type SignupInput, type SyncApi } from './api'
 import { type AssistantApi, createAssistantApi, type ChatHandlers, type ChatInput } from './assistant'
@@ -309,8 +309,10 @@ export function getSyncEngine(): SyncEngine {
     // 'Pretend today is' (Settings, Data): while it is on, the connection holds and nothing syncs.
     clockOverride: getClockOverride,
     // The engine saves the store itself (db.ts waits 400 ms) right before it records server progress.
+    // Never while the store's saving is held (holdPersisting): the store then shows a workspace that must
+    // not be saved, such as a simulated company.
     persistStore: () => {
-      if (!storage) return false
+      if (!storage || persistingHeld()) return false
       try {
         storage.setItem(STORAGE_KEY, JSON.stringify(useDB.getState().db))
         return true
