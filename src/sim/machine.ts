@@ -55,11 +55,11 @@ import {
 import { hasHolidaysIn, rolloverHolidays } from '@/domain/holidays'
 import { type InboxOp, inboxItems, taskOwnerId } from '@/domain/inbox'
 import { currentJob, leaveEligibility } from '@/domain/lifecycle'
-import { bandFor, fullTimeEquivalentBase } from '@/domain/pay'
+import { bandFor, fullTimeEquivalentBase, planSlotStatus } from '@/domain/pay'
 import { hasPaidPeople, payCalendar, payRunPrep, runForPeriod } from '@/domain/payrun'
 import { employedOn, incomingOn, isEmployedOn } from '@/domain/people'
 import { checkRequest, policiesFor, serviceWait } from '@/domain/timeoff'
-import type { Candidate, DB, ID, Job, OutcomeReason, Person, Rating, Role } from '@/domain/types'
+import type { Candidate, DB, ID, Job, OutcomeReason, Person, PlanSlot, Rating, Role } from '@/domain/types'
 import { effectiveDatePresets, hiringManagerForSlot, proposedBase } from '@/features/comp/helpers'
 import { proposedSlots } from '@/features/hiring/interviews/conflicts'
 import { defaultStepFor, formatForStage } from '@/features/hiring/interviews/logic'
@@ -1247,9 +1247,14 @@ export class TimeMachine implements MachineHost {
   }
 }
 
-/** Plan lines planned, open or with an offer out: roles the company means to fill. */
+const UNFILLED = new Set<PlanSlot['status']>(['planned', 'open', 'offer'])
+
+/**
+ * Plan lines planned, open or with an offer out: roles the company means to fill. Read the way Comp and
+ * plan reads them (planSlotStatus), so a line whose job was closed without hiring counts as cut.
+ */
 function unfilledPlan(db: DB): number {
-  return db.plan.filter((s) => s.status === 'planned' || s.status === 'open' || s.status === 'offer').length
+  return db.plan.filter((s) => UNFILLED.has(planSlotStatus(db, s))).length
 }
 
 /** Empties a set and fills it with `values`, in their order. */

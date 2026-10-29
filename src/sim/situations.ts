@@ -14,7 +14,7 @@
 import { z } from 'zod'
 import { makeRng, type Rng } from '@/data/seed/hiring/rng'
 import { DEFAULT_ROLE_TEMPLATES } from '@/data/starterRoleTemplates'
-import { businessDayOnOrAfter, departmentForFamily, roleTemplates } from '@/domain/hiring'
+import { businessDayOnOrAfter, closeOutMessage, departmentForFamily, roleTemplates } from '@/domain/hiring'
 import { currentJob, leaveEligibility } from '@/domain/lifecycle'
 import { bandFor, fullTimeEquivalentBase } from '@/domain/pay'
 import { fullName, isEmployedOn } from '@/domain/people'
@@ -506,7 +506,10 @@ export class Situations implements DayHooks {
     if (s.closeJobs) {
       for (const job of host.db.jobs) {
         if (!(job.status === 'open' || job.status === 'on_hold' || job.status === 'draft') || (s.departmentId && job.departmentId !== s.departmentId)) continue
-        if (this.attempt(host, s, `closing ${job.title}`, () => host.act(host.admin, AT, 'setJobStatus', { jobId: job.id, status: 'closed' }))) closed += 1
+        if (!this.attempt(host, s, `closing ${job.title}`, () => host.act(host.admin, AT, 'setJobStatus', { jobId: job.id, status: 'closed' }))) continue
+        closed += 1
+        // The job page then offers to close out who is still waiting (CloseOutSheet.tsx), and the founder does.
+        if (closeOutMessage(host.db, job.id)?.applicationIds.length) this.attempt(host, s, `closing out ${job.title}`, () => host.act(host.admin, AT, 'closeOutRemaining', { jobId: job.id, notified: true }))
       }
     }
     const parts = [`Layoff${deptName ? ` in ${deptName}` : ''}: ${gone.length ? gone.join(', ') : 'nobody'}, last day ${when(host, lastDay)}`]

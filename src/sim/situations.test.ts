@@ -133,6 +133,21 @@ describe('on seed-8, 60 days', () => {
       expect.objectContaining({ skipped: true, text: expect.stringMatching(/^Skipped the layoff: it names 40 people, but only \d besides the founder work here/) }),
     ])
   })
+
+  it('a layoff that closes the open jobs tells their candidates, and the founder keeps planning roles', () => {
+    const sim = run('seed-8', 21, [{ id: 'close', on: '2026-10-05', kind: 'layoff', count: 1, closeJobs: true }])
+    const closed = at820(sim, '2026-10-05').filter((t) => t.action === 'setJobStatus')
+    expect(closed.length).toBe(1)
+    const jobId = args<{ jobId: string }>(closed[0]).jobId
+    expect(at820(sim, '2026-10-05').map((t) => t.action)).toContain('closeOutRemaining')
+    expect(sim.db.applications.filter((a) => a.jobId === jobId && a.status === 'active')).toEqual([])
+    // The closed job's plan line reads as cut (as Comp and plan shows it), so the Monday's planning still
+    // adds a role at 08:30, and it opens as a job.
+    const after = sim.trace.filter((t) => t.day >= '2026-10-05' && (t.action === 'addPlanLine' || t.action === 'openJobFromPlan'))
+    expect(after.map((t) => `${t.day} ${t.time} ${t.action}`)[0]).toBe('2026-10-05 08:30 addPlanLine')
+    expect(after.map((t) => t.action)).toContain('openJobFromPlan')
+    expect(integrityFailures(sim.db)).toEqual([])
+  })
 })
 
 describe('on full-20, 90 days', () => {
