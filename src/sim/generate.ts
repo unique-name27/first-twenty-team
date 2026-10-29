@@ -37,6 +37,7 @@ import { defaultStepFor, formatForStage } from '@/features/hiring/interviews/log
 import { addBusinessDays, addDays, addMonths, getClockOverride, type ISODate, isUsableDate, pacificDateOf, setClockOverride } from '@/lib/dates'
 import { withRunContext } from '@/lib/runContext'
 import { type ActionName, type ArgsOf, applyAction, type ResultOf, type SimState, type TraceLine } from './actions'
+import { profileFor, slug } from './profiles'
 import { type CompanyPlan, type PayPeriodDay, type RolePlan, SCENARIOS, type Scenario, type ScenarioName } from './scenarios'
 import { summarize } from './summary'
 
@@ -174,30 +175,6 @@ type RoleState = {
 }
 
 type Who = { id: ID; as: Role }
-
-/** The profile (titles, employers, scorecard notes in pools.ts) for a role template. */
-export function profileFor(plan: Pick<RolePlan, 'template' | 'title'>): ProfileKey {
-  if (plan.title === 'Office coordinator') return 'coord'
-  const by: Record<string, ProfileKey> = {
-    'rt-fullstack': 'eng',
-    'rt-ml': 'ml',
-    'rt-designer': 'design',
-    'rt-pm': 'pm',
-    'rt-ae-founding': 'ae',
-    'rt-csm': 'csm',
-    'rt-solutions': 'solutions',
-    'rt-finance': 'acct',
-    'rt-ops-people': 'ops',
-  }
-  return by[plan.template] ?? 'eng'
-}
-
-export function slug(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^a-z0-9]+/g, '')
-}
 
 /** A 32-bit seed for the story's random choices from the scenario name and seed (FNV-1a). */
 function storySeed(name: string, seed: number): number {
