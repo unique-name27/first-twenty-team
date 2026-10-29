@@ -169,3 +169,21 @@ it("adds next year's company holidays in December when they are missing, as roll
   expect(r.report.holidaysAdded).toEqual([2027])
   expect(r.trace.filter((t) => t.action === 'inboxOp').map((t) => [t.day, t.args])).toEqual([['2026-12-01', { op: { type: 'add_holidays', year: 2027 } }]])
 })
+
+describe('job posts at 15 people', () => {
+  it("adds the role's pay range to a draft the plan is waiting on, posts it, and keeps hiring", () => {
+    // The sample has a Product manager draft with no pay range, and 14 people plus 2 starting: from 15 the
+    // app holds a post without a range, and the draft holds the role's place in the plan.
+    const sample = company('ledgerlark')
+    const draft = sample.jobs.find((j) => j.status === 'draft' && (j.payMin == null || j.payMax == null))
+    expect(draft, 'the sample has a draft without a pay range').toBeDefined()
+    const { db } = lived(sample, '2026-10-09', '2027-04-09')
+    const job = db.jobs.find((j) => j.id === draft!.id)!
+    expect(job.status).not.toBe('draft')
+    const band = db.bands.find((b) => b.familyId === job.familyId && b.levelId === job.levelId)!
+    expect([job.payMin, job.payMax]).toEqual([band.min, band.max])
+    expect(db.activity.some((a) => a.entityId === job.id && a.kind === 'job_updated')).toBe(true)
+    expect(db.activity.some((a) => a.entityId === job.id && a.kind === 'job_posted')).toBe(true)
+    expect(integrityFailures(db)).toEqual([])
+  })
+})

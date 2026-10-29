@@ -731,11 +731,25 @@ const backfill = action({
  */
 const editJob = action({
   name: 'editJob',
-  args: z.strictObject({ jobId: id, panelIds: z.array(id).optional(), interviewers: z.record(z.string(), z.array(id).min(1)).optional() }),
+  args: z.strictObject({
+    jobId: id,
+    panelIds: z.array(id).optional(),
+    interviewers: z.record(z.string(), z.array(id).min(1)).optional(),
+    // Edit details > Pay range, as JobEditSheet saves it.
+    payMin: money.optional(),
+    payMax: money.optional(),
+  }),
   run(d, a) {
     const job = must(d.jobs.find((j) => j.id === a.jobId), `No job ${a.jobId}.`)
     const same = (x: readonly string[], y: readonly string[]) => x.length === y.length && x.every((v, i) => v === y[i])
     let changed = false
+    for (const k of ['payMin', 'payMax'] as const) {
+      const v = a[k]
+      if (v === undefined || job[k] === v) continue
+      job[k] = v
+      changed = true
+    }
+    if (job.payMin != null && job.payMax != null && job.payMin > job.payMax) throw new Error('The pay range minimum is above the maximum.')
     if (a.panelIds && !same(job.panelIds, a.panelIds)) {
       job.panelIds = [...a.panelIds]
       changed = true

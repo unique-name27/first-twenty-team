@@ -611,6 +611,9 @@ export class TimeMachine implements MachineHost {
     for (const slot of this.db.plan) {
       if (slot.status !== 'planned' || addDays(slot.targetStart, -LEAD_DAYS) > this.day) continue
       const live = slot.jobId ? this.db.jobs.find((j) => j.id === slot.jobId) : undefined
+      // A job still a draft (held for a pay range, or drafted before the run) is posted once it can be: a draft
+      // keeps the role's place in the plan, so leaving it would stop all hiring. One waiting for approval waits.
+      if (live?.status === 'draft' && live.requisition?.status !== 'pending') this.readyAndPost(live.id, '08:50')
       if (live && (live.status === 'draft' || live.status === 'open' || live.status === 'on_hold')) continue
       this.openFromPlan(slot.id, '08:45', '08:50')
     }
@@ -637,10 +640,22 @@ export class TimeMachine implements MachineHost {
     for (const s of job.interviewPlan) if (!s.interviewerIds.length) interviewers[s.id] = [hm]
     const panelIds = job.panelIds.includes(hm) ? job.panelIds : [hm, ...job.panelIds]
     if (panelIds !== job.panelIds || Object.keys(interviewers).length) this.act(this.admin, time, 'editJob', { jobId, panelIds: [...panelIds], interviewers })
-    if (postingBlockReason(this.db, jobId, this.day)) {
+    let block = postingBlockReason(this.db, jobId, this.day)
+    if (block && (job.payMin == null || job.payMax == null)) {
+      // The post waits for a pay range (15 or more people): Edit details > Pay range from the role's band, as
+      // the job page asks the founder to, then Mark posted.
+      const band = effectiveBand(this.db, job.familyId, job.levelId)
+      if (band) {
+        this.act(this.admin, time, 'editJob', { jobId, payMin: job.payMin ?? band.min, payMax: job.payMax ?? band.max })
+        block = postingBlockReason(this.db, jobId, this.day)
+      }
+    }
+    const now = this.db.jobs.find((j) => j.id === jobId)
+    if (block || (now && now.payMin != null && now.payMax != null && now.payMin > now.payMax)) {
       this.heldPostings.add(jobId)
       return
     }
+    this.heldPostings.delete(jobId)
     this.act(this.admin, time, 'markPosted', { jobId })
   }
 
