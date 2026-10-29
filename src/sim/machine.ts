@@ -239,7 +239,7 @@ export type AdvanceReport = {
 // ---------------------------------------------------------------------------------------------
 
 /** Days from opening a role to its target start (the generator's jobs open six to seven weeks ahead). */
-const LEAD_DAYS = 45
+export const LEAD_DAYS = 45
 
 /** Someone acting, and the Viewing-as mode they act in. */
 export type Who = { id: ID; as: Role }
@@ -268,9 +268,18 @@ export interface MachineHost {
   readonly admin: Who
   act<N extends ActionName>(who: Who, time: string, name: N, args: ArgsOf<N>): ResultOf<N>
   readyAndPost(jobId: ID, time: string): void
+  /** Adds a role to the headcount plan, drawn with `rng`; null when no role template fits. */
+  planRole(rng: Rng, time: string, opts?: PlanRoleOptions): ID | null
+  /** Opens a planned role as a job now, as openPlannedRoles does when its start draws near, and posts it. */
+  openFromPlan(planSlotId: ID, openAt: string, postAt: string): ID
+  /** Employees, people starting later and roles in the plan not yet filled. */
+  headcountWithPlan(): number
   away(person: Person): boolean
   staff(): Person[]
 }
+
+/** Where a planned role goes: a department's role templates only, and a target start no later than a date. */
+export type PlanRoleOptions = { departmentId?: ID; latestStart?: ISODate }
 
 /** The machine between days: enough to put it back there (restore); the caller keeps the workspace. */
 export type MachineSnapshot = {
@@ -312,10 +321,10 @@ export type MachineOptions = {
 const LIVE_OFFER = new Set(['draft', 'awaiting_approval', 'approved', 'sent', 'accepted'])
 /** Stage kinds that are not interviews: review, offer and hired. */
 const NOT_INTERVIEW = new Set(['new', 'offer', 'hired'])
-const RESIGN_REASONS = ['New job', 'Relocating', 'Career change', 'Personal reasons']
+export const RESIGN_REASONS = ['New job', 'Relocating', 'Career change', 'Personal reasons']
 
 /** A 32-bit seed for the advance's random choices (FNV-1a), apart from the run's id stream. */
-function storySeed(text: string): number {
+export function storySeed(text: string): number {
   let h = 0x811c9dc5
   for (const ch of text) h = Math.imul(h ^ ch.charCodeAt(0), 0x01000193)
   return h >>> 0
@@ -555,30 +564,65 @@ export class TimeMachine implements MachineHost {
 
   /** Monday: the founder keeps `openRoles` roles in the plan while the company is under its size. */
   private planRoles(): void {
+    if (this.hooks?.frozen(this.day)) return
+    const grow = this.hooks?.growTo(this.day)
+    if (grow) {
+      // A push: as many roles as it takes to reach its headcount, starting by its date.
+      while (this.headcountWithPlan() < grow.headcount && this.planRole(this.rng, '08:30', { departmentId: grow.departmentId, latestStart: grow.by })) {
+        // planRole added one.
+      }
+      return
+    }
     const p = this.policy
     if (p.openRoles <= 0) return
     const db = this.db
-    const unfilled = db.plan.filter((s) => s.status === 'planned' || s.status === 'open' || s.status === 'offer').length
+    const unfilled = unfilledPlan(db)
     if (unfilled >= p.openRoles) return
     if (employedOn(db, this.day).length + incomingOn(db, this.day).length + unfilled >= p.maxHeadcount) return
-    const templates = roleTemplates(db).length ? roleTemplates(db) : DEFAULT_ROLE_TEMPLATES
-    const t = this.rng.pick(templates)
-    const departmentId = db.departments.some((d) => d.id === t.departmentId) ? t.departmentId : departmentForFamily(db, t.familyId)
+    this.planRole(this.rng, '08:30')
+  }
+
+  /** Employees, people starting later and roles in the plan not yet filled. */
+  headcountWithPlan(): number {
+    return employedOn(this.db, this.day).length + incomingOn(this.db, this.day).length + unfilledPlan(this.db)
+  }
+
+  /**
+   * Comp and plan > Plan, Add a line, for a role template drawn with `rng` (from a department's templates
+   * when one is given), starting LEAD_DAYS and up to two weeks out, at the band's midpoint.
+   */
+  planRole(rng: Rng, time: string, opts: PlanRoleOptions = {}): ID | null {
+    const db = this.db
+    const all = roleTemplates(db).length ? roleTemplates(db) : DEFAULT_ROLE_TEMPLATES
+    const departmentOf = (t: (typeof all)[number]) => (db.departments.some((d) => d.id === t.departmentId) ? t.departmentId : departmentForFamily(db, t.familyId))
+    const templates = opts.departmentId ? all.filter((t) => departmentOf(t) === opts.departmentId) : all
+    if (!templates.length) return null
+    const t = rng.pick(templates)
+    const departmentId = departmentOf(t)
     const band = effectiveBand(db, t.familyId, t.levelId)
-    const targetStart = businessDayOnOrAfter(addDays(this.day, LEAD_DAYS + this.rng.int(0, 14)), this.holidays)
-    this.act(this.admin, '08:30', 'addPlanLine', { title: t.name, departmentId, familyId: t.familyId, levelId: t.levelId, targetStart, ...(band ? { budgetBase: band.mid } : {}) })
+    let targetStart = businessDayOnOrAfter(addDays(this.day, LEAD_DAYS + rng.int(0, 14)), this.holidays)
+    if (opts.latestStart && targetStart > opts.latestStart) targetStart = businessDayOnOrAfter(opts.latestStart < this.day ? this.day : opts.latestStart, this.holidays)
+    return this.act(this.admin, time, 'addPlanLine', { title: t.name, departmentId, familyId: t.familyId, levelId: t.levelId, targetStart, ...(band ? { budgetBase: band.mid } : {}) })
   }
 
   /** A planned role opens as a job once its target start is LEAD_DAYS away (or already past). */
   private openPlannedRoles(): void {
+    if (this.hooks?.frozen(this.day)) return
     for (const slot of this.db.plan) {
       if (slot.status !== 'planned' || addDays(slot.targetStart, -LEAD_DAYS) > this.day) continue
       const live = slot.jobId ? this.db.jobs.find((j) => j.id === slot.jobId) : undefined
       if (live && (live.status === 'draft' || live.status === 'open' || live.status === 'on_hold')) continue
-      const hm = hiringManagerForSlot(this.db, slot, this.admin.id, this.day)
-      const jobId = this.act(this.admin, '08:45', 'openJobFromPlan', { planSlotId: slot.id, hiringManagerId: hm })
-      this.readyAndPost(jobId, '08:50')
+      this.openFromPlan(slot.id, '08:45', '08:50')
     }
+  }
+
+  /** Comp and plan > Plan, Open job, with the hiring manager the plan line suggests; then Edit details and Mark posted. */
+  openFromPlan(planSlotId: ID, openAt: string, postAt: string): ID {
+    const slot = this.db.plan.find((s) => s.id === planSlotId)
+    const hm = slot ? hiringManagerForSlot(this.db, slot, this.admin.id, this.day) : this.admin.id
+    const jobId = this.act(this.admin, openAt, 'openJobFromPlan', { planSlotId, hiringManagerId: hm })
+    this.readyAndPost(jobId, postAt)
+    return jobId
   }
 
   /**
@@ -1045,7 +1089,7 @@ export class TimeMachine implements MachineHost {
         noticeGivenOn: this.day,
         rehireEligible: true,
       })
-      if (!this.rng.chance(this.policy.backfillRate)) continue
+      if (!this.rng.chance(this.policy.backfillRate) || this.hooks?.frozen(this.day)) continue
       const jobId = this.act(this.admin, '11:05', 'openBackfill', { personId: person.id })
       this.readyAndPost(jobId, '11:10')
     }
@@ -1201,6 +1245,11 @@ export class TimeMachine implements MachineHost {
       compliance: { checks: this.counts.checks, began: this.counts.began, openActions: this.counts.openActions },
     }
   }
+}
+
+/** Plan lines planned, open or with an offer out: roles the company means to fill. */
+function unfilledPlan(db: DB): number {
+  return db.plan.filter((s) => s.status === 'planned' || s.status === 'open' || s.status === 'offer').length
 }
 
 /** Empties a set and fills it with `values`, in their order. */

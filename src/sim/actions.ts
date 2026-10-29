@@ -36,6 +36,7 @@ import {
   rejectApplication,
   roleTemplates,
   scheduleInterview,
+  setJobStatus,
   submitForApproval,
   submitScorecard,
   withdrawApplication,
@@ -398,6 +399,18 @@ const postJob = action({
   args: z.strictObject({ jobId: id }),
   run(d, a, ctx) {
     ok(markPosted(d, a.jobId, { date: ctx.day }))
+  },
+})
+
+/**
+ * A job's status menu (JobPage.tsx): Pause (on hold), Mark filled, Close without hiring or Reopen as draft.
+ * Resume posting is Mark posted (markPosted).
+ */
+const jobStatus = action({
+  name: 'setJobStatus',
+  args: z.strictObject({ jobId: id, status: z.enum(['draft', 'on_hold', 'filled', 'closed']) }),
+  run(d, a, ctx) {
+    must(setJobStatus(d, a.jobId, a.status, { date: ctx.day }), `The job ${a.jobId} is missing or already ${a.status.replace('_', ' ')}.`)
   },
 })
 
@@ -859,6 +872,7 @@ const LIST = [
   planLine,
   newJob,
   postJob,
+  jobStatus,
   quickAdd,
   moveTo,
   schedule,

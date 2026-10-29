@@ -249,6 +249,17 @@ describe('applyAction', () => {
     expect(sim.db.plan[0]).toMatchObject({ status: 'open', jobId: job.id })
   })
 
+  it("changes a job's status as its status menu does, and Mark posted resumes a job on hold", () => {
+    const sim = fresh()
+    const jobId = inRun(() => postedJob(sim))
+    inRun(() => applyAction(sim, 'setJobStatus', { jobId, status: 'on_hold' }, ADMIN))
+    expect(sim.db.jobs.find((j) => j.id === jobId)?.status).toBe('on_hold')
+    expect(() => inRun(() => applyAction(sim, 'setJobStatus', { jobId, status: 'on_hold' }, ADMIN))).toThrow(`The job ${jobId} is missing or already on hold.`)
+    inRun(() => applyAction(sim, 'markPosted', { jobId }, ADMIN))
+    inRun(() => applyAction(sim, 'setJobStatus', { jobId, status: 'closed' }, ADMIN))
+    expect(sim.db.jobs.find((j) => j.id === jobId)).toMatchObject({ status: 'closed', closedOn: ADMIN.day })
+  })
+
   it('applies only the inbox ops an admin clears with one button, refusing as the inbox does', () => {
     const sim = fresh()
     inRun(() => {
