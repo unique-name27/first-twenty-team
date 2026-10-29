@@ -101,7 +101,11 @@ function RunFilesSheet({ open, onClose }: { open: boolean; onClose: () => void }
           <p className="text-[14px] text-ink-3">Start a run first.</p>
         ) : (
           <>
-            {fromCompany && <p className="text-[13.5px] text-ink-3">It starts from this company, so the file includes the company. Share a bug report instead: it leaves the company out.</p>}
+            {fromCompany && (
+              <p className="text-[13.5px] text-ink-3">
+                It starts from this company, so the file includes the company and is not kept in this browser. Share a bug report instead: it leaves the company out.
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
@@ -124,24 +128,26 @@ function RunFilesSheet({ open, onClose }: { open: boolean; onClose: () => void }
                 Download run file
               </Button>
             </div>
-            <form
-              className="flex flex-wrap items-end gap-2"
-              onSubmit={(e) => {
-                e.preventDefault()
-                const done = saveRun(browserStorage(), name, current, new Date().toISOString())
-                if (!done.ok) return toast({ text: done.message, tone: 'bad' })
-                setSaved(done.list)
-                setName('')
-                toast({ text: 'Kept in this browser.' })
-              }}
-            >
-              <Field label="Name" className="min-w-0 flex-[1_1_12rem]">
-                {(id) => <TextInput id={id} value={name} onChange={(e) => setName(e.target.value)} placeholder="Freeze in March" />}
-              </Field>
-              <Button type="submit" size="sm" icon="check">
-                Keep in this browser
-              </Button>
-            </form>
+            {!fromCompany && (
+              <form
+                className="flex flex-wrap items-end gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const done = saveRun(browserStorage(), name, current, new Date().toISOString())
+                  if (!done.ok) return toast({ text: done.message, tone: 'bad' })
+                  setSaved(done.list)
+                  setName('')
+                  toast({ text: 'Kept in this browser.' })
+                }}
+              >
+                <Field label="Name" className="min-w-0 flex-[1_1_12rem]">
+                  {(id) => <TextInput id={id} value={name} onChange={(e) => setName(e.target.value)} placeholder="Freeze in March" />}
+                </Field>
+                <Button type="submit" size="sm" icon="check">
+                  Keep in this browser
+                </Button>
+              </form>
+            )}
           </>
         )}
       </section>

@@ -276,8 +276,11 @@ export const STORAGE_PREFIX = 'ft-dev-simulator'
 export const SAVED_RUNS_KEY = `${STORAGE_PREFIX}:runs`
 /** The list keeps this many runs, newest first. */
 export const SAVED_RUNS_MAX = 8
-/** A run bigger than this (a start from a big company) is not kept in the list: download it instead. */
-export const SAVED_RUN_MAX_CHARS = 400_000
+/**
+ * The most the list takes of this browser's storage, which the real company's saved copy needs (about 5 MB a
+ * site). Scenario and sample runs are a few KB each; a run that starts from this company is never kept.
+ */
+export const SAVED_RUNS_MAX_CHARS = 100_000
 
 export type SavedRun = { name: string; savedAt: string; run: Record<string, unknown> }
 
@@ -294,13 +297,30 @@ export function loadSavedRuns(storage: StorageLike | null): SavedRun[] {
   }
 }
 
-/** Keeps a run under a name (replacing one with the same name), or says why it could not. */
+/** A run that starts from a whole company (this company), not from a scenario or the sample. */
+function carriesCompany(run: Record<string, unknown>): boolean {
+  return (run.start as { kind?: unknown } | undefined)?.kind === 'workspace'
+}
+
+/**
+ * Keeps a run under a name (replacing one with the same name), or says why it could not. A run that starts
+ * from this company is refused: it carries the company, which would then outlive Remove this browser's
+ * data and crowd the company's own saved copy. Older runs drop off to keep the list small.
+ */
 export function saveRun(storage: StorageLike | null, name: string, run: Record<string, unknown>, at: string): { ok: true; list: SavedRun[] } | { ok: false; message: string } {
   const clean = name.trim()
   if (!clean) return { ok: false, message: 'Name the run first.' }
+  if (carriesCompany(run)) return { ok: false, message: 'This run starts from this company and carries it, so it is not kept in this browser. Download the run file instead.' }
   const size = JSON.stringify(run).length
-  if (size > SAVED_RUN_MAX_CHARS) return { ok: false, message: `This run carries a company (${fmtSize(size)}), too big for the list in this browser. Download it instead.` }
-  const list = [{ name: clean, savedAt: at, run }, ...loadSavedRuns(storage).filter((r) => r.name !== clean)].slice(0, SAVED_RUNS_MAX)
+  if (size > SAVED_RUNS_MAX_CHARS) return { ok: false, message: `This run is too big for the list in this browser (${fmtSize(size)}). Download it instead.` }
+  const list: SavedRun[] = [{ name: clean, savedAt: at, run }]
+  let total = size
+  for (const r of loadSavedRuns(storage)) {
+    if (r.name === clean || carriesCompany(r.run) || list.length >= SAVED_RUNS_MAX) continue
+    total += JSON.stringify(r.run).length
+    if (total > SAVED_RUNS_MAX_CHARS) break
+    list.push(r)
+  }
   try {
     if (!storage) throw new Error('no storage')
     storage.setItem(SAVED_RUNS_KEY, JSON.stringify(list))

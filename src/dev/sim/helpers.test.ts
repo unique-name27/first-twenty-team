@@ -19,6 +19,7 @@ import {
   removeSavedRun,
   SAVED_RUNS_KEY,
   SAVED_RUNS_MAX,
+  SAVED_RUNS_MAX_CHARS,
   saveRun,
   shareableRunFile,
   simFileName,
@@ -167,13 +168,27 @@ describe('run files', () => {
     saveRun(storage, 'run 4', { ...run, seed: 2 }, 'later')
     expect(loadSavedRuns(storage).filter((r) => r.name === 'run 4')).toEqual([{ name: 'run 4', savedAt: 'later', run: { ...run, seed: 2 } }])
     expect(removeSavedRun(storage, 'run 4').some((r) => r.name === 'run 4')).toBe(false)
-    expect(saveRun(storage, 'big', { db: 'x'.repeat(500_000) }, 'now')).toMatchObject({ ok: false, message: expect.stringMatching(/too big for the list/) })
+    expect(saveRun(storage, 'big', { db: 'x'.repeat(SAVED_RUNS_MAX_CHARS) }, 'now')).toMatchObject({ ok: false, message: expect.stringMatching(/too big for the list/) })
     const refusing = { getItem: () => null, setItem: () => { throw new Error('full') } }
     expect(saveRun(refusing, 'a', run, 'now')).toMatchObject({ ok: false, message: expect.stringMatching(/did not keep it/) })
     expect(removeSavedRun(refusing, 'a')).toEqual([])
     data.set(SAVED_RUNS_KEY, 'not json')
     expect(loadSavedRuns(storage)).toEqual([])
     expect(loadSavedRuns(null)).toEqual([])
+  })
+
+  it('never keeps a run that carries this company, and keeps the list small, dropping the oldest', () => {
+    const data = new Map<string, string>()
+    const storage = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) }
+    const company = { version: 1, start: { kind: 'workspace', date: '2026-10-28', db: { people: [] } }, until: '2027-10-28' }
+    expect(saveRun(storage, 'mine', company, 'now')).toMatchObject({ ok: false, message: expect.stringMatching(/^This run starts from this company/) })
+    expect(data.has(SAVED_RUNS_KEY)).toBe(false)
+    // A list written before this rule drops its company runs on the next save.
+    data.set(SAVED_RUNS_KEY, JSON.stringify([{ name: 'old', savedAt: 't0', run: company }]))
+    const third = { version: 1, start: { kind: 'sample' }, until: '2027-01-01', pad: 'x'.repeat(Math.floor(SAVED_RUNS_MAX_CHARS / 3)) }
+    for (const n of ['a', 'b', 'c', 'd']) expect(saveRun(storage, n, third, n).ok).toBe(true)
+    expect(loadSavedRuns(storage).map((r) => r.name)).toEqual(['d', 'c'])
+    expect((data.get(SAVED_RUNS_KEY) ?? '').length).toBeLessThan(SAVED_RUNS_MAX_CHARS + 1000)
   })
 
   it('gives a kept company a new identity, never the sample', () => {

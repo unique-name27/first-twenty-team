@@ -626,8 +626,9 @@ in the run as a pace situation, so a saved run plays the same again.
 
 **Run files.** *Run files* copies or downloads the run as a run file (the same JSON `npm run sim -- play`
 reads, "Play a run" above), keeps up to eight small runs in this browser, and plays a run you paste or
-open. A run that starts from this company carries the company, so share a bug report instead: *Copy bug
-report* gives where it stopped, the last actions and a run file with the company left out. *Download
+open. A run that starts from this company carries the company, so this browser never keeps it (download
+it), and to share one, send a bug report instead: *Copy bug report* gives where it stopped, the last
+actions and a run file with the company left out. *Download
 company* saves the simulated workspace as a backup that Settings, Data, Import reads.
 
 **Open in the app.** Shows the simulated company in the app on its simulated date: Home, People, Hiring,
