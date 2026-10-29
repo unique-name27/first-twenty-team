@@ -549,10 +549,12 @@ const ROUTES = [
 
 /**
  * DEV-ONLY routes: registered by the development entry (server/src/dev/index.ts, which only npm run stack
- * starts), never by buildApp. POST /__dev/sql reads any company's data for npm run sql, so it answers only
- * on a loopback socket with the stack's secret, never with a session (server/src/dev/routes.test.ts).
+ * starts), never by buildApp. POST /__dev/sql reads any company's data for npm run sql, and GET and POST
+ * /__dev/workspace read and replace the stack's own company for npm run sim, so they answer only on a
+ * loopback socket with the stack's secret, never with a session (server/src/dev/routes.test.ts,
+ * server/src/dev/workspace.test.ts). The workspace routes refuse every company but the stack's own.
  */
-const DEV_ONLY_ROUTES = ['POST /__dev/sql']
+const DEV_ONLY_ROUTES = ['GET /__dev/workspace', 'POST /__dev/sql', 'POST /__dev/workspace']
 
 describe('tenant isolation', () => {
   let app: FastifyInstance
@@ -608,10 +610,22 @@ describe('tenant isolation', () => {
     await dev.ready()
     expect(registeredRoutes(dev).filter((r) => !r.startsWith('HEAD '))).toEqual([...ROUTES, ...DEV_ONLY_ROUTES].sort())
     for (const route of DEV_ONLY_ROUTES) {
-      const [method, url] = route.split(' ')
-      const res = await dev.inject({ method: method as 'POST', url, headers: { ...CSRF, cookie: a.cookie }, payload: { sql: 'SELECT id FROM workspaces' } })
+      const [method, url] = route.split(' ') as ['GET' | 'POST', string]
+      const payload = method === 'POST' ? { sql: 'SELECT id FROM workspaces', db: company('Alpha Co', 'alpha') } : undefined
+      const res = await dev.inject({ method, url, headers: { ...CSRF, cookie: a.cookie }, payload, remoteAddress: '127.0.0.1' })
       expect(res.statusCode, route).toBe(404)
     }
+    // Even with the secret, the workspace routes never read or replace another company.
+    const secret = { authorization: 'Bearer test-only-dev-tools-secret-0123456789abcdef' }
+    const before = await stateOf(b.workspace.id)
+    for (const res of [
+      await dev.inject({ method: 'GET', url: `/__dev/workspace?workspaceId=${b.workspace.id}`, headers: secret, remoteAddress: '127.0.0.1' }),
+      await dev.inject({ method: 'POST', url: '/__dev/workspace', headers: secret, payload: { workspaceId: b.workspace.id, db: company('Alpha Co', 'alpha') }, remoteAddress: '127.0.0.1' }),
+    ]) {
+      expect(res.statusCode).toBe(403)
+      expect(res.body).not.toMatch(/bravo/i)
+    }
+    expect(await stateOf(b.workspace.id)).toEqual(before)
   })
 
   it("never lets A read another company's data, whatever the request names", async () => {

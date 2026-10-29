@@ -220,11 +220,17 @@ export type DemoWriteOptions = {
   demoTotalBytes?: number
 }
 
+/** The copy a caller read before it replaces the workspace: its history and last seq (Snapshot). */
+export type ExpectedCopy = { historyId: string; seq: number }
+
 /**
  * Replaces everything in one transaction: deletes the workspace's rows and its whole change log,
  * inserts every record and document (each version is the seq of its log row), logs them as upserts,
  * moves reset_seq so older clients resync and starts a new history id.
  * Without confirmReplace it only runs on an empty server (409 'not_empty' otherwise).
+ * With `expected`, it runs only while the workspace is still the copy the caller read, the same history and
+ * no change since (409 'changed_meanwhile' otherwise), so a replace built from a read never drops an edit
+ * that arrived in between.
  * The first upload into a workspace still named PLACEHOLDER_SLUG takes its slug from the company's name.
  */
 export async function replaceWorkspace(
@@ -232,12 +238,15 @@ export async function replaceWorkspace(
   input: ValidWorkspace,
   userId: string | null,
   workspaceId = WORKSPACE_ID,
-  options: DemoWriteOptions = {},
+  options: DemoWriteOptions & { expected?: ExpectedCopy } = {},
 ): Promise<ReplaceResult> {
   return db.tx(async (q) => {
     const ws = await lockWorkspace(q, workspaceId)
     if (ws.initialized && !input.confirmReplace) {
       throw new HttpError(409, 'not_empty', 'The server already holds a workspace. Send confirmReplace: true to replace it.')
+    }
+    if (options.expected && (!ws.initialized || ws.historyId !== options.expected.historyId || ws.lastSeq !== options.expected.seq)) {
+      throw new HttpError(409, 'changed_meanwhile', 'The workspace changed after it was read. Read it again and try again.')
     }
     if (!ws.keep) {
       if (input.collections.reduce((n, c) => n + c.ids.length, 0) > LIMITS.recordsPerDemoWorkspace) throw workspaceFull()

@@ -140,14 +140,16 @@ export function codespaceAllowedHosts(env) {
 export const DEV_FS_DENY = ['.env', '.env.*', '*.{crt,pem,key,p12,pfx,cer,der}', '.npmrc', '.yarnrc.yml', '**/.git/**', '**/.data/**']
 
 /**
- * True when a process's command line (Linux /proc/<pid>/cmdline: arguments separated by NUL) runs this
- * stack: node with scripts/dev/stack.mjs as one argument. A shell wrapper (sh -c "node scripts/dev/stack.mjs",
- * as npm starts it) does not count, so the stack never mistakes its own parent for another stack.
+ * True when a process's command line (Linux /proc/<pid>/cmdline: arguments separated by NUL) holds a stack's
+ * data folder: node with scripts/dev/stack.mjs as one argument, or npm run sim (scripts/dev/sim.ts), which
+ * takes the stack's pid file while it writes to the folder with no stack running. A shell wrapper
+ * (sh -c "node scripts/dev/stack.mjs", as npm starts it) does not count, so the stack never mistakes its own
+ * parent for another stack.
  * @param {string} cmdline
  * @returns {boolean}
  */
 export function isStackCommandLine(cmdline) {
-  return cmdline.split('\0').some((arg) => /(^|[\\/])scripts[\\/]dev[\\/]stack\.mjs$/.test(arg))
+  return cmdline.split('\0').some((arg) => /(^|[\\/])scripts[\\/]dev[\\/](stack\.mjs|sim\.ts)$/.test(arg))
 }
 
 /**

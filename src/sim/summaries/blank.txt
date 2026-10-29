@@ -1,0 +1,16 @@
+Scenario blank: Start fresh as a solo founder: one person, the defaults, nothing else.
+Seed 1, as of 2026-10-09. No actions.
+Company: Northwick, founded 2026-10-09; Zainab Tan, Founder and CEO.
+Headcount on 2026-10-09: 1 employed, 0 starting later, 0 former.
+Departments: Executive 1.
+Non-exempt: 0. Part time: 0. Managers: 0.
+Starts by month: none.
+Separations: none.
+Open leave cases: none.
+Jobs: none.
+Candidates: 0. Applications: none.
+Interviews: none. Scorecards: 0 submitted, 0 owed.
+Offers: none. Grants: none.
+Pay runs submitted: none.
+Checklists: 0 (none); open tasks 0, due by 2026-10-09: 0.
+Records: 110, activity rows 0.

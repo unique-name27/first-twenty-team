@@ -9,6 +9,7 @@
     "dev": "node --max-semi-space-size=64 node_modules/vite/bin/vite.js --port 8826 --strictPort --host 127.0.0.1",
     "stack": "node scripts/dev/stack.mjs",
     "sql": "tsx scripts/dev/sql.ts",
+    "sim": "node --import tsx scripts/dev/sim.ts",
     "build": "node --max-semi-space-size=64 node_modules/vite/bin/vite.js build --mode single && node scripts/copy-single.mjs",
     "build:careers": "tsx scripts/careers/build.ts --out dist-careers",
     "preview": "node --max-semi-space-size=64 node_modules/vite/bin/vite.js preview --port 8827 --strictPort",

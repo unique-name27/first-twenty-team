@@ -26,7 +26,8 @@ src/
   app/        shell: App, Shell (rail, top bar), router, nav, routes, CommandPalette, useViewer
   ui/         shared UI kit (Button, Badge, Avatar, Field controls, Panel, Sheet, Modal, Tabs, DataTable,
               charts, Tally, Toast). Import from '@/ui'. Add new shared primitives here, not in features.
-  lib/        dates (today(), business days, formatting), format (money, pct, plural), id (newId)
+  lib/        dates (today(), business days, formatting), format (money, pct, plural), id (newId),
+              runContext (withRunContext: the same ids, times and actor on every run, for simulations and journeys)
   domain/     types.ts (THE data contract) + pure logic, one file or folder per area, each with tests
               (payrun/: pay calendar, schedule checks, pay run prep, CSV exports and Mark submitted, imported from '@/domain/payrun')
   store/      db.ts (the one store: useDB, mutate, undo, persistence), prefs.ts (per-device prefs)
@@ -42,12 +43,17 @@ src/
               the server's live pages), application.ts (the live apply form), careers.css
   dev/        development only, never in a build: the npm run stack auto sign-in (autoconnect.ts), imported
               by main.tsx behind import.meta.env.DEV (guard.test.ts checks it). Guide: docs/DEV.md
+  sim/        tests and tools only, never the app (guard.test.ts checks it): generated companies, built
+              through the same steps the screens take (generate.ts, actions.ts, scenarios.ts), and the time
+              machine that lives a workspace's next days the same way (advance.ts). Guide: docs/DEV.md
 scripts/dev/  npm run stack: the dev stack runner, its database setup and the Vite dev sign-in endpoint;
-              npm run sql: read-only SQL on the stack's database
+              npm run sql: read-only SQL on the stack's database; npm run sim: generated companies in the
+              stack, the time machine and saves
 server/       optional API server (Fastify + Postgres, PGlite in development and tests), SQL migrations,
               EC2 deploy kit (server/deploy). Built separately: npm run server:build. Guide: docs/SERVER.md
               server/src/dev is development only: the entry npm run stack starts (the same server plus
-              the route npm run sql asks); production code never imports it (structure.test.ts checks it).
+              the routes npm run sql and npm run sim ask); production code never imports it (structure.test.ts
+              checks it).
               The read model (server/src/readmodel) generates SQL views for reading the data with plain
               SQL, v_integrity_problems among them (the checks of src/domain/integrity.ts). Guide: docs/DEV.md
               Journey tests (server/src/e2e) walk whole paths, careers form to first pay run, through

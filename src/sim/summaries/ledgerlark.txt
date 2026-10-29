@@ -1,0 +1,20 @@
+Scenario ledgerlark: The Ledgerlark sample exactly as buildSampleDB builds it, for parity with the app.
+Seed 0, as of 2026-10-09. No actions: buildSampleDB built it.
+Company: Ledgerlark, founded 2025-02-03; Maya Raman, Founder and CEO.
+Headcount on 2026-10-09: 14 employed, 2 starting later, 1 former.
+Departments: Engineering 4, Accounting 2, Applied AI 2, Go to market 2, Operations 2, Executive 1, Product and design 1.
+Non-exempt: 1. Part time: 1. Managers: 5.
+Starts by month: 2025-05 1, 2025-06 1, 2025-08 1, 2025-10 1, 2026-01 1, 2026-03 2, 2026-04 1, 2026-05 1, 2026-06 1, 2026-07 2, 2026-08 1, 2026-09 1, 2026-10 1, 2026-11 1.
+Separations: resigned_notice on 2026-08-28; resigned_notice on 2026-11-10.
+Open leave cases: bonding from 2026-11-16.
+Jobs: filled 16, open 4, draft 1, on_hold 1.
+Open role: Staff ML engineer, agents and evals (16 active: New 6, Intro call 4, Technical 3, Onsite 2, Offer 1).
+Open role: Senior full-stack engineer (19 active: New 12, Intro call 4, Technical 2, Onsite 1).
+Open role: Account executive, mid-market (10 active: New 6, Intro call 3, Mock discovery call 1).
+Open role: Solutions accountant (CPA) (10 active: New 8, Intro call 2).
+Candidates: 172. Applications: rejected 70, active 55, withdrawn 32, hired 16.
+Interviews: completed 145, scheduled 5. Scorecards: 213 submitted, 12 owed.
+Offers: accepted 16, declined 3, awaiting_approval 1. Grants: approved 13, promised 3, cancelled 1.
+Pay runs submitted: 6, periods 2026-07-01 to 2026-09-30; first payroll 2025-05-15.
+Checklists: 22 (onboarding 17, offboarding 2, change 1, leave 1, new_state 1); open tasks 78, due by 2026-10-09: 5.
+Records: 1,361, activity rows 162.

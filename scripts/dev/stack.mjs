@@ -14,13 +14,14 @@
 // stack-lib.mjs, with tests. Plain JavaScript, so it runs before anything is compiled.
 import { spawn, spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import readline from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { apiEnv, appOrigin, DEV_EMAIL, DEV_TOOLS_FILE, devDirName, parseArgs, stackPorts, USAGE } from './stack-lib.mjs'
-import { isStackProcess, readStackPid } from './stack-process.mjs'
+import { createPidFile, isStackProcess, readStackPid } from './stack-process.mjs'
+import { recoverSimFolders } from './pg-swap.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const windows = process.platform === 'win32'
@@ -79,7 +80,14 @@ function portFree(port) {
   })
 }
 
+/** The refusal while npm run sim holds the folder. */
+const simHolds = (pid) =>
+  `npm run sim is writing to this data folder (pid ${pid}). Start the stack again when it has finished.
+` +
+  `  If it is not running any more, delete ${path.relative(root, pidFile)} and try again.`
+
 const running = runningStack()
+if (running?.holder === 'npm run sim') die(simHolds(running.pid))
 if (running) {
   die(
     `a stack is already running on this data folder (pid ${running.pid}, started ${running.startedAt}).\n` +
@@ -100,12 +108,21 @@ for (const [port, what] of [
   }
 }
 
+// The lock: the pid file, created only if there is none, so npm run sim (which takes the same file) and a
+// stack that start at the same moment cannot both open the database folder. --fresh then empties the folder
+// around it.
+mkdirSync(dir, { recursive: true })
+const taken = createPidFile(pidFile, { pid: process.pid, startedAt: new Date().toISOString(), ports })
+if (taken) {
+  if (taken.held?.holder === 'npm run sim') die(simHolds(taken.held.pid))
+  die(`another stack started on this data folder just now${taken.held ? ` (pid ${taken.held.pid})` : ''}. If it is not running, delete ${path.relative(root, pidFile)} and try again.`)
+}
 if (args.fresh) {
-  rmSync(dir, { recursive: true, force: true })
+  for (const entry of readdirSync(dir)) if (entry !== 'stack.pid') rmSync(path.join(dir, entry), { recursive: true, force: true })
   say(`--fresh: deleted ${devDir}`)
 }
-mkdirSync(dir, { recursive: true })
-writeFileSync(pidFile, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), ports }))
+// A copy npm run sim left when it was stopped on the way (pg-swap.mjs): put the folder right before it opens.
+for (const line of recoverSimFolders(dir)) say(line)
 
 // ------------------------------------------------------------------------------------------------
 // Database, dev login, sample company
@@ -267,6 +284,7 @@ if (!stopping) {
       `  API       http://127.0.0.1:${ports.api} (Vite passes /api through to it)`,
       `  Data      ${devDir} (npm run stack${offsetFlag ? `${offsetFlag} --fresh` : ' -- --fresh'} starts over)`,
       `  SQL       npm run sql${offsetFlag ? `${offsetFlag}` : ' --'} hires (read only; docs/DEV.md)`,
+      `  Simulate  npm run sim${offsetFlag ? `${offsetFlag}` : ' --'} reset full-20 (another company; docs/DEV.md)`,
       '  Stop      Ctrl+C',
       '',
     ].join('\n'),

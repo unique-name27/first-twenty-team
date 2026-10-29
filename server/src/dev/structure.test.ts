@@ -1,10 +1,10 @@
-// server/src/dev holds development-only server code (POST /__dev/sql for npm run sql). It stays out of
-// production by structure: only the development entry, server/src/dev/index.ts, imports it, and npm run
-// stack is the only thing that starts that entry. This walks the import graph of every production entry
+// server/src/dev holds development-only server code (the /__dev routes for npm run sql and npm run sim).
+// It stays out of production by structure: only the development entry, server/src/dev/index.ts, imports
+// it, and npm run stack is the only thing that starts that entry. This walks the import graph of every production entry
 // (the ones vite.server.config.ts bundles, which include server/src/index.ts, and app.ts on its own) and
-// fails if any path reaches this folder. The test-only folders (the journey kit in server/src/e2e, the
-// server test helpers, src/sync/testing) are held to the same rule. It reads the source instead of
-// building (a build is slow).
+// fails if any path reaches this folder. The folders only tests and dev tools use (the journey kit in
+// server/src/e2e, the server test helpers, src/sync/testing, the simulator in src/sim) are held to the same
+// rule. It reads the source instead of building (a build is slow).
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,8 +14,14 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const DEV = path.join(ROOT, 'server', 'src', 'dev')
 const rel = (file: string) => path.relative(ROOT, file).replace(/\\/g, '/')
 const insideDev = (file: string) => file === DEV || file.startsWith(DEV + path.sep)
-/** Code only tests import: production must never reach it either. */
-const TEST_ONLY = [path.join(ROOT, 'server', 'src', 'e2e'), path.join(ROOT, 'server', 'src', 'test'), path.join(ROOT, 'src', 'sync', 'testing')]
+/** Code only tests and dev tools import: production must never reach it either. */
+const TEST_ONLY = [
+  path.join(ROOT, 'server', 'src', 'e2e'),
+  path.join(ROOT, 'server', 'src', 'test'),
+  path.join(ROOT, 'src', 'sync', 'testing'),
+  // The simulator: its generator, scenarios and name pools must never ship in dist-server.
+  path.join(ROOT, 'src', 'sim'),
+]
 const insideTestOnly = (file: string) => TEST_ONLY.some((dir) => file === dir || file.startsWith(dir + path.sep))
 
 /** Every module specifier in `code`: static imports and re-exports, side-effect imports and import(). */
@@ -78,7 +84,7 @@ describe('server/src/dev and the test-only folders stay out of production', () =
       const reached = [...graph.entries()].filter(([file]) => insideDev(file)).map(([, chain]) => chain.join(' -> '))
       expect(reached, 'production code must not import server/src/dev').toEqual([])
       const testOnly = [...graph.entries()].filter(([file]) => insideTestOnly(file)).map(([, chain]) => chain.join(' -> '))
-      expect(testOnly, 'production code must not import server/src/e2e, server/src/test or src/sync/testing').toEqual([])
+      expect(testOnly, 'production code must not import server/src/e2e, server/src/test, src/sync/testing or src/sim').toEqual([])
     })
   }
 
@@ -86,6 +92,11 @@ describe('server/src/dev and the test-only folders stay out of production', () =
     expect(readFileSync(path.join(ROOT, 'scripts', 'dev', 'stack.mjs'), 'utf8')).toContain("'server/src/dev/index.ts'")
     const scripts = (JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts
     for (const [name, command] of Object.entries(scripts)) expect(command, `npm run ${name}`).not.toContain('server/src/dev')
+  })
+
+  it('holds the simulator to the test-only rule', () => {
+    expect(insideTestOnly(path.join(ROOT, 'src', 'sim', 'generate.ts'))).toBe(true)
+    expect(insideTestOnly(path.join(ROOT, 'src', 'simple.ts'))).toBe(false)
   })
 
   it('reads the import forms this test relies on', () => {

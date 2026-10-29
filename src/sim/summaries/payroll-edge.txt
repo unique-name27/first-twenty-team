@@ -1,0 +1,16 @@
+Scenario payroll-edge: Pay run edge cases: part-time and full-time hourly staff, a hire mid pay period, a leave, a termination inside a pay period.
+Seed 7070, as of 2026-10-09. 585 actions.
+Company: Fernlight, founded 2025-06-09; Connor Yoon, Founder and CEO.
+Headcount on 2026-10-09: 6 employed, 0 starting later, 1 former.
+Departments: Finance and operations 2, Go to market 2, Engineering 1, Executive 1.
+Non-exempt: 2. Part time: 1. Managers: 2.
+Starts by month: 2025-09 1, 2025-12 1, 2026-03 1, 2026-05 1, 2026-06 1, 2026-09 1.
+Separations: terminated on 2026-09-17.
+Open leave cases: bonding from 2026-09-22.
+Jobs: filled 6.
+Candidates: 62. Applications: rejected 54, hired 6, withdrawn 2.
+Interviews: completed 69, cancelled 11. Scorecards: 69 submitted, 0 owed.
+Offers: accepted 6. Grants: promised 3, cancelled 1.
+Pay runs submitted: 32, periods 2025-06-01 to 2026-09-30; first payroll 2025-06-13.
+Checklists: 9 (onboarding 6, change 1, leave 1, offboarding 1); open tasks 9, due by 2026-10-09: 0.
+Records: 1,220, activity rows 753.

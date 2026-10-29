@@ -50,6 +50,7 @@ codespace uses (`.devcontainer/devcontainer.json`).
 | `npm run stack -- --offset 10` | A second stack beside the first: ports 8836 and 8797, its own database |
 | `npm run stack -- --no-seed` | A new database without the sample company (an empty server, as a new founder sees it) |
 | `npm run sql -- hires` | Reads the stack's database with SQL, never changing it ("Query the data with SQL" below) |
+| `npm run sim -- reset full-20` | Replaces the stack's company with a generated one; `advance 30d` moves it forward ("Simulate a company" below) |
 | `npm run dev` | The app alone, keeping its data in the browser only (no server) |
 | `npm run server:dev` | The API alone, on its own database in `.data/pg` (docs/SERVER.md, "Develop locally") |
 | `npm test` | Every test, all four tiers; `npm test -- src/sync` runs the tests in one folder |
@@ -68,10 +69,11 @@ codespace uses (`.devcontainer/devcontainer.json`).
 | Piece | Where | Notes |
 | --- | --- | --- |
 | The app (Vite dev server) | http://127.0.0.1:8826 | Reloads on every change. Passes `/api` through to the API, so the app and the API share one address, as on the live server |
-| The API (Fastify, `tsx watch`) | http://127.0.0.1:8787 | Restarts when server code changes. Development mode, sign-up open (try making a company), Lark is the scripted fake (no key needed, nothing leaves the computer). It runs `server/src/dev/index.ts`: the same server as production plus the development-only route `npm run sql` asks |
+| The API (Fastify, `tsx watch`) | http://127.0.0.1:8787 | Restarts when server code changes. Development mode, sign-up open (try making a company), Lark is the scripted fake (no key needed, nothing leaves the computer). It runs `server/src/dev/index.ts`: the same server as production plus the development-only routes `npm run sql` and `npm run sim` ask |
 | The database (PGlite) | `.data/dev/pg` | Real Postgres compiled to WebAssembly. Only one process can open it at a time |
 | The dev login | `.data/dev/credentials.json` | `dev@example.test` with a random password, made once. The file never leaves your computer or codespace (`.data/` is git-ignored) |
-| The `npm run sql` secret | `.data/dev/dev-tools.json` | Made anew each time the stack starts and deleted when it stops. Only `npm run sql` reads it |
+| The dev tools secret | `.data/dev/dev-tools.json` | Made anew each time the stack starts and deleted when it stops. Only `npm run sql` and `npm run sim` read it |
+| The simulator's files | `.data/dev/scenarios`, `.data/dev/saves`, `.data/dev/sim-date.json` | Generated companies kept for the next reset, saved copies, and the company's date (`npm run sim`). `--fresh` deletes them with the rest |
 
 In a codespace, GitHub forwards port 8826 to `https://<your-codespace-name>-8826.app.github.dev`. The stack
 tells Vite to accept that address and gives the API `PUBLIC_ORIGIN` set to it, so invite links point there
@@ -217,7 +219,7 @@ Add a `*.test.ts` file in `server/src/e2e` and start it from the kit, `server/sr
 | --- | --- |
 | `startJourney()` | A fresh server for the file: an in-memory database, the real app with the careers pages on, and the admin's browser connected to the uploaded Ledgerlark sample. The day is 2026-10-09 (the sample's own day) unless `start` says another |
 | `j.step(name, fn)` | Runs one part of the story under a name. When it fails, the failure dump is printed and the error names the step |
-| `j.act(browser, label, recipe)` | One change, as the app makes it: the browser store's `mutate(label, recipe)`, then a sync. The recipe calls the domain function the screen calls, with the same arguments and label (copy them from the feature, for example `src/features/hiring/actions.ts`) |
+| `j.act(browser, label, recipe)` | One change, as the app makes it: the browser store's `mutate(label, recipe)`, then a sync. The recipe calls the domain function the screen calls, with the same arguments and label (copy them from the feature, for example `src/features/hiring/actions.ts`). It runs inside `withRunContext` (`src/lib/runContext.ts`): at noon in California on the journey's day, as the browser's Viewing as |
 | `j.apply({ job, fields })` | Sends the careers form the way a candidate's browser does: the list page, the job's page, its form. Gives back the status, the page and whether it was sent |
 | `j.advanceTo(date)` | Moves the day forward with the app's clock override (`setClockOverride`), which every date in the domain reads. Never backwards |
 | `j.sql(text, params)` | A read-only query as the server's role, with the read model's today on the journey's day |
@@ -264,8 +266,10 @@ The rules that keep a journey honest:
 - **Take only the steps the screen offers.** Start from what the screen starts with (the schedule sheet's
   first proposed time, the offer builder's defaults), and where a button shows only in some states, check
   it the way the journey checks the offer card's Mark sent with `offerActionPlan`.
-- **One fixed clock.** Move it with `j.advanceTo`. Never assert on a time of day (activity times and approvals
-  keep the real time of day on the journey's date) or on a generated id: compare ids with the records that hold them.
+- **One fixed clock.** Move it with `j.advanceTo`. What the browsers change (`j.act`, and the changes the app makes
+  on load) happens at noon in California on the journey's day (`JOURNEY_TIME_OF_DAY`), and the careers form's
+  clock is 19:00 UTC on it, so activity times and approvals are the same on every run. Never assert on a generated
+  id (the careers form's are random): compare ids with the records that hold them.
 - **Check what the server holds** with `j.sql` over the read model's views ("Query the data with SQL" above),
   and the browser's copy where that is the point.
 - **Keep it quick**: one `startJourney` per file, in `beforeAll`, and as many steps as the story needs.
@@ -306,6 +310,196 @@ change_log, the last 25 writes (user: who pushed it; none for the careers form):
 - **v_integrity_problems**: what `src/domain/integrity.ts` finds wrong in the server's copy, by code and record.
 - **change_log**: the newest writes the server took, newest first, with the login that sent each. A change
   that is not there never reached the server: the error then says which browser refused it or is not synced.
+
+## Generated companies
+
+`src/sim` builds whole companies the way people build them in the app, for tests and tools. The app never
+imports it (`src/sim/guard.test.ts` checks that). `generateCompany({ scenario, seed, asOf })` starts from a
+blank workspace on the founding date and changes it only through actions (`src/sim/actions.ts`): each one is
+the domain function a screen calls, with what that screen passes, applied the way the store's `mutate` applies
+a change. The whole company is built in one run (`src/lib/runContext.ts`), so ids and timestamps come out the
+same every time.
+
+- The founder sets up the org (departments, offices, levels and bands, as Settings and Comp and plan do) and
+  their own pay.
+- Every later employee arrives through the hiring pipeline: a headcount plan line, a job from it, candidates
+  added with Quick add, interviews at the times the schedule sheet proposes, scorecards, an offer (Admin
+  approves it when a manager drafted it), the acceptance and Hire. So each one has a candidate, an
+  application, an offer, a starting pay row, a grant when the offer has options, an onboarding checklist,
+  documents and activity.
+- Every morning the app's load-time changes run, each pay run is marked submitted on its run-payroll-by day,
+  and checklist tasks are marked done on their due dates.
+- Nothing after the as-of date happens: a job whose person would start later is open on that date, with its
+  candidates part way through.
+
+It returns `{ db, trace, summary }`: the workspace; the trace, one JSON line per action (`traceToJsonLines`)
+with its day, time, actor, Viewing-as, action, args and the ids of the records it created; and a short summary.
+
+| Scenario | What it is |
+| --- | --- |
+| `ledgerlark` | The sample exactly as `buildSampleDB` builds it, for parity with the app |
+| `blank` | Start fresh: a solo founder on the as-of date |
+| `seed-8` | 8 people, one job open |
+| `cross-15` | 15 employees reached a week before the as-of date; managers draft offers and Admin approves them |
+| `full-20` | 20 people, every one hired through the pipeline, no job open |
+| `payroll-edge` | Part-time and full-time hourly staff, a hire mid pay period, a leave, a termination inside a pay period |
+| `pipeline-heavy` | About 300 candidates, three jobs open |
+| `stress` | Thousands of candidates, past the demo limits: for the server only, never loaded into a browser |
+
+Each scenario has its own seed and the as-of date 2026-10-09. Another seed gives another company of the same
+shape. The built-in rules cover 2025 to 2026 (the 2026 law tables and the holiday list), so a company founded
+before them or an as-of date after them is refused unless you pass `allowStaleLaw`.
+
+```ts
+import { traceToJsonLines } from '@/sim/actions'
+import { generateCompany } from '@/sim/generate'
+
+const { db, trace, summary } = generateCompany({ scenario: 'seed-8' })   // its own seed and as-of date
+const another = generateCompany({ scenario: 'seed-8', seed: 42 })         // another company of the same shape
+```
+
+`src/sim/generate.test.ts` (unit tier) generates every scenario but `stress` twice and compares the JSON byte for
+byte, runs the integrity checks on each (`src/domain/integrity.ts`: no failures, and a generated company not
+even a note), checks the size against a browser and the demo limits, and compares each summary with
+`src/sim/summaries/<scenario>.txt`. When a change to the app changes a generated company on purpose, write the
+new summaries, read their diff and commit them with the change:
+
+```bash
+SIM_WRITE_SUMMARIES=1 npx vitest run src/sim/generate.test.ts
+```
+
+Generated ids are stable but mean nothing: find records by what they are (the person hired from an
+application, the open job), never by id.
+
+### The time machine
+
+`advance(db, { to, seed, policy })` (`src/sim/advance.ts`) lives a workspace's next days, from the company's
+date (the clock override, which it then leaves on `to`) through `to`. It works on any workspace: a generated
+company, the sample, or one saved from the app. Each day opens the app once, so its load-time changes run
+(`applyLoadChanges`: scheduled job and pay changes, hand-offs, lapsed offers; the app has no midnight timer).
+Then on business days the people act, through the same actions as the generator, each after the check its
+screen makes:
+
+- time off: a sick day on the day, or vacation one to six weeks out, sent only when `checkRequest` shows no
+  warning (a sick day before its service wait still goes to Admin); the manager approves it the next
+  business day;
+- hiring: the founder keeps the plan stocked while the company is under its size and opens each role from its
+  plan line about six weeks before its start (`openJobFromPlan`, then Edit details and Mark posted);
+  candidates arrive, are reviewed, interviewed and scored, and the hiring manager decides on the scorecards;
+  an offer goes out only when `sendBlockerList` is empty, and the candidate accepts, declines or lets it
+  expire;
+- a merit raise on a work anniversary, as Change job or pay proposes it, unless it leaves the band;
+- now and then a resignation (with a backfill) or a protected leave that `leaveEligibility` allows, and a
+  return on the expected day;
+- each pay period's prep (`payRunPrep`, totals from `payRunTotals`) and Mark submitted on its run-payroll-by
+  day;
+- on Mondays Admin clears the inbox's one-button items (`inboxItems`, then `applyInboxOp`) and the compliance
+  rules are evaluated (`evaluateAll`); in December next year's holidays are added when missing.
+
+`policy` is `'quiet'`, `'normal'` (the default) or `'busy'`, or rates changed from one:
+`{ preset: 'busy', attritionPerYear: 0.3 }`. It returns `{ db, trace, report, summary }`: the trace has the
+generator's format, the report counts what happened and the summary says it in plain lines. The same
+workspace, date, seed and policy give byte-identical output, and a `to` past the law coverage is refused
+unless you pass `allowStaleLaw`.
+
+```ts
+import { setClockOverride } from '@/lib/dates'
+import { advance } from '@/sim/advance'
+import { generateCompany } from '@/sim/generate'
+
+const { db } = generateCompany({ scenario: 'seed-8', asOf: '2026-10-01' })
+setClockOverride('2026-10-01')
+const { db: later, summary } = advance(db, { to: '2026-12-30', seed: 1 })   // 90 days at the normal policy
+```
+
+`src/sim/advance.test.ts` advances seed-8 and full-20 by 30 and 90 days and checks the integrity, the pay runs,
+that time off and hiring happened, and that a second run is byte-identical; `src/sim/advance.rules.test.ts`
+covers the presets, the refusals, a clock in the middle of a pay period, leavers and leave, and December.
+
+## Simulate a company
+
+`npm run sim` puts a generated company (above) into the stack, moves it through time and keeps copies of it,
+so you can try the app on a company of 8, 15 or 20 people instead of the sample.
+
+| Command | What it does |
+| --- | --- |
+| `npm run sim -- list` | The scenarios, one line each |
+| `npm run sim -- run full-20` | Generates a scenario and prints its summary. `--seed N` and `--as-of YYYY-MM-DD` pick another seed or date; `--out co.json` also writes it as a backup that Settings > Data > Import reads. Needs no stack |
+| `npm run sim -- reset full-20` | Replaces the stack's company with the scenario, on today's date (below). Takes `--seed`, `--as-of` and `--no-shift` |
+| `npm run sim -- advance 30d` | Lives the stack's company through the next 30 days: `12w`, `3m` or a date work too. `--policy quiet`, `normal` (the default) or `busy`; `--seed N` (default 1) |
+| `npm run sim -- save before-payroll` | Keeps a copy of the stack's company in `.data/dev/saves` |
+| `npm run sim -- restore before-payroll` | Puts that copy back |
+| `npm run sim -- saves` | Lists the copies |
+
+Add `--offset 10` to work on the stack started with `npm run stack -- --offset 10` (its files are then in
+`.data/dev-10`). `stress` is for the server only: `run` writes it, `reset` refuses it. `npm run sim` runs in
+California time on every computer (`scripts/dev/sim-zone.ts`): simulated people act at California times of
+day, and "today" is California's date, wherever you are.
+
+**How it reaches the stack.** While the stack runs, its API holds the database, so reset, advance, save and
+restore ask the API: `GET` and `POST /__dev/workspace`, development-only routes beside the one `npm run sql`
+uses, with the same per-run secret and the same checks, for the stack's own company only. advance reads the
+company, lives the days in the `npm run sim` process and sends the result back with the history and change
+number it read; if the app synced an edit in that second or two, the stack refuses and nothing is replaced,
+so run advance again. A replace goes through the same server function as the app's Import, so the app takes
+it the way it takes a company another computer sent: on its next sync (within 30 seconds, or when its tab gets focus) it shows the new company with a notice
+that the server's workspace was replaced. After an advance or a restore of the same company, the notice says
+it was replaced with another copy of it. With no stack running, `npm run sim` takes the stack's lock
+(`.data/dev/stack.pid`: `npm run stack` refuses to start meanwhile and says why) and works on a copy of the
+database folder, which it swaps in with two renames when the replace is done (`scripts/dev/pg-swap.mjs`). The
+folder itself is never written in place, so Ctrl+C (which stops the command before the swap) or a crash at
+any point leaves the stack's company as it was; the next `npm run sim` or `npm run stack` clears up the copy
+left behind.
+
+**On today's date.** The app shows a company on today's date, so reset generates the scenario as of the last
+day on or before today that falls on its as-of date's weekday (scenario plans are written relative to the
+as-of date), then lives the 0 to 6 days left with the time machine (normal policy), so the company's date is
+today. Because the company is generated for that date, rather than made for another date and moved, every
+date rule holds as it does in the app: starts and interviews skip company holidays, plan lines sit in the
+quarter of their target start, pay runs follow the real pay periods, and payroll-edge's start, leave and last
+day fall inside pay periods. The summary reset prints names the as-of date it used. Today after 2026-12-31
+(the dates the built-in rules cover) is refused. `--no-shift` loads the scenario on its own as-of date instead:
+the app still shows today, and Settings > Data > Pretend today is shows the as-of date. `ledgerlark` is the
+sample as the app loads it, moved by the app's own rule.
+
+**The company's date.** advance starts from the company's date: the day the last reset, advance or restore
+left it on, kept in `.data/dev/sim-date.json` for the copy the server holds (edits in the app keep it; any
+other company, such as the sample the stack loads or an Import, lives on today's date). After `advance 30d`
+the company is 30 days ahead of the app, which still shows it on today's date, so people who started in those
+days look like future starts. To see it on its own date, let the app take the new copy, then set Settings >
+Data > Pretend today is to that date (the app holds sync while it is on).
+
+**What the time machine does, and what it does not.** Each day it runs the app's load-time changes; on business
+days it sends and approves time off, hires through the pipeline, gives anniversary raises, now and then has
+someone resign (with a backfill) or start a leave, prepares and marks pay runs submitted, and on Mondays clears
+the inbox's one-button items and checks the compliance rules ("The time machine" above has the details). It
+never declines time off, terminates anyone, adds contractors, extends offers, enters provider totals, approves
+grants at a board meeting or changes Settings > Rules and rates, and it refuses dates past 2026-12-31.
+
+**Saves.** `npm run sim -- save <name>` writes `.data/dev/saves/<name>.json`: the company as the server holds
+it, and its date. A save with the same name is replaced. restore keeps the saved company's identity, so the
+app treats it as another copy of that company, or as another company when the stack holds a different one.
+
+**The cache.** Generated companies are kept in `.data/dev/scenarios`, by scenario, seed, as-of date and a hash
+of every source file generation reaches (the generator, the domain rules, the law tables, the name pools), so
+a repeat reset in the same week takes about a second and any change to that code generates again. Delete the
+folder whenever you like. `npm run stack -- --fresh` deletes the whole data folder, saves and cache included.
+
+**File a bug as scenario, seed and as-of date.** "full-20, seed 2020, as of 2026-10-09: the second pay run of
+November leaves out the person on leave." Anyone can rebuild that company exactly, with
+`npm run sim -- run full-20 --seed 2020 --as-of 2026-10-09 --out co.json` or `generateCompany` in a test. If
+you saw it in the stack, take the as-of date from the summary reset printed, and add the day you ran reset
+(it lived the days from that date to today) and each advance in order, with its policy and seed: "full-20,
+seed 2020, as of 2026-10-23, reset on 2026-10-28, then advance 30d --policy busy --seed 1". Best of all, write
+it as a failing test on a fixed as-of date: a generated company, `advance` if needed, and the check.
+
+`server/src/sim/smoke.test.ts` (server tier, on CI) generates every scenario but `stress`, loads it into the
+server as an Import would, advances it 90 days at the normal policy (the last week runs into January 2027 on
+the 2026 law values, with `allowStaleLaw`) and loads it again. Then `v_integrity_problems` must be empty,
+`v_hire_journey` must have a row for every hire, the server must give back exactly what it was sent, and a
+second run must give the same JSON. With `SIM_STRESS=1` it also generates `stress` and loads it once, to prove
+the server takes it: `SIM_STRESS=1 npx vitest run server/src/sim/smoke.test.ts -t stress`. That case is left
+out of CI until it has been timed (it has never finished on the computers it was written on).
 
 ## Claude Code in a codespace
 
@@ -356,7 +550,9 @@ inside the codespace with its settings. Stop it and start it with `npm run stack
 
 **"could not open the database: Aborted()".** The stack was stopped hard (its process was killed, or the
 computer stopped) while PGlite was writing, and the folder is damaged. Stop the stack with Ctrl+C next time.
-`npm run stack -- --fresh` makes a new database (it deletes the old one and the dev login).
+`npm run stack -- --fresh` makes a new database (it deletes the old one and the dev login). It also deletes
+the saves `npm run sim` keeps in the data folder: to keep them, delete only `.data/dev/pg` instead, start the
+stack (it makes a new database with the sample company), then `npm run sim -- restore <name>`.
 
 **npm run sql: "Something answers on 127.0.0.1:8787, but .data/dev/dev-tools.json is missing".** A stack
 started before `npm run sql` existed, or `npm run server:dev`, holds the port. Stop it and start
@@ -364,6 +560,11 @@ started before `npm run sql` existed, or `npm run server:dev`, holds the port. S
 
 **npm run sql: "The stack's API did not take the request".** The running stack's secret does not match the
 one in `.data/dev/dev-tools.json` (usually a stack started before `npm run sql` existed). Restart the stack.
+
+**"npm run sim is writing to this data folder".** `npm run sim` holds the folder while it works on it with
+no stack running. Wait a few seconds and start the stack again. If no `npm run sim` is running, the stack
+usually removes the file it left behind by itself. On Windows it can only tell that some node process has
+that number, so if it still refuses, delete `.data/dev/stack.pid` and try again.
 
 **npm run sql: "No answer from the stack's API".** A statement is still running in the stack's API, which
 PGlite cannot interrupt. Wait, or stop the stack with Ctrl+C and start it again.

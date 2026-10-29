@@ -11,6 +11,8 @@
 // sync), apply (the careers form, as a candidate's browser sends it), advanceTo (the app's clock override)
 // and sql (the read model's views). Wrap each part in step(): when one fails, the failure dump prints the
 // step log, the hire journeys, the integrity problems and the tail of the change log.
+// What the browsers change (act, and the changes the app makes on load) runs as a run (src/lib/runContext.ts):
+// at noon in California on the journey's day, as the browser's Viewing as, with ids from the journey's seed.
 // Test-only: only tests import server/src/e2e.
 //
 // The store loads first, so every seed and domain module finishes loading before the sample is built.
@@ -22,8 +24,8 @@ import type { StoreApi } from 'zustand/vanilla'
 import { viewerPerson } from '@/domain/people'
 import type { DB, ID, Role } from '@/domain/types'
 import { getClockOverride, type ISODate, setClockOverride, today } from '@/lib/dates'
+import { withRunContext } from '@/lib/runContext'
 import { applyLoadChanges, loadSample, migrate as upgradeStored } from '@/store/db'
-import { usePrefs } from '@/store/prefs'
 import { createApi, type SyncApi } from '../../../src/sync/api'
 import { createSyncEngine, type SyncEngine } from '../../../src/sync/engine'
 import type { SyncStatusState } from '../../../src/sync/status'
@@ -44,6 +46,8 @@ export const CANDIDATE_ADDRESS = '203.0.113.10'
 export const JOURNEY_APPLY_LIMITS = { postsPerAddress: 6, perAddress: 3, perWorkspace: 20 }
 /** Password for logins a journey makes (invites). Test-only, like ADMIN in test/helpers.ts. */
 export const JOURNEY_PASSWORD = 'journey-password-1234'
+/** When on the journey's day the browsers make their changes: noon in California (a run's time of day). */
+export const JOURNEY_TIME_OF_DAY = '12:00'
 
 /** The roles of server/deploy/postgres-setup.sql: the owner runs migrations, the server only reads and writes rows. */
 const ROLES_SQL = `
@@ -64,7 +68,7 @@ export type Browser = {
   store: StoreApi<TestDBState>
   /** Its login on the server. */
   userId: string
-  /** Its Viewing-as preference (a per-device setting in the app; act applies it while it runs). */
+  /** Its Viewing-as preference (a per-device setting in the app): the actor of what it changes. */
   viewAs: { role: Role; personId: ID | null }
   /** Its workspace now. */
   db(): DB
@@ -149,9 +153,9 @@ export async function startJourney(options: JourneyOptions = {}): Promise<Journe
   const steps: string[] = []
   const stops: Array<() => void> = []
   const clockBefore = getClockOverride()
-  const prefsBefore = usePrefs.getState().viewAs
   setClockOverride(options.start ?? '2026-10-09')
   let dumped = false
+  let runs = 0
 
   const log = (line: string) => steps.push(`${today()}  ${line}`)
 
@@ -165,6 +169,17 @@ export async function startJourney(options: JourneyOptions = {}): Promise<Journe
     { careers: (scope, deps) => registerCareers(scope, { ...deps, now: careersNow, limiter }) },
   )
   const adminId = await createAdmin(db)
+
+  /**
+   * fn as one run, acting as the browser's Viewing as would in the app (currentActorId on `data`). Each run
+   * has a seed of its own, so ids never repeat from one run to the next, and the same journey makes the same
+   * ids every time it runs.
+   */
+  function inRun<T>(b: Browser, data: DB, fn: () => T): T {
+    const { role, personId } = b.viewAs
+    const actorId = personId ?? viewerPerson(data, role, null)?.id ?? null
+    return withRunContext({ seed: `journey ${++runs}`, actorId, viewingAs: role, timeOfDay: JOURNEY_TIME_OF_DAY }, fn)
+  }
 
   /** A fresh browser, holding what a browser holds before it connects: the sample company, as of today. */
   function browser(name: string, userId: string): Browser {
@@ -180,7 +195,7 @@ export async function startJourney(options: JourneyOptions = {}): Promise<Journe
       env: testEnv().env,
       status,
       prepareSnapshot: upgradeStored,
-      onLoad: applyLoadChanges,
+      onLoad: (data) => inRun(b, data, () => applyLoadChanges(data)),
       debounceMs: 5,
       pullIntervalMs: 3_600_000,
     })
@@ -293,20 +308,17 @@ export async function startJourney(options: JourneyOptions = {}): Promise<Journe
     const before = b.db()
     let value: R | undefined
     let refused: string | null = null
-    // Viewing-as is a per-device preference: this browser's applies while its change runs.
-    const prefs = usePrefs.getState().viewAs
-    usePrefs.setState({ viewAs: b.viewAs })
     try {
-      b.store.getState().mutate(label, (d) => {
-        const r = recipe(d)
-        refused = refusal(r)
-        if (refused) throw new Error(refused)
-        value = r
-      })
+      inRun(b, before, () =>
+        b.store.getState().mutate(label, (d) => {
+          const r = recipe(d)
+          refused = refusal(r)
+          if (refused) throw new Error(refused)
+          value = r
+        }),
+      )
     } catch (err) {
       throw new Error(`${b.name}: "${label}" was refused: ${refused ?? (err instanceof Error ? err.message : String(err))}`)
-    } finally {
-      usePrefs.setState({ viewAs: prefs })
     }
     if (b.db() === before) throw new Error(`${b.name}: "${label}" changed nothing`)
     log(`${b.name}: ${label}`)
@@ -384,7 +396,6 @@ export async function startJourney(options: JourneyOptions = {}): Promise<Journe
     await app.close()
     await db.close()
     setClockOverride(clockBefore)
-    usePrefs.setState({ viewAs: prefsBefore })
   }
 
   return { db, app, admin, careersUrl, step, log, act, apply, advanceTo, sql, connect, invite, dump, close }
