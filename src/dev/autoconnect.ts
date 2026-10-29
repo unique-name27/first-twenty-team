@@ -103,6 +103,11 @@ export function startAutoconnect(): void {
 
 let running = false
 
+/** True while a sign-in is under way (the simulator panel waits for it before it swaps the company). */
+export function autoconnectBusy(): boolean {
+  return running
+}
+
 async function autoconnect(): Promise<void> {
   if (running) return
   running = true
