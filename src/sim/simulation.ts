@@ -46,6 +46,8 @@ export type SimulationOptions = {
   seed: number | string
   /** Default normal. */
   policy?: PolicyInput
+  /** The pace to start at, over the policy (hiring pace and time off scale it; attrition and offer acceptance replace it). */
+  pace?: PaceChanges
   /** Keep a keyframe at the end of each simulated month, for rewindTo (default), or only the start. */
   keyframes?: 'month' | 'none'
   /** Evaluate the compliance rules each Monday for the report (default true). They change nothing in the workspace. */
@@ -92,8 +94,11 @@ export type Keyframe = {
 export class Simulation {
   readonly from: ISODate
   readonly seed: number | string
-  /** The policy the simulation started with. */
+  /** The policy the simulation started with, at its starting pace. */
   readonly policy: AdvancePolicy & { name: string }
+  /** The policy before any pace (the preset, or rates changed from one). */
+  private readonly base: AdvancePolicy & { name: string }
+  private readonly startPace: PaceChanges
   private readonly machine: TimeMachine
   private readonly handle: RunHandle
   private readonly keepKeyframes: boolean
@@ -115,7 +120,11 @@ export class Simulation {
     const { from, seed } = options
     if (!isUsableDate(from)) throw new Error(`The company's date is a date written YYYY-MM-DD, not '${from}'.`)
     if (typeof seed === 'number' ? !Number.isSafeInteger(seed) : typeof seed !== 'string' || !seed) throw new Error(`A seed is a whole number or some text, not ${String(seed)}.`)
-    this.policy = resolvePolicy(options.policy)
+    this.base = resolvePolicy(options.policy)
+    const pace = PACE_CHANGES.safeParse(options.pace ?? {})
+    if (!pace.success) throw new Error(`The pace does not fit: ${pace.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}.`)
+    this.startPace = pace.data
+    this.policy = applyPace(this.base, paceOn(this.base, [], from, this.startPace))
     const list = parseSituations(options.situations ?? [])
     checkSituationDates(list, from)
     const admin = founder(db)
@@ -317,7 +326,7 @@ export class Simulation {
     for (const s of list) if (s.kind === 'pace' && s.on <= day) count += 1
     if (count === this.paceCount) return
     this.paceCount = count
-    this.machine.setPolicy(applyPace(this.policy, paceOn(this.policy, list, day)))
+    this.machine.setPolicy(applyPace(this.base, paceOn(this.base, list, day, this.startPace)))
   }
 
   private keep(): void {

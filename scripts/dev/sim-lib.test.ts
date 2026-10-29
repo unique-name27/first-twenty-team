@@ -15,6 +15,7 @@ import {
   cacheFileName,
   cachePrefix,
   companyDateFor,
+  eventLines,
   type Generated,
   parseDuration,
   parseSimArgs,
@@ -27,7 +28,22 @@ import {
   workspaceJson,
 } from './sim-lib'
 
-const base = { scenario: null, seed: null, asOf: null, out: null, shift: true, duration: null, policy: 'normal', name: null, offset: 0 }
+const base = {
+  scenario: null,
+  file: null,
+  to: null,
+  quiet: false,
+  events: 'headlines',
+  load: false,
+  seed: null,
+  asOf: null,
+  out: null,
+  shift: true,
+  duration: null,
+  policy: 'normal',
+  name: null,
+  offset: 0,
+}
 
 describe('parseSimArgs', () => {
   it('reads each command', () => {
@@ -46,6 +62,17 @@ describe('parseSimArgs', () => {
     expect(parseSimArgs(['save', 'before-payroll'])).toEqual({ ...base, command: 'save', name: 'before-payroll' })
     expect(parseSimArgs(['restore', 'before-payroll'])).toEqual({ ...base, command: 'restore', name: 'before-payroll' })
     expect(parseSimArgs(['saves'])).toEqual({ ...base, command: 'saves' })
+    expect(parseSimArgs(['run', 'seed-8', '--to', '24m', '--policy', 'busy'])).toEqual({ ...base, command: 'run', scenario: 'seed-8', to: '24m', policy: 'busy' })
+    expect(parseSimArgs(['play', 'run.json', '--to', '2027-06-01', '--out', 'co.json', '--events', 'all', '--quiet', '--load'])).toEqual({
+      ...base,
+      command: 'play',
+      file: 'run.json',
+      to: '2027-06-01',
+      out: 'co.json',
+      events: 'all',
+      quiet: true,
+      load: true,
+    })
   })
 
   it('takes --offset anywhere, and --help over everything', () => {
@@ -77,8 +104,28 @@ describe('parseSimArgs', () => {
       [['reset', 'seed-8', '--no-shift=yes'], /takes no value/],
       [['save', '../outside'], /name is 1 to 64/],
       [['save', 'a/b'], /name is 1 to 64/],
+      [['play'], /play needs a run file, like run\.json/],
+      [['play', 'run.json', '--to', 'soon'], /30d, 12w, 3m/],
+      [['play', 'run.json', '--events', 'some'], /--events is all or headlines/],
+      [['play', 'run.json', '--quiet=yes'], /--quiet takes no value/],
+      [['play', 'run.json', '--seed', '3'], /play does not take --seed/],
+      [['advance', '30d', '--to', '3m'], /advance does not take --to/],
     ]
     for (const [argv, message] of wrong) expect(() => parseSimArgs(argv), argv.join(' ')).toThrow(message)
+  })
+})
+
+describe('eventLines', () => {
+  const events = [
+    { day: '2027-03-04', kind: 'started' as const, importance: 1 as const, area: 'people' as const, text: 'Maya Chen started as Account executive.' },
+    { day: '2027-03-05', kind: 'week' as const, importance: 2 as const, area: 'routine' as const, text: 'This week: 3 applications.' },
+  ]
+
+  it('lists the headlines, every event with --events all, or their count with --quiet', () => {
+    expect(eventLines(events, { all: false, quiet: false })).toEqual(['2027-03-04  Maya Chen started as Account executive.'])
+    expect(eventLines(events, { all: true, quiet: false })).toEqual(['2027-03-04  Maya Chen started as Account executive.', '2027-03-05  This week: 3 applications.'])
+    expect(eventLines(events, { all: false, quiet: true })).toEqual(['2 events, 1 of them headlines.'])
+    expect(eventLines([], { all: false, quiet: false })).toEqual(['Nothing to tell: no events on these days.'])
   })
 })
 

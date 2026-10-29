@@ -4,6 +4,7 @@
 //   npm run sim -- run full-20 [--out co.json]       generate one, print its summary, write it for Import
 //   npm run sim -- reset full-20                     replace the stack's company with one, on today's date
 //   npm run sim -- advance 30d                       live the stack's company through the next 30 days
+//   npm run sim -- play run.json [--out co.json]     play a saved run (src/sim/play.ts) and print its story
 //   npm run sim -- save <name> | restore <name> | saves
 //   npm run sim -- --help                            everything else
 //
@@ -37,6 +38,7 @@ import { num } from '../../src/lib/format'
 import { newId } from '../../src/lib/id'
 import { advance } from '../../src/sim/advance'
 import { generateCompany } from '../../src/sim/generate'
+import { buildStart, parseRunFile, playRun, playSummary, type RunFile } from '../../src/sim/play'
 import { SCENARIOS, type ScenarioName } from '../../src/sim/scenarios'
 import { loadSample, migrate as upgradeStored } from '../../src/store/db'
 import {
@@ -46,6 +48,7 @@ import {
   type CompanyDate,
   companyDateFor,
   DEFAULT_ADVANCE_SEED,
+  eventLines,
   type Generated,
   parseDuration,
   parseSimArgs,
@@ -285,15 +288,71 @@ function list(): void {
 
 function run(args: SimArgs): void {
   const scenario = SCENARIOS[args.scenario as ScenarioName]
-  const g = generated(args.offset, scenario.name, args.seed ?? scenario.seed, args.asOf ?? scenario.asOf)
+  const seed = args.seed ?? scenario.seed
+  const asOf = args.asOf ?? scenario.asOf
+  const g = generated(args.offset, scenario.name, seed, asOf)
   console.log(g.summary)
   console.log(`${g.cached ? 'From the cache' : 'Generated'} in ${secs(g.ms)}.`)
-  if (args.out) {
-    // npm runs scripts from the repo root, so a relative path is from there.
-    const out = path.resolve(args.out)
-    const json = workspaceJson(g.db)
-    writeAtomically(out, json)
-    console.log(`Wrote ${out} (${sizeOf(Buffer.byteLength(json))}). Settings > Data > Import reads it.`)
+  let db = g.db
+  if (args.to) {
+    // Lived forward from the as-of date the way play lives a run file with no situations.
+    const to = advanceTarget(parseDuration(args.to), asOf)
+    const runFile: RunFile = { version: 1, start: { kind: 'scenario', scenario: scenario.name, seed, asOf }, seed: DEFAULT_ADVANCE_SEED, pace: { preset: args.policy }, situations: [], until: to }
+    const started = Date.now()
+    const sim = playRun(runFile, { db, from: asOf, label: scenario.name }, to, { metrics: false })
+    console.log(playSummary(sim))
+    console.log(`Lived ${num(sim.report().days)} days in ${secs(Date.now() - started)}. ${eventLines(sim.events, { all: false, quiet: true })[0]}`)
+    console.log(integrityLines(sim.db).join('\n'))
+    db = sim.db
+  }
+  if (args.out) writeWorkspace(args.out, db)
+}
+
+/** Writes a workspace as the app's backup JSON; npm runs scripts from the repo root, so a relative path is from there. */
+function writeWorkspace(file: string, db: DB): void {
+  const out = path.resolve(file)
+  const json = workspaceJson(db)
+  writeAtomically(out, json)
+  console.log(`Wrote ${out} (${sizeOf(Buffer.byteLength(json))}). Settings > Data > Import reads it.`)
+}
+
+/**
+ * Plays a run file: builds its start (a generated scenario comes from the cache), lives it to its end (or
+ * --to) with its situations, prints the headlines (or every event, or their count), the summary and the
+ * integrity lines, and writes or loads the result.
+ */
+async function play(args: SimArgs): Promise<void> {
+  const file = path.resolve(args.file as string)
+  if (!existsSync(file)) throw new Error(`There is no run file at ${file}.`)
+  let json: unknown
+  try {
+    json = JSON.parse(readFileSync(file, 'utf8'))
+  } catch (err) {
+    throw new Error(`${path.basename(file)} is not JSON: ${(err as Error).message}`)
+  }
+  const runFile = parseRunFile(json)
+  if (args.load && runFile.start.kind === 'scenario' && SCENARIOS[runFile.start.scenario].target !== 'browser') {
+    throw new Error(`${runFile.start.scenario} is too big for a browser, so play --load never puts it in the stack. Use --out instead.`)
+  }
+  const start = buildStart(runFile.start, (scenario, seed, asOf) => generated(args.offset, scenario, seed, asOf).db)
+  // A workspace saved from the app may be in an older shape: upgraded as the app would load it.
+  const started = runFile.start.kind === 'workspace' ? { ...start, db: upgradeStored(start.db) } : start
+  const to = args.to ? advanceTarget(parseDuration(args.to), started.from) : runFile.until
+  const situations = runFile.situations.length
+  console.log(`Playing ${started.label} to ${to}: seed ${runFile.seed}, ${runFile.pace.preset} pace, ${num(situations)} situation${situations === 1 ? '' : 's'}.`)
+  const begun = Date.now()
+  const sim = playRun(runFile, started, to, { metrics: false })
+  const ms = Date.now() - begun
+  console.log(eventLines(sim.events, { all: args.events === 'all', quiet: args.quiet }).join('\n'))
+  console.log('')
+  console.log(playSummary(sim))
+  console.log(`Lived ${num(sim.report().days)} days in ${secs(ms)}.`)
+  console.log(integrityLines(sim.db).join('\n'))
+  if (args.out) writeWorkspace(args.out, sim.db)
+  if (args.load) {
+    // A new identity, as reset gives one: a browser that syncs takes it whole, as another company.
+    const db = { ...sim.db, meta: { ...sim.db.meta, workspaceId: newId('ws') } as DB['meta'] }
+    await replaceAndSay(args.offset, db, sim.day, 'The app shows it on its next sync, with a notice that the workspace was replaced.')
   }
 }
 
@@ -449,6 +508,9 @@ async function main(): Promise<number> {
         break
       case 'advance':
         await advanceStack(args)
+        break
+      case 'play':
+        await play(args)
         break
       case 'save':
         await save(args)

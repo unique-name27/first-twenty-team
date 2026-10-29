@@ -83,7 +83,7 @@ export function advanceSummary(end: DB, r: AdvanceReport, info: { from: ISODate;
     `Advanced ${end.company.name} from ${info.from} to ${info.to}: ${num(r.days)} days, ${num(r.businessDays)} business days, ${info.policy} policy, seed ${info.seed}. ${num(r.actions)} actions.`,
   )
   lines.push(
-    `Headcount: ${num(r.headcount.from)} employed on ${info.from}, ${num(r.headcount.to)} on ${info.to}; ${num(r.headcount.starts)} started, ${num(r.headcount.separations)} resigned, ${num(r.headcount.incoming)} starting later.`,
+    `Headcount: ${num(r.headcount.from)} employed on ${info.from}, ${num(r.headcount.to)} on ${info.to}; ${num(r.headcount.starts)} started, ${num(r.headcount.separations)} left, ${num(r.headcount.incoming)} starting later.`,
   )
   lines.push(
     `Time off: ${num(r.timeOff.vacation)} vacation requests and ${num(r.timeOff.sick)} sick days sent, ${num(r.timeOff.approved)} approved the next business day; kept back after a warning: ${countsText(r.timeOff.heldBack)}.`,

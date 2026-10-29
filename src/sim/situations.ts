@@ -180,9 +180,9 @@ export function applyPace(policy: AdvancePolicy & { name: string }, pace: Pace):
   }
 }
 
-/** The pace on a day: the base, with each pace entry dated on or before it applied in date order. */
-export function paceOn(policy: AdvancePolicy, list: readonly Situation[], day: ISODate): Pace {
-  const pace = basePace(policy)
+/** The pace on a day: the start (default the policy's own), with each pace entry dated on or before it applied in date order. */
+export function paceOn(policy: AdvancePolicy, list: readonly Situation[], day: ISODate, start: PaceChanges = {}): Pace {
+  const pace = { ...basePace(policy), ...start }
   for (const s of byDate(list)) if (s.kind === 'pace' && s.on <= day) Object.assign(pace, s.changes)
   return pace
 }
