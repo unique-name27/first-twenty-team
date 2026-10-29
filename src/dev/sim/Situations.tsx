@@ -29,9 +29,11 @@ export function Situations({ locked, editing, onEdit }: { locked: boolean; editi
   const lastNote = (id: string) => notes.filter((n) => n.situationId === id).at(-1)
   // New situations default to the next simulated day (the day after the start at the latest).
   const nextDay = addDays(date, 1) > until ? until : addDays(date, 1)
-  const open = editing ? situations.find((s) => s.id === editing) : undefined
+  // Editing waits while the simulated company is open in the app: a change would live the run again under it.
+  const open = editing && !locked ? situations.find((s) => s.id === editing) : undefined
   const remove = (id: string) => simulator.setSituations(situations.filter((s) => s.id !== id))
   const save = (draft: SituationInput) => {
+    if (locked) return
     const exists = situations.some((s) => s.id === draft.id)
     simulator.setSituations(exists ? situations.map((s) => (s.id === draft.id ? (draft as Situation) : s)) : [...situations, draft as Situation])
     setAdding(null)
@@ -82,7 +84,7 @@ export function Situations({ locked, editing, onEdit }: { locked: boolean; editi
           })}
         </ul>
       )}
-      {(adding || open) && (
+      {!locked && (adding || open) && (
         <SituationSheet
           key={(adding ?? open)?.id}
           initial={(adding ?? open) as Draft}

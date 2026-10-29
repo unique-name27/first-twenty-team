@@ -313,6 +313,17 @@ describe('changing the situations', () => {
     expect(sim.notes).toEqual(fresh.notes)
   })
 
+  it('can stay on the keyframe it went back to, and stepping on from there equals a fresh run with the new list', () => {
+    const sim = run('seed-8', 40, [])
+    expect(sim.setSituations([QUIT], { liveAgain: false })).toMatchObject({ replayed: true, from: '2026-10-01', to: '2026-10-01', lines: [] })
+    expect(sim.day).toBe('2026-10-01')
+    sim.stepTo('2026-11-10')
+    const fresh = run('seed-8', 40, [QUIT])
+    expect(JSON.stringify(sim.db)).toBe(JSON.stringify(fresh.db))
+    expect(traceToJsonLines(sim.trace)).toBe(traceToJsonLines(fresh.trace))
+    expect(sim.notes).toEqual(fresh.notes)
+  })
+
   it('refuses situations that do not fit, naming each problem, and ones dated before the start', () => {
     expect(() => parseSituations([{ id: 'x', on: '2026-10-05', kind: 'layoff', count: 1, departmentId: 'd-eng' }])).toThrow(
       'The situations do not fit: Situation 1 (x), count: give exactly one of count, departmentId or personIds.',

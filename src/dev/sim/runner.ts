@@ -223,16 +223,28 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   function play(next: Speed, at?: ISODate): void {
     if (!sim || !run) return
+    // A day the run has already passed (the scrubber settled after the run went by it) is gone back to, with
+    // no change of speed: playing on would run to the end of the run.
+    if (at !== undefined && at <= sim.day) {
+      if (at < sim.day) rewind(at)
+      else if (playing) stop('stop_at')
+      else postPaused('stop_at')
+      return
+    }
     speed = next
     // A day asked for is kept through a change of speed; a new play without one plays to the end.
-    if (at !== undefined) stopAt = at > sim.day ? at : null
+    if (at !== undefined) stopAt = at
     else if (!playing) stopAt = null
     if (sim.day >= endDay()) {
       stopAt = null
       postPaused('until')
       return
     }
-    if (playing) return
+    if (!playing) loop()
+  }
+
+  /** Starts a chain of slices. */
+  function loop(): void {
     playing = true
     token += 1
     carried = 0
@@ -265,9 +277,9 @@ export function createRunner(deps: RunnerDeps): Runner {
     postPaused('step')
   }
 
-  function replayed(s: Simulation, from: ISODate): void {
+  function replayed(s: Simulation, from: ISODate, until?: ISODate): void {
     pending = { points: [], events: [], notes: [] }
-    deps.post({ type: 'replayed', from, date: s.day, metrics: s.metricsNow(), points: [...s.points], events: s.events.slice(-EVENTS_KEPT), notes: [...s.notes] })
+    deps.post({ type: 'replayed', from, date: s.day, ...(until ? { until } : {}), metrics: s.metricsNow(), points: [...s.points], events: s.events.slice(-EVENTS_KEPT), notes: [...s.notes] })
   }
 
   function setPace(changes: PaceChanges): void {
@@ -289,11 +301,22 @@ export function createRunner(deps: RunnerDeps): Runner {
   function setSituations(list: SituationInput[]): void {
     if (!sim || !run) return
     if (playing) stop('changed')
+    const back = sim.day
     try {
-      const change = sim.setSituations(list)
+      const change = sim.setSituations(list, { liveAgain: false })
+      if (change.replayed && sim.day < back) {
+        // Back on the keyframe before the change: the days up to where the run was are lived again as a
+        // play to that day at Max, in slices, so the panel sees them come and a pause still lands.
+        replayed(sim, change.from, back)
+        deps.post({ type: 'situations', situations: [...sim.situationList()], pace: pace(sim, run) })
+        speed = 'max'
+        stopAt = back
+        loop()
+        return
+      }
       if (change.replayed) replayed(sim, change.from)
     } catch (e) {
-      // A list that does not fit changes nothing; a refusal part way through living again stops the run.
+      // A list that does not fit changes nothing; anything else is a bug and stops the run.
       if (e instanceof Error && e.message.startsWith('The situation')) refuse(e)
       else stopped(e)
       return

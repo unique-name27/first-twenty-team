@@ -47,6 +47,8 @@ export type PanelState = {
   error: PanelError | null
   /** A step, a change of situations or a rewind is on its way to the worker (it answers when it is done). */
   working: boolean
+  /** After a change of situations, the day the worker is living the days again up to (it plays there at Max). */
+  catchingUp: ISODate | null
   /** What the live region says: set when the simulation pauses, so a screen reader hears it then only. */
   announce: string
 }
@@ -76,6 +78,7 @@ export const INITIAL_PANEL: PanelState = {
   integrity: null,
   error: null,
   working: false,
+  catchingUp: null,
   announce: '',
 }
 
@@ -115,6 +118,7 @@ export function reduce(s: PanelState, m: FromWorker): PanelState {
         integrity: m.integrity,
         error: null,
         working: false,
+        catchingUp: null,
         announce: `Started ${m.label}.`,
       }
     case 'tick':
@@ -142,10 +146,25 @@ export function reduce(s: PanelState, m: FromWorker): PanelState {
         size: m.size,
         integrity: m.integrity,
         working: false,
+        catchingUp: null,
         announce: pauseAnnouncement(m.date, m.metrics),
       }
-    case 'replayed':
-      return { ...s, date: m.date, metrics: m.metrics, points: m.points, events: numbered(m.events, s.nextSeq), nextSeq: s.nextSeq + m.events.length, notes: m.notes, error: null }
+    case 'replayed': {
+      // A catch-up play follows when `until` is later; Pause works through it, so nothing waits any more.
+      const catchingUp = m.until && m.until > m.date ? m.until : null
+      return {
+        ...s,
+        date: m.date,
+        metrics: m.metrics,
+        points: m.points,
+        events: numbered(m.events, s.nextSeq),
+        nextSeq: s.nextSeq + m.events.length,
+        notes: m.notes,
+        error: null,
+        working: catchingUp ? false : s.working,
+        catchingUp,
+      }
+    }
     case 'situations':
       return { ...s, situations: m.situations, pace: m.pace }
     case 'snapshot':
@@ -157,6 +176,7 @@ export function reduce(s: PanelState, m: FromWorker): PanelState {
         playing: m.stopped ? false : s.playing,
         error: { message: m.message, stopped: m.stopped, day: m.day, traceTail: m.traceTail },
         working: false,
+        catchingUp: m.stopped ? null : s.catchingUp,
         announce: m.stopped ? `The simulation stopped: ${m.message}` : m.message,
       }
   }

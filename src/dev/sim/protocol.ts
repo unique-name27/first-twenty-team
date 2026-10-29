@@ -53,7 +53,7 @@ export type ToWorker =
   | { type: 'step'; days: number }
   /** A change of pace from the next simulated day, kept in the run as a pace situation. */
   | { type: 'setPace'; changes: PaceChanges }
-  /** A new list of situations (pauses first); may live days again from a keyframe. */
+  /** A new list of situations (pauses first); may go back to a keyframe and play to today again. */
   | { type: 'setSituations'; situations: SituationInput[] }
   /** Back to the end of an earlier day (pauses first). */
   | { type: 'rewind'; to: ISODate }
@@ -79,8 +79,11 @@ export type FromWorker =
   | ({ type: 'ready'; label: string; companyName: string; from: ISODate; run: RunMeta } & PausedState)
   | { type: 'tick'; date: ISODate; playing: boolean; metrics: MetricPoint; points: MetricPoint[]; events: SimEvent[]; notes: SituationNote[] }
   | ({ type: 'paused'; reason: PauseReason } & PausedState)
-  /** The days from `from` on were lived again: the panel replaces its history with these. */
-  | { type: 'replayed'; from: ISODate; date: ISODate; metrics: MetricPoint; points: MetricPoint[]; events: SimEvent[]; notes: SituationNote[] }
+  /**
+   * The days from `from` on were lived again: the panel replaces its history with these. With `until`, the
+   * worker went back further than `date` and now plays to `until` at Max (ticks follow, then a pause there).
+   */
+  | { type: 'replayed'; from: ISODate; date: ISODate; until?: ISODate; metrics: MetricPoint; points: MetricPoint[]; events: SimEvent[]; notes: SituationNote[] }
   /** The situations changed without living anything again (a pace change while playing). */
   | { type: 'situations'; situations: Situation[]; pace: Pace }
   | { type: 'snapshot'; id: number; db: DB; date: ISODate; companyName: string }

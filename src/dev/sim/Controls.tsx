@@ -23,6 +23,7 @@ export function Controls({ locked, onEditSituation }: { locked: boolean; onEditS
   const from = useSim((s) => s.from)
   const until = useSim((s) => s.run?.until ?? null)
   const working = useSim((s) => s.working)
+  const catchingUp = useSim((s) => s.catchingUp)
   const stopped = useSim((s) => !!s.error?.stopped)
   const ready = phase === 'ready' && !!date && !!from && !!until
   // Going back is the way on after a stop; everything else waits for a run that goes.
@@ -88,7 +89,7 @@ export function Controls({ locked, onEditSituation }: { locked: boolean; onEditS
         <p className="ml-auto min-w-0 text-right">
           <span className="num block text-[15px] font-bold text-ink">{date ? fmtSimDay(date) : 'Not started'}</span>
           <span className="block text-[12px] text-ink-3">
-            {working ? 'Working...' : ready ? `Day ${daysBetween(from, date)} of ${daysBetween(from, until)}` : 'Pick a start below'}
+            {catchingUp ? `Living the days again to ${fmtShort(catchingUp)}` : working ? 'Working...' : ready ? `Day ${daysBetween(from, date)} of ${daysBetween(from, until)}` : 'Pick a start below'}
           </span>
         </p>
       </div>
@@ -116,9 +117,11 @@ function Timeline({ from, until, date, disabled, onEditSituation }: { from: ISOD
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => {
       setScrub(null)
+      // The date now, not when the drag happened: a playing run has moved on since (the worker checks again).
+      const now = useSim.getState().date ?? date
       const target = addDays(from, value)
-      if (target < date) simulator.rewind(target)
-      else if (target > date) simulator.playTo(target)
+      if (target < now) simulator.rewind(target)
+      else if (target > now) simulator.playTo(target)
     }, 450)
   }
   return (
@@ -155,8 +158,9 @@ function Timeline({ from, until, date, disabled, onEditSituation }: { from: ISOD
             key={s.id}
             type="button"
             tabIndex={-1}
+            disabled={disabled}
             onClick={() => s.kind !== 'pace' && onEditSituation(s.id)}
-            className={cx('absolute top-0 h-3 w-3 -translate-x-1/2 rotate-45 cursor-pointer rounded-[2px] border-0 p-0', s.kind === 'pace' ? 'bg-ink-3' : 'bg-accent')}
+            className={cx('absolute top-0 h-3 w-3 -translate-x-1/2 rotate-45 cursor-pointer rounded-[2px] border-0 p-0 disabled:cursor-not-allowed', s.kind === 'pace' ? 'bg-ink-3' : 'bg-accent')}
             style={{ left: at(s.on) }}
             title={`${fmtSimDay(s.on)}: ${situationSummary(s, names)}`}
             aria-label={`${fmtSimDay(s.on)}: ${situationSummary(s, names)}`}

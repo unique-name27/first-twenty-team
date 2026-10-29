@@ -82,6 +82,19 @@ describe('the panel state', () => {
     expect(s.date).toBe('2026-10-05')
   })
 
+  it('stops waiting when a change of situations goes back and plays to today again, and says where it is going', () => {
+    const replay: FromWorker = { type: 'replayed', from: '2026-10-01', date: '2026-10-01', until: '2026-11-10', metrics: point('2026-10-01'), points: [], events: [], notes: [] }
+    const s = run(ready, { type: 'tick', date: '2026-11-10', playing: false, metrics: point('2026-11-10'), points: [], events: [], notes: [] }, replay)
+    // The panel set working when it sent the change; Pause has to work through the catch-up play.
+    const sent = reduce({ ...s, working: true }, replay)
+    expect(sent).toMatchObject({ working: false, catchingUp: '2026-11-10', date: '2026-10-01' })
+    const done = reduce(sent, { type: 'paused', reason: 'stop_at', ...paused('2026-11-10') })
+    expect(done).toMatchObject({ catchingUp: null, date: '2026-11-10' })
+    // A rewind (no until) leaves working for its pause to clear.
+    const back = reduce({ ...s, working: true }, { ...replay, until: undefined })
+    expect(back).toMatchObject({ working: true, catchingUp: null })
+  })
+
   it('keeps the run after a refused request, and stops playing after a stop', () => {
     const refused = run(ready, { type: 'error', message: 'The situations do not fit.', stopped: false, day: '2026-10-01', traceTail: [] })
     expect(refused).toMatchObject({ phase: 'ready', error: { message: 'The situations do not fit.', stopped: false } })

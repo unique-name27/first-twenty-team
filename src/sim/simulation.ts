@@ -218,10 +218,11 @@ export class Simulation {
   /**
    * A new list of situations. When a change is dated after the last day lived, nothing is lived again.
    * Otherwise the simulation goes back to the last keyframe before the earliest change and lives forward to the
-   * day it was on: the result equals a fresh simulation with the new list. Refuses while the simulation has
-   * stopped, and situations that do not fit or come too early.
+   * day it was on: the result equals a fresh simulation with the new list. With `liveAgain: false` it stays on
+   * that keyframe, and the caller lives the days again at its own pace (the panel's worker does, in slices).
+   * Refuses while the simulation has stopped, and situations that do not fit or come too early.
    */
-  setSituations(input: readonly SituationInput[]): SituationsChange {
+  setSituations(input: readonly SituationInput[], { liveAgain = true }: { liveAgain?: boolean } = {}): SituationsChange {
     this.mustBeGoing()
     const list = parseSituations(input)
     checkSituationDates(list, this.from)
@@ -234,6 +235,7 @@ export class Simulation {
     let frame = this.frames[0]
     for (const f of this.frames) if (f.day < changedOn) frame = f
     this.restore(frame, list)
+    if (!liveAgain) return { ...this.since(frame.day, frame.day, frameMark(frame)), replayed: true }
     this.live(day)
     return { ...this.since(frame.day, day, frameMark(frame)), replayed: true }
   }

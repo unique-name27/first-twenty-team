@@ -169,12 +169,15 @@ describe('the simulator loop', () => {
     h.send({ type: 'step', days: 30 })
     const straight = h.last('paused')!
     h.send({ type: 'setSituations', situations: [{ id: 'quit', on: '2026-10-12', kind: 'quit' }] })
+    // Back on the start keyframe, then a play to Oct 31 at Max.
     const replayed = h.last('replayed')!
-    expect(replayed.from).toBe('2026-10-01')
-    expect(replayed.date).toBe('2026-10-31')
-    expect(replayed.points).toHaveLength(30)
-    expect(replayed.notes.map((n) => n.situationId)).toContain('quit')
-    expect(h.last('paused')).toMatchObject({ reason: 'changed', date: '2026-10-31', situations: [expect.objectContaining({ id: 'quit' })] })
+    expect(replayed).toMatchObject({ from: '2026-10-01', date: '2026-10-01', until: '2026-10-31', points: [] })
+    expect(h.last('situations')!.situations).toEqual([expect.objectContaining({ id: 'quit' })])
+    h.pass(10_000)
+    const ticks = h.posted.slice(h.posted.indexOf(replayed)).filter((m) => m.type === 'tick')
+    expect(ticks.flatMap((t) => t.points)).toHaveLength(30)
+    expect(ticks.flatMap((t) => t.notes).map((n) => n.situationId)).toContain('quit')
+    expect(h.last('paused')).toMatchObject({ reason: 'stop_at', date: '2026-10-31', situations: [expect.objectContaining({ id: 'quit' })] })
     expect(h.last('paused')!.metrics.departuresToDate).toBeGreaterThan(straight.metrics.departuresToDate)
     const count = h.posted.length
     // A situation from JSON the panel did not check: the worker checks it.
@@ -182,6 +185,48 @@ describe('the simulator loop', () => {
     h.send({ type: 'setSituations', situations: unchecked })
     expect(h.posted.length).toBe(count + 1)
     expect(h.last('error')).toMatchObject({ stopped: false, message: expect.stringMatching(/^The situations do not fit/) })
+  })
+
+  it('lives the days again after an early change in slices, so a pause lands part way, and ends where a fresh run with the list does', () => {
+    const QUIT = [{ id: 'quit', on: '2026-10-12', kind: 'quit' as const }]
+    const fresh = harness()
+    fresh.send({ type: 'start', run: { ...RUN, situations: QUIT } })
+    fresh.send({ type: 'step', days: 40 })
+    const h = harness(4)
+    h.send({ type: 'start', run: RUN })
+    h.send({ type: 'step', days: 40 })
+    h.send({ type: 'setSituations', situations: QUIT })
+    expect(h.last('paused')!.date).toBe('2026-11-10')
+    h.pass(0)
+    // One slice of about 30 ms lived a few days; the next one waits, so a pause gets in between.
+    expect(h.queued()).toBe(1)
+    h.send({ type: 'pause' })
+    const part = h.last('paused')!
+    expect(part.date > '2026-10-01' && part.date < '2026-11-10').toBe(true)
+    h.send({ type: 'play', speed: 'max', stopAt: '2026-11-10' })
+    h.pass(10_000)
+    expect(h.last('paused')).toMatchObject({ reason: 'stop_at', date: '2026-11-10' })
+    expect(h.last('paused')!.metrics).toEqual(fresh.last('paused')!.metrics)
+  })
+
+  it('goes back to a day the scrubber chose that a playing run already passed, instead of playing on to the end', () => {
+    const h = harness(4)
+    h.send({ type: 'start', run: RUN })
+    h.send({ type: 'play', speed: 'month' })
+    h.pass(1000)
+    const passed = h.last('tick')!.date
+    expect(passed > '2026-10-20').toBe(true)
+    // The scrub settled on Oct 20 after the run went by it.
+    h.send({ type: 'play', speed: 'max', stopAt: '2026-10-20' })
+    expect(h.last('replayed')!.date).toBe('2026-10-20')
+    expect(h.last('paused')).toMatchObject({ date: '2026-10-20' })
+    h.pass(10_000)
+    expect(h.last('paused')!.date).toBe('2026-10-20')
+    expect(h.last('tick')!.playing).toBe(false)
+    // A later day still plays there and stops.
+    h.send({ type: 'play', speed: 'max', stopAt: '2026-11-02' })
+    h.pass(10_000)
+    expect(h.last('paused')).toMatchObject({ reason: 'stop_at', date: '2026-11-02' })
   })
 
   it('goes back to an earlier day and plays on from there the same way', () => {

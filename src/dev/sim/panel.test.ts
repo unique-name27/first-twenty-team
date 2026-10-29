@@ -5,6 +5,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseSituations } from '@/sim/situations'
+import { sandbox } from './appSandbox'
 import { INITIAL_PANEL, type PanelState, reduce } from './panelState'
 import type { FromWorker, PausedState } from './protocol'
 import { SandboxBanner } from './SandboxBanner'
@@ -119,6 +120,29 @@ describe('the simulator panel', () => {
     const html = render()
     expect(html).toContain('That did not go through')
     expect(html).not.toContain('Go back to an earlier day')
+  })
+
+  it("keeps the timeline's situation markers from opening the editor while the simulated company is open in the app", () => {
+    show(loaded.reduce(reduce, { ...INITIAL_PANEL, phase: 'starting' }))
+    const marker = (html: string) => /<button[^>]*aria-label="Mon, Nov 2, 2026: Hiring push[^"]*"[^>]*>/.exec(html)?.[0] ?? ''
+    expect(marker(render())).toMatch(/^<button/)
+    expect(marker(render())).not.toContain('disabled=""')
+    // Server rendering reads the sandbox view's first state too.
+    const view = sandbox.view.getInitialState()
+    const was = { ...view }
+    Object.assign(view, { open: true, date: '2026-11-10', companyName: 'Tidebeam', originalName: 'Ledgerlark' })
+    try {
+      expect(marker(render())).toContain('disabled=""')
+    } finally {
+      Object.assign(view, was)
+    }
+  })
+
+  it('says where it is going while a change of situations lives the days again', () => {
+    show({ ...loaded.reduce(reduce, { ...INITIAL_PANEL, phase: 'starting' }), date: '2026-10-01', catchingUp: '2026-11-10' })
+    const html = render()
+    expect(html).toContain('Living the days again to Nov 10')
+    expect(html).not.toContain('Day 0 of 365')
   })
 
   it('shows no banner while no simulated company is open', () => {

@@ -597,9 +597,11 @@ touched. Leaving the page pauses it. Keys (in the ? sheet under Simulator, off w
 are off): `k` play or pause, `.` a day, `w` a week, `m` a month, `1` to `4` the speed, `[` back a month.
 
 **The timeline** runs from the start to the end. The ticks are the run's start and the end of each
-simulated month, the days it keeps a copy of: click one to go back to it. Diamonds are situations (click to edit),
-shaded bands are hiring freezes, and the line is today in the run. The slider under it does the same by keyboard: an earlier day goes back to it (a
-monthly point, then at most a month of days lived again, under a second), a later day plays there at Max.
+simulated month, the days it keeps a copy of: click one to go back to it. Diamonds are situations (click to
+edit), shaded bands are hiring freezes, and the line is today in the run. The slider under it does the same
+by keyboard: an earlier day goes back to it (a monthly point, then at most a month of days lived again, under
+a second), a later day plays there at Max. A day the run has already passed by the time the slider settles
+is gone back to.
 
 **What you see.** Tiles for employees (and people starting), open roles (and jobs on hold), the pipeline,
 starts and departures since the run began, people on leave and the loaded monthly payroll; headcount over
@@ -613,8 +615,10 @@ headcount, hiring freeze, someone quits, layoff, leave, raise round and senior h
 for the kind; people and departments come from the simulated company as of the last pause, and "Someone at
 random" is the default. When the app refuses a step (someone who already left, a leave they do not
 qualify for), the list shows the note under the situation and the run goes on. A situation added, changed
-or removed before today in the run lives the days again from the monthly point before it, so what you see
-is what a fresh run with the new list gives.
+or removed before today in the run goes back to the monthly point before it and plays to today again at Max
+("Living the days again to ..." under the date; Pause works meanwhile), so what you see is what a fresh run
+with the new list gives. While the simulated company is open in the app, situations cannot be added or
+edited.
 
 **Pace.** Sliders for hiring pace (0 to 3 times), attrition (0 to 40% a year), time off (0 to 3 times) and
 offer acceptance (0 to 100%), playing or paused. A change applies from the next simulated day and is kept
