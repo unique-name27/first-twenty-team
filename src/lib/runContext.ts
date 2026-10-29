@@ -7,11 +7,13 @@
 // browsers too (no AsyncLocalStorage there). An async run stays on until its promise settles, so anything
 // else that runs meanwhile in this process (a timer, a sync engine) runs inside it. A second run started
 // while one is on, nested or alongside, throws. A long run that tells a story (the simulator, src/sim) moves
-// its actor and time of day along with updateRun, and keeps one stream of ids.
+// its actor and time of day along with updateRun, and keeps one stream of ids. A run can also be held open
+// between entries (openRun, then withRun each time): its id stream goes on where the last entry left it, and
+// runState and restoreRun put it back to an earlier point, for a simulation that steps and rewinds.
 //
 // Module rule: its only runtime import is the seeded random numbers (rng.ts, which imports nothing), so
 // id.ts, dates.ts and draft.ts can all read it without an import cycle.
-import { makeRng } from '@/data/seed/hiring/rng'
+import { makeRng, type Rng } from '@/data/seed/hiring/rng'
 import type { ID, Role } from '@/domain/types'
 
 export type RunOptions = {
@@ -51,6 +53,26 @@ type HeldRun = {
   viewingAs: Role
   time: ActiveRun['time']
   nextIdSuffix(): string
+  /** The id stream's generator: replaced on restoreRun. */
+  rng: Rng
+  /** Suffixes the run never issues (RunOptions.avoid). */
+  readonly avoid: ReadonlySet<string>
+  /** Suffixes issued so far, in order (append-only, so a saved state keeps only their count). */
+  readonly issued: string[]
+  readonly issuedSet: Set<string>
+}
+
+/** A run held open between entries (openRun, withRun). */
+export type RunHandle = { readonly [handleBrand]: true }
+declare const handleBrand: unique symbol
+
+/** Where a held run is: enough to put it back there with restoreRun. */
+export type RunState = {
+  readonly actorId: ID | null
+  readonly viewingAs: Role
+  readonly time: ActiveRun['time']
+  readonly idRngState: number
+  readonly issuedCount: number
 }
 
 let active: HeldRun | null = null
@@ -67,7 +89,24 @@ export function activeRun(): ActiveRun | null {
  */
 export function withRunContext<T>(options: RunOptions, fn: () => T): T {
   if (active) throw new Error('A run is already on: runs never nest, and only one runs at a time.')
-  const run = startRun(options)
+  return withRun(openRun(options), fn)
+}
+
+/**
+ * A run that is not on yet: withRun turns it on for one call at a time, and its actor, Viewing-as, time of
+ * day and id stream carry over from one call to the next. Throws on options it cannot read.
+ */
+export function openRun(options: RunOptions): RunHandle {
+  return startRun(options) as unknown as RunHandle
+}
+
+/**
+ * Turns a held run on for fn, as withRunContext does (the same rules: a promise keeps it on until it settles,
+ * it always ends, and it throws when a run is already on).
+ */
+export function withRun<T>(handle: RunHandle, fn: () => T): T {
+  if (active) throw new Error('A run is already on: runs never nest, and only one runs at a time.')
+  const run = held(handle)
   active = run
   const end = () => {
     if (active === run) active = null
@@ -100,6 +139,31 @@ export function updateRun(update: RunUpdate): void {
   if (update.actorId !== undefined) active.actorId = update.actorId
   if (update.viewingAs !== undefined) active.viewingAs = update.viewingAs
   active.time = time
+}
+
+/** Where a held run is now: its actor, Viewing-as, time of day and how far its id stream has gone. */
+export function runState(handle: RunHandle): RunState {
+  const run = held(handle)
+  return { actorId: run.actorId, viewingAs: run.viewingAs, time: run.time, idRngState: run.rng.state(), issuedCount: run.issued.length }
+}
+
+/**
+ * Puts a held run back where runState found it: the ids issued since are forgotten, and the next ids are the
+ * ones that came next then. Throws while the run is on, and for a state from further along than the run is.
+ */
+export function restoreRun(handle: RunHandle, state: RunState): void {
+  const run = held(handle)
+  if (active === run) throw new Error('A run cannot be put back while it is on.')
+  if (state.issuedCount > run.issued.length) throw new Error('That run state is from further along than the run is.')
+  for (const suffix of run.issued.splice(state.issuedCount)) run.issuedSet.delete(suffix)
+  run.rng = makeRng(state.idRngState)
+  run.actorId = state.actorId
+  run.viewingAs = state.viewingAs
+  run.time = state.time
+}
+
+function held(handle: RunHandle): HeldRun {
+  return handle as unknown as HeldRun
 }
 
 function isThenable(value: unknown): value is PromiseLike<unknown> {
@@ -139,20 +203,24 @@ function readTimeOfDay(timeOfDay: string): ActiveRun['time'] {
 function startRun(options: RunOptions): HeldRun {
   const time = readTimeOfDay(options.timeOfDay)
   if (typeof options.seed === 'number' && !Number.isFinite(options.seed)) throw new Error(`A run's seed is a finite number or a string, not ${options.seed}.`)
-  const rng = makeRng(hashSeed(`ids ${options.seed}`))
-  const issued = new Set<string>(options.avoid ?? [])
-  const draw = () => Math.floor(rng.next() * 36 ** 5).toString(36).padStart(5, '0') + Math.floor(rng.next() * 36 ** 4).toString(36).padStart(4, '0')
-  return {
+  const run: HeldRun = {
     actorId: options.actorId,
     viewingAs: options.viewingAs ?? 'admin',
     time,
+    rng: makeRng(hashSeed(`ids ${options.seed}`)),
+    avoid: new Set(options.avoid ?? []),
+    issued: [],
+    issuedSet: new Set(),
     nextIdSuffix() {
+      const draw = () => Math.floor(run.rng.next() * 36 ** 5).toString(36).padStart(5, '0') + Math.floor(run.rng.next() * 36 ** 4).toString(36).padStart(4, '0')
       let suffix = RUN_ID_MARK + draw()
-      while (issued.has(suffix)) suffix = RUN_ID_MARK + draw()
-      issued.add(suffix)
+      while (run.avoid.has(suffix) || run.issuedSet.has(suffix)) suffix = RUN_ID_MARK + draw()
+      run.issued.push(suffix)
+      run.issuedSet.add(suffix)
       return suffix
     },
   }
+  return run
 }
 
 /** A 32-bit number from the seed's text (FNV-1a, then mixed so seeds one character apart land far apart). */

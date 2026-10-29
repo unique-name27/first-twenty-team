@@ -13,6 +13,8 @@ export type Rng = {
   /** Picks by weight: [[value, weight], ...]. */
   weighted: <T>(pairs: ReadonlyArray<readonly [T, number]>) => T
   shuffle: <T>(xs: readonly T[]) => T[]
+  /** Where the sequence is: makeRng(rng.state()) goes on with exactly the numbers this one would give next. */
+  state: () => number
 }
 
 export function makeRng(seed: number): Rng {
@@ -44,5 +46,5 @@ export function makeRng(seed: number): Rng {
     }
     return out
   }
-  return { next, int, pick, chance, weighted, shuffle }
+  return { next, int, pick, chance, weighted, shuffle, state: () => a }
 }
