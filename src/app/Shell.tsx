@@ -22,6 +22,7 @@ import {
   useServerHere,
   useSyncStorageWarning,
 } from './Header'
+import { useDevBanner, useDevNav, useDevPage } from './devSlots'
 import { activeNavKey, visibleNav } from './nav'
 import { links, useRoute } from './router'
 import { useViewer } from './useViewer'
@@ -150,7 +151,9 @@ function ViewAsControl() {
 function NavList({ onNavigate, autofocusActive }: { onNavigate?: () => void; autofocusActive?: boolean }) {
   const viewer = useViewer()
   const route = useRoute()
-  const active = activeNavKey(route.view, viewer)
+  // A development page (src/app/devSlots.ts) belongs to no section, so no item is current on it.
+  const devPage = useDevPage(route.view)
+  const active = devPage ? null : activeNavKey(route.view, viewer)
   return (
     <nav aria-label="Main" className="ft-nav">
       <ul className="flex flex-col gap-0.5">
@@ -179,6 +182,46 @@ function NavList({ onNavigate, autofocusActive }: { onNavigate?: () => void; aut
       </ul>
     </nav>
   )
+}
+
+/** Links a development build adds under the navigation (src/app/devSlots.ts); nothing in a build. */
+function DevNavList({ onNavigate }: { onNavigate?: () => void }) {
+  const items = useDevNav()
+  const route = useRoute()
+  if (items.length === 0) return null
+  return (
+    <nav aria-label="Development" className="ft-nav ft-nav--dev mt-2 border-t border-line pt-2">
+      <ul className="flex flex-col gap-0.5">
+        {items.map((item) => {
+          const on = route.view === item.view
+          return (
+            <li key={item.view}>
+              <a
+                href={item.href}
+                onClick={onNavigate}
+                aria-current={on ? 'page' : undefined}
+                className={cx(
+                  'ft-navitem',
+                  on && 'ft-navitem--active',
+                  'flex h-10 items-center gap-3 rounded-lg px-3 text-[13.5px] font-semibold transition-colors',
+                  on ? 'bg-accent-soft text-accent-soft-ink' : 'text-ink-3 hover:bg-surface-2 hover:text-ink',
+                )}
+              >
+                <Icon name={item.icon} size={17} className="ft-navitem__icon" />
+                {item.label}
+              </a>
+            </li>
+          )
+        })}
+      </ul>
+    </nav>
+  )
+}
+
+/** The banner a development build shows beside the sync banners (src/app/devSlots.ts); nothing in a build. */
+function DevBanner() {
+  const Banner = useDevBanner()
+  return Banner ? <Banner /> : null
 }
 
 /**
@@ -301,6 +344,7 @@ function MenuPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
         <HeadcountBlock compact />
         <div data-overlay-body>
           <NavList onNavigate={onClose} autofocusActive />
+          <DevNavList onNavigate={onClose} />
         </div>
         <div className="mt-auto">
           <ViewAsControl />
@@ -338,6 +382,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <HeadcountBlock />
         <div className="scroll-thin -mx-1 min-h-0 flex-1 overflow-y-auto px-1">
           <NavList />
+          <DevNavList />
         </div>
         <ViewAsControl />
         <RailNote />
@@ -390,6 +435,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <Header />
           <StorageWarning />
           <SyncBanners />
+          <DevBanner />
           <PreviewBanner />
           <SampleBanner />
           <ServerHereBanner />
