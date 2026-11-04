@@ -15,6 +15,8 @@ export const useSim = create<PanelState>(() => INITIAL_PANEL)
 let worker: Worker | null = null
 /** The start of a run on its way to the worker; it becomes the panel's start once the worker is ready. */
 let pendingStart: RunStart | null = null
+/** The speed a story plays at once its run is ready (simulator.startAndPlay), or null. */
+let pendingPlay: Speed | null = null
 let snapshotSeq = 0
 const waiting = new Map<number, { resolve: (s: Snapshot) => void; reject: (e: Error) => void }>()
 
@@ -28,7 +30,15 @@ function receive(m: FromWorker): void {
     return
   }
   useSim.setState((s) => reduce(s, m))
-  if (m.type === 'ready') useSim.setState({ start: pendingStart })
+  if (m.type === 'ready') {
+    useSim.setState({ start: pendingStart })
+    if (pendingPlay) {
+      const speed = pendingPlay
+      pendingPlay = null
+      useSim.setState({ speed })
+      send({ type: 'play', speed })
+    }
+  }
 }
 
 function ensureWorker(): Worker {
@@ -57,9 +67,15 @@ const ready = () => useSim.getState().phase === 'ready'
 export const simulator = {
   /** A new run from a run file (JSON the worker checks); the start is kept for saving and bug reports. */
   start(run: { start: RunStart } & Record<string, unknown>): void {
+    pendingPlay = null
     pendingStart = run.start
     useSim.setState({ phase: 'starting', error: null })
     send({ type: 'start', run })
+  },
+  /** A new run that plays at `speed` as soon as it is ready (the demo stories, demos.ts). */
+  startAndPlay(run: { start: RunStart } & Record<string, unknown>, speed: Speed): void {
+    simulator.start(run)
+    pendingPlay = speed
   },
   /** Plays at the chosen speed; stopAt pauses on that day. */
   play(stopAt?: ISODate): void {

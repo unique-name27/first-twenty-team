@@ -583,6 +583,20 @@ in fast time, lets you set up situations and change the pace while it plays, and
 real screens. A build never has it: `main.tsx` loads `src/dev/sim/register.ts` only behind
 `import.meta.env.DEV`, and the guards and CI's build check prove it ("Where it lives" below).
 
+**Demo stories.** To show the simulator to people, use one of the three ready-made runs at the top of the
+page. Each starts and plays by itself at 1 month a second, so a year takes about 12 seconds:
+
+| Story | Link | What happens |
+| --- | --- | --- |
+| From 8 people to 20 in a year | `#sim.demo.growth` | seed-8 grows to 20: roles planned and posted, interviews, offers, people starting |
+| A layoff, a freeze, then a comeback | `#sim.demo.rough-quarter` | full-20 lays off 3 people in January, freezes hiring for 90 days, then hires back |
+| Two years of the sample company | `#sim.demo.two-years` | Ledgerlark at a busy pace for two years, with a raise round and a resignation |
+
+The link opens the panel and plays the story (in a codespace: the app's address with the link at the end,
+for example `https://<your-codespace-name>-8826.app.github.dev/#sim.demo.growth`). Pause, rewind or add a
+situation at any time; *Open in the app* then shows the result in the real screens. The stories live in
+`src/dev/sim/demos.ts` as plain run files, so `npm run sim -- play` replays them too.
+
 **Start a run.** Pick where it starts: *This company, now* (a copy of the workspace this browser holds, on
 the app's today; your company is not touched), *A scenario* with its seed and, if you like, an as-of date
 (`stress` is left out: it is too big for a browser), or *The sample*. Then the run's seed, the pace (quiet,
@@ -669,9 +683,13 @@ holds `ft-dev-simulator` (the panel's marker), `Simulator (dev)` or an error mes
 Claude Code is installed in every codespace. Open a new terminal (the stack keeps the first one busy) and
 run `claude` in the repo folder.
 
-- **Sign in with your Claude account** (Pro, Max, Team or Enterprise): choose that login, open the link
-  Claude Code prints, sign in, and paste the code it shows back into the terminal. You stay signed in while
-  the codespace exists; a new or rebuilt codespace asks again.
+- **Sign in with your Claude account** (Pro, Max, Team or Enterprise): choose that login. A browser tab may
+  open by itself and end on a `localhost` page that does not load (a 404): that is expected in a codespace,
+  because the sign-in tries to come back to your own computer. Instead, press `c` in the terminal to copy the
+  login link shown above the `Paste code here if prompted` prompt, open that link, sign in, copy the code
+  the page shows, and paste it at the prompt. Press Enter when it says `Login successful`. If pasting does
+  nothing, run `claude auth login` and paste the code there. You stay signed in while the codespace exists
+  (stopping and starting it keeps the sign-in); a new or rebuilt codespace asks again.
 - **Optional: an API key.** If you use a Claude Console API key instead, save it as a Codespaces secret
   named `ANTHROPIC_API_KEY` (github.com: Settings > Codespaces > Secrets > New secret, and give it access to
   this repo). Claude Code finds it in every codespace you open. You do not need one if you sign in with
