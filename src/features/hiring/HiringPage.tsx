@@ -30,6 +30,7 @@ import {
   Select,
   Tabs,
 } from '@/ui'
+import { type CopyFallback, CopyFallbackModal, runAction, useInboxItems } from '@/features/home'
 import { HiringMetricsPanel, InterviewKitsTab } from './interviews'
 import { OffersTab } from './offers'
 import { commit } from './actions'
@@ -49,9 +50,11 @@ import {
   visibleApplicationIds,
   visibleCandidateIds,
 } from './logic'
+import { HiringSummary, JOBS_SECTION } from './HiringSummary'
 import { NewJobSheet } from './NewJobSheet'
-import { AppStatusBadge, JobStatusBadge, MiniFunnel, RequestBadge, SOURCE_LABEL, SourceChip, WRAP_BUTTON } from './parts'
+import { AppStatusBadge, JOB_STATUS, JobStatusBadge, MiniFunnel, RequestBadge, SOURCE_LABEL, SourceChip, WRAP_BUTTON } from './parts'
 import { QuickAddSheet } from './QuickAddSheet'
+import { attentionRank, hiringSummary, jobAction, jobStatusWord, type OffersWaiting } from './summary'
 
 type Tab = 'jobs' | 'candidates' | 'offers' | 'kits'
 
@@ -149,14 +152,26 @@ function JobsTab() {
   const db = useDB((s) => s.db)
   const viewer = useViewer()
   const [showDone, setShowDone] = useState(false)
+  const [showMetrics, setShowMetrics] = useState(false)
+  // One copy fallback for every row's inline action.
+  const [fallback, setFallback] = useState<CopyFallback>(null)
   const t = today()
+  // Admin and Hiring managers get the decision strip and the attention order; employees keep the plain list.
+  const decides = viewer.role === 'admin' || viewer.role === 'manager'
+  const { items } = useInboxItems()
+  const summary = useMemo(() => (decides ? hiringSummary(db, items, viewer, t) : null), [decides, db, items, viewer, t])
+  const offers = summary?.kind === 'admin' ? summary.offers : null
+  const offerJobIds = useMemo(() => new Set(offers?.jobIds ?? []), [offers])
   const rows = useMemo(() => {
     const now = nowISO()
     return [...visibleJobs(viewer, db)]
       .sort(compareJobs)
       .map((j) => jobRowData(db, viewer, j, t, now))
   }, [db, viewer, t])
-  const live = rows.filter((r) => r.job.status === 'open' || r.job.status === 'draft' || r.job.status === 'on_hold')
+  // Offers waiting on you, then stuck candidates, then the usual order (the sort is stable).
+  const live = rows
+    .filter((r) => r.job.status === 'open' || r.job.status === 'draft' || r.job.status === 'on_hold')
+    .sort((a, b) => (decides ? attentionRank(a, offerJobIds) - attentionRank(b, offerJobIds) : 0))
   const done = rows.filter((r) => r.job.status === 'filled' || r.job.status === 'closed')
   const planned = plannedRows(db, viewer)
   const counts = { open: 0, draft: 0, on_hold: 0 }
@@ -178,55 +193,56 @@ function JobsTab() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Panel
-        title="Jobs"
-        subtitle={live.length ? `${counts.open} open, ${counts.draft} draft, ${counts.on_hold} on hold` : undefined}
-        padded={false}
-      >
-        {live.length === 0 && planned.length === 0 ? (
-          <EmptyState
-            icon="briefcase"
-            title={viewer.role === 'admin' ? 'No open jobs' : 'No jobs for you right now'}
-            body={
-              viewer.role === 'admin'
-                ? 'Open one from the headcount plan or start from a role template.'
-                : 'Jobs where you are the hiring manager or on the panel show up here. Need someone? Request a job and Admin approves it.'
-            }
-            action={
-              viewer.role === 'admin' || viewer.role === 'manager' ? (
-                <Button variant="primary" icon="briefcase" onClick={() => navigate('hiring', 'new-job')}>
-                  {viewer.role === 'admin' ? 'New job' : 'Request a job'}
-                </Button>
-              ) : undefined
-            }
-          />
-        ) : (
-          <ul className="divide-y divide-line">
-            {live.map((r) => (
-              <JobRow key={r.job.id} row={r} />
-            ))}
-            {planned.map((slot) => (
-              <li key={slot.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-surface-2/40 px-5 py-4 text-ink-3">
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-ink-2">{slot.title}</p>
-                  <p className="text-[13px]">
-                    {fmtQuarter(slot.quarter)}, {levelLabel(db, slot.levelId)}, target start {fmtDate(slot.targetStart)}
-                    {slot.isBackfill ? ', backfill' : ''}
-                  </p>
-                </div>
-                <Badge tone="outline">Planned</Badge>
-                {viewer.role === 'admin' ? (
-                  <Button icon="plus" onClick={() => openFromPlan(slot.id)}>
-                    Open job
+      {summary && <HiringSummary summary={summary} />}
+      <div id={JOBS_SECTION} tabIndex={-1} className="min-w-0 scroll-mt-4">
+        <Panel
+          title="Jobs"
+          subtitle={live.length ? `${counts.open} open, ${counts.draft} draft, ${counts.on_hold} on hold` : undefined}
+          padded={false}
+        >
+          {live.length === 0 && planned.length === 0 ? (
+            <EmptyState
+              icon="briefcase"
+              title={viewer.role === 'admin' ? 'No open jobs' : 'No jobs for you right now'}
+              body={
+                viewer.role === 'admin'
+                  ? 'Open one from the headcount plan or start from a role template.'
+                  : 'Jobs where you are the hiring manager or on the panel show up here. Need someone? Request a job and Admin approves it.'
+              }
+              action={
+                viewer.role === 'admin' || viewer.role === 'manager' ? (
+                  <Button variant="primary" icon="briefcase" onClick={() => navigate('hiring', 'new-job')}>
+                    {viewer.role === 'admin' ? 'New job' : 'Request a job'}
                   </Button>
-                ) : (
-                  <span className="text-[13px]">An admin opens it</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
+                ) : undefined
+              }
+            />
+          ) : (
+            <ul className="divide-y divide-line">
+              {live.map((r) => (decides ? <DecisionRow key={r.job.id} row={r} offers={offers} offerJobIds={offerJobIds} onFallback={setFallback} /> : <JobRow key={r.job.id} row={r} />))}
+              {planned.map((slot) => (
+                <li key={slot.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-surface-2/40 px-5 py-4 text-ink-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-ink-2">{slot.title}</p>
+                    <p className="text-[13px]">
+                      {fmtQuarter(slot.quarter)}, {levelLabel(db, slot.levelId)}, target start {fmtDate(slot.targetStart)}
+                      {slot.isBackfill ? ', backfill' : ''}
+                    </p>
+                  </div>
+                  <Badge tone="outline">Planned</Badge>
+                  {viewer.role === 'admin' ? (
+                    <Button icon="plus" onClick={() => openFromPlan(slot.id)}>
+                      Open job
+                    </Button>
+                  ) : (
+                    <span className="text-[13px]">An admin opens it</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      </div>
 
       {done.length > 0 && (
         <div>
@@ -236,17 +252,79 @@ function JobsTab() {
           {showDone && (
             <Panel padded={false} className="mt-2">
               <ul className="divide-y divide-line">
-                {done.map((r) => (
-                  <JobRow key={r.job.id} row={r} />
-                ))}
+                {done.map((r) => (decides ? <DecisionRow key={r.job.id} row={r} offers={offers} offerJobIds={offerJobIds} onFallback={setFallback} /> : <JobRow key={r.job.id} row={r} />))}
               </ul>
             </Panel>
           )}
         </div>
       )}
 
-      {viewer.role !== 'employee' && <HiringMetricsPanel />}
+      {viewer.role !== 'employee' && (
+        <div>
+          <Button variant="ghost" icon={showMetrics ? 'chevron-up' : 'chevron-down'} className={WRAP_BUTTON} aria-expanded={showMetrics} onClick={() => setShowMetrics((v) => !v)}>
+            {showMetrics ? 'Hide' : 'Show'} hiring metrics
+          </Button>
+          {showMetrics && (
+            <div className="mt-2">
+              <HiringMetricsPanel />
+            </div>
+          )}
+        </div>
+      )}
+      <CopyFallbackModal fallback={fallback} onClose={() => setFallback(null)} />
     </div>
+  )
+}
+
+/**
+ * A job for Admin or a Hiring manager: the title, one status word, and one inline action. Offers waiting on
+ * you and stuck candidates sort first (JobsTab), so the action is what to do about the word.
+ */
+function DecisionRow({ row, offers, offerJobIds, onFallback }: { row: JobRowData; offers: OffersWaiting | null; offerJobIds: ReadonlySet<ID>; onFallback: (f: CopyFallback) => void }) {
+  const db = useDB((s) => s.db)
+  const viewer = useViewer()
+  const { job } = row
+  const word = jobStatusWord(row, offerJobIds)
+  const action = jobAction(row, offers)
+  const ni = row.nextInterview
+  // The job's own status stays visible next to the word, unless the word already says it (Draft, On hold, ...).
+  const status = JOB_STATUS[job.status].label
+  const notes = [
+    status === word.text ? null : status,
+    personNameById(db, job.hiringManagerId),
+    jobAgeText(job, today(), fmtShort),
+    job.priority === 'high' && job.status === 'open' ? 'High priority' : null,
+    job.isBackfill ? `Backfill for ${row.backfillForName}` : null,
+    row.access === 'panel' ? 'On the panel' : null,
+    ni ? `Next interview ${fmtShort(ni.interview.startsAt)}, ${ni.candidateName}` : null,
+  ].filter(Boolean)
+  const aria = `${action.label}: ${job.title}`
+  return (
+    // The title link stretches over the whole row (its ::after covers the li); the action sits above it (relative z-10).
+    <li className="relative grid grid-cols-1 gap-x-5 gap-y-2 px-5 py-4 hover:bg-surface-2/70 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center">
+      <div className="min-w-0">
+        <a href={links.job(job.id)} className="font-bold text-ink after:absolute after:inset-0 after:content-[''] hover:text-accent">
+          {job.title}
+        </a>
+        <p className="mt-1 text-[13px] text-ink-2">{notes.join(' · ')}</p>
+      </div>
+      <div className="flex items-center gap-3">
+        {row.access === 'full' && <MiniFunnel steps={row.funnel} />}
+        <Badge tone={word.tone}>{word.text}</Badge>
+      </div>
+      <div className="relative z-10 flex">
+        {'href' in action ? (
+          <a href={action.href} aria-label={aria} className={buttonClass('secondary', 'md', 'gap-1.5')}>
+            {action.label}
+            <Icon name="arrow-right" size={16} className="ft-btn__icon ft-btn__icon--right shrink-0" />
+          </a>
+        ) : (
+          <Button aria-label={aria} onClick={() => void runAction(action.action, viewer, onFallback)}>
+            {action.label}
+          </Button>
+        )}
+      </div>
+    </li>
   )
 }
 

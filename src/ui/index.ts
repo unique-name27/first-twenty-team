@@ -21,6 +21,7 @@ export {
   type Option,
 } from './Field'
 export { Icon, ICON_NAMES, type IconName } from './Icon'
+export { jumpTo, KpiSub, KpiTile, KpiValue } from './KpiTile'
 export { Callout, DescriptionList, EmptyState, Meter, PageHeader, Panel, SectionLabel, Stat } from './Layout'
 export { Money, MoneyRange, Private } from './Money'
 export { ConfirmButton, focusPageStart, Menu, Modal, restoreFocus, Sheet, useEscape, useFocusTrap, useTwoStepConfirm, type MenuItem } from './Overlay'

@@ -108,11 +108,11 @@ function previewSuffix(viewer: Viewer): string {
 }
 
 /** Text to copy by hand when the browser blocked the clipboard or a download (`note` says which, and what to do). */
-type CopyFallback = { title: string; text: string; note?: string } | null
+export type CopyFallback = { title: string; text: string; note?: string } | null
 type OpenSheet = { sheet: 'scorecard'; id: ID } | null
 
 /** Runs a row action. Returns true when the item is likely gone (so focus can move to the next row). */
-async function runAction(
+export async function runAction(
   action: InboxAction,
   viewer: Viewer,
   setFallback: (f: CopyFallback) => void,
@@ -245,7 +245,7 @@ function NotApplicableModal({
   )
 }
 
-function CopyFallbackModal({ fallback, onClose }: { fallback: CopyFallback; onClose: () => void }) {
+export function CopyFallbackModal({ fallback, onClose }: { fallback: CopyFallback; onClose: () => void }) {
   const ref = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
     if (fallback) setTimeout(() => ref.current?.select(), 30)
