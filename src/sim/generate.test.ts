@@ -14,7 +14,7 @@ import type { DB } from '@/domain/types'
 import { addDays, getClockOverride, setClockOverride } from '@/lib/dates'
 import { DOC_KEYS, RECORD_COLLECTIONS } from '@/sync/collections'
 import { ACTIONS, traceToJsonLines } from './actions'
-import { type GeneratedCompany, generateCompany, lawCoverage } from './generate'
+import { type GeneratedCompany, generateCompany } from './generate'
 import { SCENARIO_NAMES, SCENARIOS, type ScenarioName } from './scenarios'
 
 const SUMMARIES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'summaries')
@@ -229,27 +229,19 @@ describe('each scenario is what it says', () => {
   })
 })
 
-describe('the dates the rules cover', () => {
-  it('runs from the first holiday on the list to the end of the law tables year', () => {
-    expect(lawCoverage()).toEqual({ from: '2025-01-01', to: '2026-12-31' })
-  })
-
-  it('refuses an as-of date past them unless allowStaleLaw is passed', () => {
-    expect(() => generateCompany({ scenario: 'blank', asOf: '2027-01-04' })).toThrow(
-      'The as-of date 2027-01-04 is after the dates the built-in rules cover (2025-01-01 to 2026-12-31: the 2026 law tables and the holiday list). Pass allowStaleLaw to generate it anyway.',
-    )
-    expect(generateCompany({ scenario: 'blank', asOf: '2027-01-04', allowStaleLaw: true }).db.company.foundedOn).toBe('2027-01-04')
-  })
-
-  it('refuses a company founded before them', () => {
-    expect(() => generateCompany({ scenario: 'seed-8', asOf: '2026-03-02' })).toThrow('seed-8 as of 2026-03-02 would be founded on 2024-08-02, before the dates the built-in rules cover')
+describe('dates', () => {
+  it('generates a company founded before 2025 and one as of 2027, on the rules the app has', () => {
+    const early = generateCompany({ scenario: 'seed-8', asOf: '2026-03-02' })
+    expect(early.db.company.foundedOn < '2025-01-01').toBe(true)
+    expect(integrityProblems(early.db)).toEqual([])
+    expect(generateCompany({ scenario: 'blank', asOf: '2027-01-04' }).db.company.foundedOn).toBe('2027-01-04')
   })
 
   it('leaves the clock as it found it', () => {
     setClockOverride('2026-05-05')
     generateCompany({ scenario: 'blank' })
     expect(getClockOverride()).toBe('2026-05-05')
-    expect(() => generateCompany({ scenario: 'blank', asOf: '2027-01-04' })).toThrow()
+    expect(() => generateCompany({ scenario: 'blank', asOf: '2026-13-01' })).toThrow()
     expect(getClockOverride()).toBe('2026-05-05')
     setClockOverride(null)
   })

@@ -1,5 +1,5 @@
-// The time machine's rules, on small companies: the policy presets (a quiet one changes little), the
-// refusals (stale law, going backwards, no company date), a clock in the middle of a pay period, people who
+// The time machine's rules, on small companies: the policy presets (a quiet one changes little), dates past
+// 2026, the refusals (going backwards, no company date), a clock in the middle of a pay period, people who
 // resign (and their backfills), go on leave and come back, and next year's holidays in December.
 import { afterEach, describe, expect, it } from 'vitest'
 import { businessDayOnOrAfter, dbHolidays } from '@/domain/hiring'
@@ -67,15 +67,15 @@ describe('policies', () => {
   })
 })
 
-describe('refusals', () => {
-  it('refuses a date past the law coverage unless allowStaleLaw, and leaves the clock where it was', () => {
+describe('dates', () => {
+  it("lives past 2026 on the rules it has, with next year's holidays", () => {
     const db = company('blank')
     setClockOverride('2026-12-20')
-    expect(() => advance(db, { to: '2027-01-04', seed: 1 })).toThrow('2027-01-04 is after the dates the built-in rules cover (2025-01-01 to 2026-12-31). Pass allowStaleLaw to advance anyway.')
-    expect(getClockOverride()).toBe('2026-12-20')
-    const stale = advance(db, { to: '2027-01-04', seed: 1, allowStaleLaw: true })
-    expect(stale.report.days).toBe(15)
+    const r = advance(db, { to: '2027-01-04', seed: 1 })
+    expect(r.report.days).toBe(15)
     expect(getClockOverride()).toBe('2027-01-04')
+    expect(r.db.holidays.some((h) => h.date.startsWith('2027'))).toBe(true)
+    expect(integrityFailures(r.db)).toEqual([])
   })
 
   it('never moves backwards, needs the company date, and never runs inside another run', () => {
@@ -168,4 +168,35 @@ it("adds next year's company holidays in December when they are missing, as roll
   expect(r.db.holidays.filter((h) => h.date.startsWith('2027')).map((h) => h.date)).toEqual(expected)
   expect(r.report.holidaysAdded).toEqual([2027])
   expect(r.trace.filter((t) => t.action === 'inboxOp').map((t) => [t.day, t.args])).toEqual([['2026-12-01', { op: { type: 'add_holidays', year: 2027 } }]])
+})
+
+describe('job posts at 15 people', () => {
+  it("adds the role's pay range to a draft the plan is waiting on, posts it, and keeps hiring", () => {
+    // The sample has a Product manager draft with no pay range, and 14 people plus 2 starting: from 15 the
+    // app holds a post without a range, and the draft holds the role's place in the plan.
+    const sample = company('ledgerlark')
+    const draft = sample.jobs.find((j) => j.status === 'draft' && (j.payMin == null || j.payMax == null))
+    expect(draft, 'the sample has a draft without a pay range').toBeDefined()
+    const { db } = lived(sample, '2026-10-09', '2027-04-09')
+    const job = db.jobs.find((j) => j.id === draft!.id)!
+    expect(job.status).not.toBe('draft')
+    const band = db.bands.find((b) => b.familyId === job.familyId && b.levelId === job.levelId)!
+    expect([job.payMin, job.payMax]).toEqual([band.min, band.max])
+    expect(db.activity.some((a) => a.entityId === job.id && a.kind === 'job_updated')).toBe(true)
+    expect(db.activity.some((a) => a.entityId === job.id && a.kind === 'job_posted')).toBe(true)
+    expect(integrityFailures(db)).toEqual([])
+  })
+
+  it('keeps hiring for a year: a job whose candidates were all turned down gets new ones, and a role on hold keeps no place', () => {
+    // In the sample, the Engineering manager role is on hold and the Product manager draft is next. Both used
+    // to hold the founder's open-role places, and a job that reached its candidate cap got no more candidates.
+    const sample = company('ledgerlark')
+    const { db, report } = lived(sample, '2026-10-09', '2027-10-09')
+    expect(report.hiring.planned).toBeGreaterThan(0)
+    expect(report.hiring.hires).toBeGreaterThanOrEqual(5)
+    expect(report.headcount.to).toBeGreaterThanOrEqual(19)
+    const pm = db.jobs.find((j) => j.id === 'j-pm')!
+    expect(db.applications.some((a) => a.jobId === pm.id && a.status === 'hired')).toBe(true)
+    expect(integrityFailures(db)).toEqual([])
+  })
 })

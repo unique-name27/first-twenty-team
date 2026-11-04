@@ -1,6 +1,8 @@
-// src/dev holds development-only code (the dev auto sign-in, docs/DEV.md). It must never reach a build:
-// every import of it is a dynamic import inside `if (import.meta.env.DEV)`, which Vite turns into
-// `if (false)` and drops, module and all. This reads the source instead of building (a build is slow).
+// src/dev holds development-only code (the dev auto sign-in and the simulator panel, docs/DEV.md). It must
+// never reach a build: every import of it is a dynamic import inside `if (import.meta.env.DEV)`, which Vite
+// turns into `if (false)` and drops, module and all. A file Vite bundles from a URL (new URL('...',
+// import.meta.url), how a worker is started) counts as a static import: from outside src/dev it would
+// ship, so it fails here. This reads the source instead of building (a build is slow).
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -23,6 +25,7 @@ function imports(code: string): { spec: string; line: string; dynamic: boolean }
   const lines = code.split('\n')
   const lineAt = (index: number) => lines[code.slice(0, index).split('\n').length - 1]
   for (const m of code.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g)) out.push({ spec: m[1], line: lineAt(m.index), dynamic: true })
+  for (const m of code.matchAll(/\bnew\s+URL\s*\(\s*['"]([^'"]+)['"]\s*,\s*import\.meta\.url\s*\)/g)) out.push({ spec: m[1], line: lineAt(m.index), dynamic: false })
   for (const m of code.matchAll(/^\s*(?:import|export)\b[^'"`;]*?(?:\bfrom\s*)?['"]([^'"]+)['"]/gm)) out.push({ spec: m[1], line: lineAt(m.index), dynamic: false })
   return out
 }
@@ -43,8 +46,8 @@ describe('src/dev stays out of production builds', () => {
       .map((i) => ({ ...i, file: path.relative(SRC, file).replace(/\\/g, '/') })),
   )
 
-  it('finds the dev auto sign-in import in main.tsx (so this test checks something)', () => {
-    expect(uses.map((u) => u.file)).toContain('main.tsx')
+  it('finds the dev auto sign-in and simulator panel imports in main.tsx (so this test checks something)', () => {
+    expect(uses.filter((u) => u.file === 'main.tsx').map((u) => u.spec)).toEqual(['./dev/autoconnect', './dev/sim/register'])
   })
 
   it('imports src/dev only dynamically, inside if (import.meta.env.DEV)', () => {
@@ -61,5 +64,11 @@ describe('src/dev stays out of production builds', () => {
       ['@/dev/x', false],
       ['./dev/y', false],
     ])
+  })
+
+  it('counts a worker started from a URL as a static import', () => {
+    const sample = "if (import.meta.env.DEV) new Worker(new URL('./dev/sim/sim.worker.ts', import.meta.url), { type: 'module' })\n"
+    expect(imports(sample).map((i) => [i.spec, i.dynamic])).toEqual([['./dev/sim/sim.worker.ts', false]])
+    expect(insideDev(resolve('./dev/sim/sim.worker.ts', path.join(SRC, 'main.tsx')))).toBe(true)
   })
 })

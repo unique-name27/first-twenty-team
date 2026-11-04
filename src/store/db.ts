@@ -175,6 +175,8 @@ export const useDB = create<DBState>((set, get) => ({
 // Debounced persistence. Writes are a few hundred KB and happen at most every 400 ms.
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let persistStopped = false
+/** Holds taken with holdPersisting and not yet released. */
+let holds = 0
 
 /**
  * Stops saving the store for the rest of this page's life. Called when this browser's data is removed
@@ -187,23 +189,55 @@ export function stopPersisting(): void {
   saveTimer = null
 }
 
+function saveNow(): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(useDB.getState().db))
+    useDB.setState({ storageOk: true, lastSavedAt: new Date().toISOString() })
+  } catch {
+    useDB.setState({ storageOk: false })
+  }
+}
+
+/**
+ * Stops saving the store until the returned release is called, for a workspace that must never be saved:
+ * the simulator shows a simulated company in the app this way (src/dev/sim/sandbox.ts). A save still
+ * waiting is written first, so the saved copy is the workspace from before the hold. While held, neither
+ * the debounced save nor the flush on the way out writes, and the sync engine's own save refuses too
+ * (persistingHeld, src/sync/index.ts). Releasing saves nothing: the store is expected to hold the saved
+ * workspace again by then. Releasing twice does nothing.
+ */
+export function holdPersisting(): () => void {
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+    if (!persistStopped) saveNow()
+  }
+  holds += 1
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    holds -= 1
+  }
+}
+
+/** True while a hold from holdPersisting is on. */
+export function persistingHeld(): boolean {
+  return holds > 0
+}
+
 if (typeof window !== 'undefined') {
   useDB.subscribe((state, prevState) => {
-    if (persistStopped || state.db === prevState.db) return
+    if (persistStopped || holds > 0 || state.db === prevState.db) return
     if (saveTimer) clearTimeout(saveTimer)
     saveTimer = setTimeout(() => {
       saveTimer = null
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(useDB.getState().db))
-        useDB.setState({ storageOk: true, lastSavedAt: new Date().toISOString() })
-      } catch {
-        useDB.setState({ storageOk: false })
-      }
+      saveNow()
     }, 400)
   })
   // Flush on tab close so the last edit is not lost.
   window.addEventListener('beforeunload', () => {
-    if (persistStopped || !saveTimer) return
+    if (persistStopped || holds > 0 || !saveTimer) return
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(useDB.getState().db))
     } catch {

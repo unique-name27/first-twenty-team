@@ -2,7 +2,7 @@
 // named "verify", and the server deploys a commit only once that check passed (auto-update.sh), so the
 // "verify" job must wait for every other job and fail unless all of them passed. The repo has no YAML
 // parser, so this reads the workflow's simple layout line by line: two-space indents, one key per line.
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -109,7 +109,24 @@ describe('CI', () => {
     // A missing build must fail the check, not pass it: grep on a missing file is false in an if.
     expect(builds.text).toContain('for built in first-twenty.html dist-server; do')
     expect(builds.text).toContain(`grep -q -e '__dev/credentials' -e 'autoconnect' first-twenty.html`)
+    // The simulator panel's root marker and its page title, and an error message only src/sim has.
+    expect(builds.text).toContain(`grep -q -F -e 'ft-dev-simulator' -e 'Simulator (dev)' -e 'No simulator action named' first-twenty.html`)
     expect(builds.text).toContain(`grep -rq -F '/__dev/' dist-server`)
+  })
+
+  it('looks for markers that only the development-only code has, so a match means it shipped', () => {
+    // Each marker, and the one folder under src whose code (tests aside) may hold it.
+    const markers: Record<string, string> = { 'ft-dev-simulator': 'src/dev/', 'Simulator (dev)': 'src/dev/', 'No simulator action named': 'src/sim/' }
+    const builds = all.find((j) => j.id === 'builds')!
+    const files = (dir: string): string[] =>
+      readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(`${dir}/${e.name}`) : /\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name) ? [`${dir}/${e.name}`] : []))
+    const sources = files('src').map((file) => ({ file, code: readFileSync(path.join(ROOT, file), 'utf8') }))
+    for (const [marker, folder] of Object.entries(markers)) {
+      expect(builds.text, marker).toContain(`-e '${marker}'`)
+      const holders = sources.filter((s) => s.code.includes(marker)).map((s) => s.file)
+      expect(holders.length, `${marker} is in some source file`).toBeGreaterThan(0)
+      expect(holders.filter((f) => !f.startsWith(folder)), `${marker} outside ${folder}`).toEqual([])
+    }
   })
 
   it('runs every test tier in some job', () => {

@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nowISO, parseDate, setClockOverride } from './dates'
 import { newId } from './id'
-import { activeRun, type RunOptions, runIdSuffixes, updateRun, withRunContext } from './runContext'
+import { activeRun, openRun, type RunOptions, restoreRun, runIdSuffixes, runState, updateRun, withRun, withRunContext } from './runContext'
 
 const RUN: RunOptions = { seed: 'ledgerlark', actorId: 'p-founder', timeOfDay: '10:30' }
 const RUN_ID = /^[a-z]+-s[0-9a-z]{9}$/
@@ -242,6 +242,54 @@ describe('avoid and runIdSuffixes', () => {
     const first = withRunContext(RUN, () => Array.from({ length: 50 }, () => newId('act')))
     const second = withRunContext({ ...RUN, avoid: runIdSuffixes({ activity: first.map((id) => ({ id })) }) }, () => Array.from({ length: 50 }, () => newId('act')))
     expect(new Set([...first, ...second]).size).toBe(100)
+  })
+})
+
+describe('held runs (openRun, withRun, runState, restoreRun)', () => {
+  it('goes on with one stream of ids, actor and time of day across entries, the same as one long run', () => {
+    setClockOverride('2026-10-09')
+    const handle = openRun(RUN)
+    expect(activeRun()).toBeNull()
+    const ids = withRun(handle, () => [newId('p'), newId('act')])
+    expect(activeRun()).toBeNull()
+    ids.push(...withRun(handle, () => [newId('c'), newId('act')]))
+    expect(ids).toEqual(sample().ids)
+    withRun(handle, () => updateRun({ actorId: 'p-tomas', timeOfDay: '15:00' }))
+    expect(withRun(handle, () => activeRun())).toMatchObject({ actorId: 'p-tomas', time: { hours: 15, minutes: 0, seconds: 0 } })
+  })
+
+  it('never turns on while another run is on, itself included', () => {
+    const handle = openRun(RUN)
+    expect(() => withRunContext(RUN, () => withRun(handle, () => 1))).toThrow('A run is already on')
+    expect(() => withRun(handle, () => withRun(handle, () => 1))).toThrow('A run is already on')
+    expect(activeRun()).toBeNull()
+  })
+
+  it('goes back to a saved state: the same next ids, actor and time of day, and never an id issued before it', () => {
+    setClockOverride('2026-10-09')
+    const handle = openRun({ ...RUN, avoid: ['szzzzzzzzz'] })
+    const before = withRun(handle, () => [newId('p'), newId('p')])
+    const saved = runState(handle)
+    const after = withRun(handle, () => {
+      updateRun({ actorId: 'p-tomas', viewingAs: 'employee', timeOfDay: '14:00' })
+      return [newId('p'), newId('p'), newId('p')]
+    })
+    restoreRun(handle, saved)
+    expect(runState(handle)).toEqual(saved)
+    const again = withRun(handle, () => [activeRun(), newId('p'), newId('p'), newId('p')] as const)
+    expect(again[0]).toMatchObject({ actorId: 'p-founder', viewingAs: 'admin', time: { hours: 10, minutes: 30, seconds: 0 } })
+    expect(again.slice(1)).toEqual(after)
+    expect(again.slice(1).some((id) => before.includes(id as string))).toBe(false)
+  })
+
+  it('refuses a restore while the run is on, or to a state from further along', () => {
+    const handle = openRun(RUN)
+    const start = runState(handle)
+    withRun(handle, () => newId('p'))
+    const later = runState(handle)
+    withRun(handle, () => expect(() => restoreRun(handle, start)).toThrow('A run cannot be put back while it is on.'))
+    restoreRun(handle, start)
+    expect(() => restoreRun(handle, later)).toThrow('That run state is from further along than the run is.')
   })
 })
 

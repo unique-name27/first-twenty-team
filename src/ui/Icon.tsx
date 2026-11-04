@@ -58,6 +58,8 @@ const PATHS = {
   grip: 'M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01',
   send: 'M22 2 11 13M22 2l-7 20-4-9-9-4z',
   stop: 'M7 7h10v10H7z',
+  play: 'M7 4.5v15L19 12z',
+  pause: 'M7 5h3.5v14H7zM13.5 5H17v14h-3.5z',
   video: 'M16 10l6-4v12l-6-4zM2 6h14v12H2z',
   message: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
   flag: 'M4 22V4M4 4h13l-2 4 2 4H4',

@@ -34,6 +34,9 @@ Read before changing code:
 Run Vite only through these scripts (they pass the memory flag it needs); never `npx vite`. `npm run stack`
 keeps running until stopped: start it in the background and stop it when you are done.
 
+A development build has a simulator panel at `#sim` (`docs/DEV.md`, "The simulator panel"). It lives in
+`src/dev/sim` and never ships: keep it out of `src/app/routes.tsx` and of anything a build imports.
+
 ## How to work here
 
 - Never commit to `main` and never force-push a shared branch. Work on a branch named

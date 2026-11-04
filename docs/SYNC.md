@@ -377,6 +377,11 @@ company's name and " Bot" (`Company Bot` for a company with no name). The sample
   has replaced the store (edits queued before the clock was set and refused ones go back on top);
   Settings > Server says so. A browser that is not connected keeps what the pretend date applied (nothing
   to rebuild from), which the panel says.
+  The development build's simulator sets the clock in memory only, with no reload, while it shows a
+  simulated company (`src/dev/sim/sandbox.ts`). It refuses while `busy()` (a connect flow, the session
+  check or `recheckEmpty`: they look at the clock only when they start), waits for a running cycle
+  (`whenIdle()`) before it sets the clock, and calls `syncNow()` after it puts the clock back, since timers
+  that came due meanwhile scheduled nothing.
 - **Workspace identity**: `meta.workspaceId` (optional, `ws-<random>`) names one workspace. The engine sets
   it when a workspace is created through `replaceWorkspace()` (Start fresh, or Import of a backup without
   one; a backup that has one keeps it) and when a workspace without one is uploaded. It syncs like the rest
