@@ -6,12 +6,15 @@
 // Development only: register.ts puts it in the development page slot, and main.tsx loads that only behind
 // import.meta.env.DEV, so no build has it.
 import { useEffect, useState } from 'react'
+import { replaceRoute } from '@/app/router'
+import type { PageProps } from '@/app/routes'
 import { useShortcut } from '@/app/shortcuts'
 import { Button, Callout, PageHeader, Panel, toast } from '@/ui'
 import { copyText } from '@/lib/files'
 import { sandbox } from './appSandbox'
 import { simulator, useSim } from './client'
 import { Controls, monthBack } from './Controls'
+import { DEMO_STORIES, type DemoStory, demoStory } from './demos'
 import { Feed } from './Feed'
 import { bugReport, fmtSimDay } from './helpers'
 import { PacePanel } from './PacePanel'
@@ -24,7 +27,7 @@ import { HeadcountChart, Tiles } from './Tiles'
 /** The panel root's marker: CI looks for it in the one-file build, where it must never be. */
 export const PANEL_MARKER = 'ft-dev-simulator'
 
-export function SimPage() {
+export function SimPage({ route }: PageProps) {
   const phase = useSim((s) => s.phase)
   const label = useSim((s) => s.label)
   const until = useSim((s) => s.run?.until ?? null)
@@ -35,6 +38,17 @@ export function SimPage() {
   const ready = phase === 'ready'
   // Leaving the page pauses the simulation: it never plays where nobody watches.
   useEffect(() => () => simulator.pause(), [])
+  // #sim.demo.<id> plays that demo story, then the address goes back to #sim (a reload does not start it again).
+  const linkedStory = route.segments[1] === 'demo' ? (route.segments[2] ?? '') : null
+  useEffect(() => {
+    if (linkedStory === null) return
+    const story = demoStory(linkedStory)
+    if (story && !sandbox.view.getState().open) {
+      simulator.startAndPlay(story.run, story.speed)
+      setPicking(false)
+    }
+    replaceRoute('sim')
+  }, [linkedStory])
   useSimShortcuts(ready && !sandboxOpen)
   return (
     <div data-ft-dev={PANEL_MARKER} className="flex flex-col gap-4">
@@ -48,6 +62,15 @@ export function SimPage() {
       </p>
       <ErrorCallout />
       {sandboxOpen && <SandboxCallout />}
+      {(!ready || picking) && (
+        <DemoStories
+          disabled={sandboxOpen || phase === 'starting'}
+          onPlay={(story) => {
+            simulator.startAndPlay(story.run, story.speed)
+            setPicking(false)
+          }}
+        />
+      )}
       {!ready || picking ? (
         <Panel title="Start a run" actions={ready ? <Button size="sm" variant="ghost" onClick={() => setPicking(false)}>Keep the current run</Button> : undefined}>
           <StartPicker sandboxOpen={sandboxOpen} onStarted={() => setPicking(false)} />
@@ -156,5 +179,32 @@ function SandboxCallout() {
     >
       The simulation waits while it is open. {edited ? 'Changes you made to it in the app are dropped: the simulation goes on from where it paused.' : 'Go back to your company to play, step or change situations.'}
     </Callout>
+  )
+}
+
+/**
+ * One click each: a ready-made run with its situations, started and played at a pace a room can follow
+ * (demos.ts). #sim.demo.<id> links straight to one.
+ */
+function DemoStories({ disabled, onPlay }: { disabled: boolean; onPlay: (story: DemoStory) => void }) {
+  return (
+    <Panel title="Demo stories" subtitle="Ready-made runs that start and play by themselves. Pause, rewind or add a situation at any time.">
+      <ul className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        {DEMO_STORIES.map((story) => (
+          <li key={story.id} className="flex min-w-0 flex-col gap-2 rounded-lg border border-line p-3">
+            <span className="text-[15px] font-semibold text-ink">{story.title}</span>
+            <span className="flex-1 text-[13.5px] text-ink-2">{story.blurb}</span>
+            <span>
+              <Button size="sm" variant="primary" icon="play" disabled={disabled} onClick={() => onPlay(story)} aria-label={`Play the story: ${story.title}`}>
+                Play
+              </Button>
+            </span>
+            <span className="text-[12px] text-ink-3">
+              Link: <code>#sim.demo.{story.id}</code>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Panel>
   )
 }
