@@ -634,7 +634,12 @@ fi
 
 # ------------------------------------------------------------------------------------------------
 step "Building the app and the server (npm run build:all)"
-npm run build:all
+# Staging's app has the simulator panel (docs/SERVER.md, "The simulator on staging"); the live app never does.
+if [ "$INSTANCE" = staging ]; then
+  VITE_SIMULATOR=1 npm run build:all
+else
+  npm run build:all
+fi
 [ -f dist-server/server.mjs ] || die "The build finished but dist-server/server.mjs is missing."
 APP_FILE=$(env_value APP_FILE)
 APP_FILE=${APP_FILE:-first-twenty.html}

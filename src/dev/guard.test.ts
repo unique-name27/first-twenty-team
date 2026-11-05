@@ -53,8 +53,17 @@ describe('src/dev stays out of production builds', () => {
   it('imports src/dev only dynamically, inside if (import.meta.env.DEV)', () => {
     for (const use of uses) {
       expect(use.dynamic, `${use.file}: a static import of ${use.spec} would ship in every build`).toBe(true)
-      expect(use.line, `${use.file}: import(${use.spec}) must sit inside if (import.meta.env.DEV)`).toMatch(/^\s*if \(import\.meta\.env\.DEV\) /)
+      // The simulator panel alone may also load in a build made with VITE_SIMULATOR=1 (staging); never the dev sign-in.
+      const flagged = use.spec === './dev/sim/register' ? "(?: \\|\\| import\\.meta\\.env\\.VITE_SIMULATOR === '1')?" : ''
+      expect(use.line, `${use.file}: import(${use.spec}) must sit inside if (import.meta.env.DEV)`).toMatch(new RegExp(`^\\s*if \\(import\\.meta\\.env\\.DEV${flagged}\\) `))
     }
+  })
+
+  it('reads the VITE_SIMULATOR flag in main.tsx and nowhere else', () => {
+    const readers = sourceFiles(SRC)
+      .filter((f) => !/\.test\.tsx?$/.test(f) && readFileSync(f, 'utf8').includes('VITE_SIMULATOR'))
+      .map((f) => path.relative(SRC, f).replace(/\\/g, '/'))
+    expect(readers).toEqual(['main.tsx'])
   })
 
   it('reads the import patterns this test relies on', () => {

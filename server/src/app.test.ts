@@ -303,4 +303,28 @@ describe('serving the app', () => {
     // Without the served app there is no worker to register.
     expect((await app.inject({ method: 'GET', url: '/sw.js' })).statusCode).toBe(404)
   })
+
+  it('serves the simulator worker only where the build left one, under a policy that lets it fetch nothing', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'ft-app-'))
+    const appFile = path.join(dir, 'first-twenty.html')
+    const simWorkerFile = path.join(dir, 'first-twenty-sim-worker.js')
+    writeFileSync(appFile, '<!doctype html><html><head></head><body></body></html>')
+    writeFileSync(simWorkerFile, 'self.onmessage = () => {}')
+    const withSim = await makeApp(db, { serveApp: true, appFile, simWorkerFile })
+    const res = await withSim.inject({ method: 'GET', url: '/sim.worker.js' })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('application/javascript; charset=utf-8')
+    expect(res.headers['cache-control']).toBe('no-cache')
+    expect(res.headers['content-security-policy']).toBe("default-src 'none'; frame-ancestors 'none'")
+    expect(res.body).toBe('self.onmessage = () => {}')
+    // The page may start it: worker-src 'self' is the policy already.
+    expect(String((await withSim.inject({ method: 'GET', url: '/' })).headers['content-security-policy'])).toContain("worker-src 'self'")
+    // Nothing else beside the app is served, the worker's file name included.
+    expect((await withSim.inject({ method: 'GET', url: '/first-twenty-sim-worker.js' })).statusCode).toBe(404)
+    await withSim.close()
+    // A server without the file (live: its build has no simulator) has no such route.
+    const without = await makeApp(db, { serveApp: true, appFile, simWorkerFile: null })
+    expect((await without.inject({ method: 'GET', url: '/sim.worker.js' })).statusCode).toBe(404)
+    await without.close()
+  })
 })

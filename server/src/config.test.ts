@@ -104,6 +104,17 @@ describe('loadConfig', () => {
     ])
   })
 
+  it('serves the simulator worker only when the build left one beside the app file', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'ft-cfg-'))
+    writeFileSync(path.join(dir, 'first-twenty.html'), '<!doctype html>')
+    const env = { SERVE_APP: 'true', APP_FILE: path.join(dir, 'first-twenty.html') }
+    expect(load(env).simWorkerFile).toBeNull()
+    writeFileSync(path.join(dir, 'first-twenty-sim-worker.js'), '')
+    expect(load(env).simWorkerFile).toBe(path.join(dir, 'first-twenty-sim-worker.js'))
+    // Not serving the app: the worker is not served either.
+    expect(load({ ...env, SERVE_APP: 'false' }).simWorkerFile).toBeNull()
+  })
+
   it('rejects malformed values with a clear message', () => {
     expect(() => load({ PORT: 'eighty' })).toThrow(/PORT must be a whole number/)
     expect(() => load({ DATABASE_URL: 'mysql://x' })).toThrow(/postgres:\/\//)

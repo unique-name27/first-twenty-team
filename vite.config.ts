@@ -35,6 +35,9 @@ export default defineConfig(({ mode }) => ({
     // PGlite writes to its files under .data/ all the time; none of them is app code to reload.
     watch: { ignored: ['**/.data/**'] },
   },
+  // The simulator's worker (a build made with VITE_SIMULATOR=1 only) keeps one name, so the server can serve it
+  // at a fixed path (server/src/app.ts, docs/SERVER.md, "The simulator on staging").
+  worker: { rollupOptions: { output: { entryFileNames: 'sim.worker.js' } } },
   build: {
     outDir: mode === 'single' ? 'dist-single' : 'dist',
     chunkSizeWarningLimit: 4000,
