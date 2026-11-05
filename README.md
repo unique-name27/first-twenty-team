@@ -21,8 +21,9 @@ you are ready.
 
 Found a security problem? Report it privately as `SECURITY.md` explains, never in a public issue.
 
-Changes go through pull requests with CI and review: `CONTRIBUTING.md` has the workflow, `CLAUDE.md` the
-rules Claude Code follows here, and `docs/TEAM.md` how the shared team repo is set up.
+Changes go through pull requests with CI and review: `CONTRIBUTING.md` has the workflow, `docs/GIT.md`
+explains branches, pull requests and releases in plain words, `CLAUDE.md` has the rules Claude Code follows
+here, and `docs/TEAM.md` how the shared team repo is set up.
 
 ## Optional: your own server
 
@@ -88,6 +89,7 @@ the system of record for those.
 ## Docs
 
 - `ARCHITECTURE.md`: conventions, routes, data rules (read before changing code)
+- `docs/GIT.md`: how a change gets from your codespace to the live site (branches, pull requests, squash merges, releases)
 - `docs/LOOKS.md`: the look system (tokens, hook classes, decor) every screen and skin follows
 - `docs/SPEC.md`: product spec
 - `docs/LAW.md`: verified California, San Jose and federal facts behind the compliance features (October 2026)
