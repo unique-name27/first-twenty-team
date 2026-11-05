@@ -213,6 +213,8 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   // It carries the served mark, so the app registers the offline worker (offline.ts) only here.
   const appHtml = config.serveApp ? Buffer.from(markServed(readFileSync(config.appFile, 'utf8')), 'utf8') : null
   const appPolicy = appHtml ? appCsp(inlineScriptHashes(appHtml.toString('utf8'))) : null
+  // The simulator's worker, only where the build has the simulator (staging: docs/SERVER.md). Read once, like the app.
+  const simWorker = appHtml && config.simWorkerFile ? readFileSync(config.simWorkerFile) : null
 
   // A build started before its migrations ran (MIGRATE_ON_START=false and no server:migrate yet) would
   // answer health checks while every sign-in fails on a missing table, so /api/health says 503 until the
@@ -852,6 +854,13 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
         .type('application/javascript; charset=utf-8')
         .send(SERVICE_WORKER_JS),
     )
+    // The simulator's worker: one fixed path, from memory, and a policy that lets it fetch nothing. The app's
+    // worker-src 'self' lets the page start it. Absent (404) unless the build made it.
+    if (simWorker) {
+      app.get('/sim.worker.js', (_request, reply) =>
+        reply.header('Cache-Control', 'no-cache').header('Content-Security-Policy', API_CSP).type('application/javascript; charset=utf-8').send(simWorker),
+      )
+    }
   }
 
   return app

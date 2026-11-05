@@ -605,6 +605,30 @@ development, and the build needs none (Vite, Tailwind and Lightning CSS load the
 one). The staging server runs with the live server's sandbox, a smaller share of CPU and a memory cap, so
 the live server wins when the instance is busy, and the two channels never build at the same time.
 
+### The simulator on staging
+
+Staging's app has the simulator panel (`#sim`, `docs/DEV.md`, "The simulator panel"), so the team can try it on a
+shared address: `https://staging-77-112-161-54.sslip.io/#sim.demo.growth`. The live app never has it.
+
+- **One switch, at build time.** `deploy.sh --instance staging` builds with `VITE_SIMULATOR=1`; `--instance live`
+  and every other build (`npm run build`, CI's `verify`) do not. `src/main.tsx` is the only file that reads it.
+- **The worker is a file of its own.** The simulation runs in a Web Worker that the one-file build cannot hold
+  (the app's policy, `worker-src 'self'`, allows no `blob:` or `data:` worker). A build with the flag leaves it
+  as `first-twenty-sim-worker.js` beside `first-twenty.html` (`scripts/copy-single.mjs`); any other build deletes
+  that file. The server serves it at `/sim.worker.js` only when it finds the file next to the app file, with the
+  policy `default-src 'none'` (it fetches nothing). No setting, no new environment variable: a server whose build
+  has no simulator has no such route.
+- **What it can touch.** The panel runs in the browser and calls no server route of its own. *Open in the app*
+  shows the simulated company with nothing saved or synced; *Keep* replaces the company of the person signed in
+  (staging: a demo company) the way Import does. The development-only routes behind `npm run sql` and
+  `npm run sim` (`server/src/dev`) are not in any server build, staging's included.
+- **CI.** The "No development-only code in the builds" check still runs on the ordinary build and also fails on a
+  leftover `first-twenty-sim-worker.js`; a second step builds with the flag and fails if the panel or the worker
+  file is missing.
+
+To take it off staging, remove the flag from `deploy.sh` (the `if [ "$INSTANCE" = staging ]` around the build); the next
+deploy deletes the worker file and the route goes with it.
+
 ### Live: the product owner's releases
 
 To release, publish a GitHub release (the product owner, `unique-name27`, creates it from start to finish:

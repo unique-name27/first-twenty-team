@@ -1708,6 +1708,7 @@ EOF
 cat > "$work/bin/npm" <<'EOF'
 #!/usr/bin/env bash
 echo "npm $*" >> "$CALLS"
+[ "$*" != 'run build:all' ] || echo "env VITE_SIMULATOR=\${VITE_SIMULATOR:-unset}" >> "$CALLS"
 [ "$*" != 'run server:migrate -- --status' ] || echo 'Pending (0): none'
 exit 0
 EOF
@@ -1793,6 +1794,8 @@ run bad-instance '' --instance demo
     // The live service, the backup, with-env.sh and the settings file are never touched.
     expect(calls.filter((c) => /first-twenty-backup|server:migrate|restart first-twenty$/.test(c))).toEqual([])
     expect(calls).toContain('systemctl show -p WorkingDirectory --value first-twenty-staging')
+    // Staging's app has the simulator panel (docs/SERVER.md, "The simulator on staging").
+    expect(calls).toContain('env VITE_SIMULATOR=1')
     const out = outOf(s)
     expect(out).toContain('Deploying First Twenty staging in')
     expect(out).toContain('Reachable through Caddy at https://staging.test.example/api/health')
@@ -1826,6 +1829,8 @@ run bad-instance '' --instance demo
     expect(s).toContain('rc=1')
     const calls = callsOf(s)
     expect(calls).toContain('sudo true')
+    // The live app never has the simulator: its build gets no flag.
+    expect(calls).toContain('env VITE_SIMULATOR=unset')
     expect(calls).toContain('npm ci --no-audit --no-fund')
     expect(calls).toContain('systemctl restart first-twenty')
     expect(outOf(s)).toContain('git checkout 89abcdef0123 && bash server/deploy/deploy.sh --no-pull')
