@@ -45,6 +45,7 @@ const PAGES: Array<{
   { label: 'Levels and bands', href: links.comp('bands'), keywords: 'pay bands salary ranges levels', section: 'comp' },
   { label: 'Comp table', href: links.comp('table'), keywords: 'salaries compa-ratio pay', section: 'comp' },
   { label: 'Equity', href: links.comp('equity'), keywords: 'options pool grants vesting 409a board consent', section: 'comp' },
+  { label: 'Benefits', href: links.comp('benefits'), keywords: 'health plan medical dental vision insurance per head peo broker enrollment', section: 'comp' },
   { label: 'Cost and runway', href: links.comp('cost'), keywords: 'run-rate payroll cost runway burn', section: 'comp' },
   { label: 'Pay runs', href: links.comp('payruns'), keywords: 'payroll pay run prep payday cutoff peo gusto adp justworks export csv', section: 'comp' },
   { label: 'Milestones', href: links.compliance('milestones'), keywords: 'compliance thresholds law headcount', section: 'compliance' },

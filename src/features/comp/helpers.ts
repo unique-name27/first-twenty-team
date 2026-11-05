@@ -1,9 +1,21 @@
 // Pure helpers for the Comp and plan feature (tested in helpers.test.ts). Domain rules live in
 // src/domain (pay, equity, plan, lifecycle); this file only shapes their results for the UI:
-// effective-date chips, cliff wording, combined vesting points, the comp CSV and the board print.
+// effective-date chips, cliff wording, combined vesting points, the comp CSV, the benefits summary and the board print.
 import { cliffDate, holderName, poolSummary, upcomingCliffs, vestingPoints } from '@/domain/equity'
 import { daysOpen } from '@/domain/hiring/pipeline'
-import { compTable, type CompTableRow, exemptFlags, outstandingOffers, peopleCostSummary, candidateName, type RunRate } from '@/domain/pay'
+import { offersHealthPlanOn } from '@/domain/hiring/postings'
+import {
+  BENEFITS_MIN_HOURS,
+  benefitsBasis,
+  compTable,
+  type CompTableRow,
+  exemptFlags,
+  outstandingOffers,
+  peopleCostSummary,
+  candidateName,
+  runRate,
+  type RunRate,
+} from '@/domain/pay'
 import { employedOn, fullName, headcountOn, incomingOn } from '@/domain/people'
 import { budgetVariance, headcountProjection, planRollup, planSummary } from '@/domain/plan'
 import type { Band, Company, CompReason, CompRecord, DB, EquityGrant, ExemptionBasis, FLSA, ID, Level, PlanSlot } from '@/domain/types'
@@ -492,6 +504,78 @@ export function median(values: number[]): number | null {
   const s = [...values].sort((a, b) => a - b)
   const m = Math.floor(s.length / 2)
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
+}
+
+// ---------------------------------------------------------------------------------------------
+// Benefits
+// ---------------------------------------------------------------------------------------------
+
+export type BenefitsSummary = {
+  /** Where the per-head figure stands (benefitsBasis): a recorded plan, no plan, or not recorded yet. */
+  basis: 'plan' | 'none' | 'assumed'
+  /** The group health plan's start date when one is recorded; it can still be ahead. */
+  planStartedOn?: ISODate
+  /** A recorded plan has started: the test job postings use before they list health coverage. */
+  planInPlace: boolean
+  perHeadMonthly: number
+  /** Employees today at 30+ hours a week: the heads the per-head cost counts for, unless Settings records no plan. */
+  counted: number
+  /** Employees today under 30 hours a week, whom the per-head cost leaves out. */
+  belowHours: Array<{ personId: ID; name: string; hoursPerWeek: number }>
+  /** Benefits a month today: the Benefits line of Cost and runway (Now). */
+  monthly: number
+}
+
+/**
+ * Comp and plan > Benefits: the group health plan as Settings records it, and today's benefits cost. The people come
+ * from the run-rate's own lines, so the count and the total always match Cost and runway.
+ */
+export function benefitsSummary(db: DB, date: ISODate): BenefitsSummary {
+  const rr = runRate(db, date, { include: 'now' })
+  const people = rr.lines.flatMap((l) => db.people.find((p) => p.id === l.personId) ?? [])
+  const below = people.filter((p) => p.hoursPerWeek < BENEFITS_MIN_HOURS)
+  const on = db.company.groupHealthPlanStartedOn
+  return {
+    basis: benefitsBasis(db.company),
+    ...(on ? { planStartedOn: on } : {}),
+    planInPlace: offersHealthPlanOn(db, date),
+    perHeadMonthly: db.company.costModel.benefitsPerHeadMonthly,
+    counted: people.length - below.length,
+    belowHours: below.map((p) => ({ personId: p.id, name: fullName(p), hoursPerWeek: p.hoursPerWeek })),
+    monthly: rr.breakdown.benefits,
+  }
+}
+
+/** The group health plan in a few words: 'Started May 12, 2025', 'Starts Jan 1, 2027', 'None offered' or 'Not recorded'. */
+export function healthPlanText(s: Pick<BenefitsSummary, 'basis' | 'planStartedOn' | 'planInPlace'>): string {
+  if (s.basis === 'none') return 'None offered'
+  if (!s.planStartedOn) return 'Not recorded'
+  return `${s.planInPlace ? 'Started' : 'Starts'} ${fmtDate(s.planStartedOn)}`
+}
+
+/** What job postings say about health coverage (offersHealthPlanOn): they promise it only from a plan that has started. */
+export function postingHealthText(s: Pick<BenefitsSummary, 'basis' | 'planStartedOn' | 'planInPlace'>): string {
+  if (s.planInPlace) return 'Postings list medical, dental and vision coverage.'
+  if (s.planStartedOn) return `Postings leave out health coverage until the plan starts on ${fmtDate(s.planStartedOn)}.`
+  if (s.basis === 'none') return 'Postings leave out health coverage.'
+  return 'Postings leave out health coverage until a plan is recorded.'
+}
+
+/**
+ * A link-out to show: short words for it ('example.com/peo/benefits') and, only for a web address, the href.
+ * Anything else typed into Settings shows as text, so it never becomes a link.
+ */
+export function linkOut(url: string | undefined): { text: string; href?: string } | null {
+  const raw = url?.trim()
+  if (!raw) return null
+  try {
+    const u = new URL(raw)
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return { text: raw }
+    const text = `${u.hostname.replace(/^www\./, '')}${u.pathname === '/' ? '' : u.pathname}`
+    return { text: text.length > 42 ? `${text.slice(0, 40)}...` : text, href: raw }
+  } catch {
+    return { text: raw }
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
