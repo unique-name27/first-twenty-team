@@ -9,6 +9,7 @@ First Twenty ships several complete visual styles ("looks"). The user can switch
 | `web90s` | 1990s web | A 1997 company intranet built in Netscape Composer: gray beveled chrome, Times New Roman, blue underlined links, bordered tables, a visitor counter, "best viewed at 800x600". Period-true, still easy to use. | Fixed palette |
 | `comic` | Comic book | A Silver Age print comic: newsprint, thick black ink outlines, Ben-Day halftone dots, CMYK primaries, caption boxes, speech-bubble notices, hand-lettered headlines. | Fixed palette |
 | `trading` | Trading desk | A professional trading terminal for running the company's people like a portfolio: near-black workspace, panels docked as square bordered windows with amber title bars, IBM Plex Mono figures in order-book tables, cyan for links and selection, green and red only for good and bad (always with a word), a ticker tape of real figures, a headcount quote with a sparkline, a quick-links bar in the function-key style (keycaps only for keys that work, such as Search; no F numbers, which the browser owns). Replaced the green-bar ledger look on 2026-10-10. | Fixed palette (dark) |
+| `tiedye` | Tie-dye | A soft pastel tie-dye shirt laid flat behind the app: a still spiral of pink, peach, butter, mint, sky and lilac with pale crinkle rings, under flat off-white panels outlined in dark plum ink, a plum accent, the Zilla Slab slab serif (monospace figures), gently rounded corners and no shadows except on things that float. Added 2026-11-11. | Fixed palette |
 
 ## Why this exists
 
@@ -22,11 +23,15 @@ the default empty-state or stat decoration, every container rounded 12-16px with
 pill badges on everything, Inter or Space Grotesk, centered marketing-style headers inside an app,
 evenly spaced identical cards used where a table or list reads better.
 
+**One exception, by choice:** the Tie-dye look (`tiedye`) dyes the page ground with soft gradients. It is opt-in
+(never the default), the gradients stay on the page ground and the preview card only, and everything on
+top of them (panels, tables, controls, badges) stays flat and solid. No other look may use it as precedent.
+
 ## Architecture (contract)
 
 ### Selection
 
-- `usePrefs().look`: `'sleek' | 'web90s' | 'comic' | 'trading'`, default `'sleek'` (`src/store/prefs.ts`).
+- `usePrefs().look`: `'sleek' | 'web90s' | 'comic' | 'trading' | 'tiedye'`, default `'sleek'` (`src/store/prefs.ts`).
 - Renamed looks: a saved id in `RENAMED_LOOKS` (`src/themes/ids.ts`) loads as its new id (`savedLook()`), so a
   device that had the old green-bar `'ledger'` opens in `'trading'`. `index.html`'s pre-paint script keeps the same
   map so the first paint matches; `src/themes/looks.test.ts` checks both.
@@ -42,7 +47,7 @@ evenly spaced identical cards used where a table or list reads better.
 
 - `src/styles.css`: Tailwind setup, container breakpoints, resets, the `@theme inline` mapping and the
   imports of every look stylesheet. No look-specific values here.
-- `src/themes/sleek.css`, `web90s.css`, `comic.css`, `trading.css`: one file per look, **every selector
+- `src/themes/sleek.css`, `web90s.css`, `comic.css`, `trading.css`, `tiedye.css`: one file per look, **every selector
   scoped under `[data-look="<id>"]`** (not `:root`, so preview cards can carry a look). `sleek.css` also
   defines its tokens on `:where(:root)` (zero specificity) as the default when no attribute is set, and its dark values under
   `@media (prefers-color-scheme: dark) { [data-look="sleek"]:not([data-theme="light"]) { ... } }` and
