@@ -95,7 +95,7 @@ describe('looks (docs/LOOKS.md)', () => {
   })
 
   it('ships the trading desk in place of the green-bar ledger', () => {
-    expect(LOOK_IDS).toEqual(['sleek', 'web90s', 'comic', 'trading'])
+    expect(LOOK_IDS).toEqual(['sleek', 'web90s', 'comic', 'trading', 'tiedye'])
     expect(LOOK_IDS).not.toContain('ledger')
   })
 })

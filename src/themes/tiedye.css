@@ -1,0 +1,148 @@
+/*
+  Look: Tie-dye. Fixed palette (never follows the OS dark setting or data-theme).
+  A soft pastel tie-dye shirt laid flat behind the app: a still spiral of pink, peach, butter, mint,
+  sky and lilac with pale crinkle rings, under plain off-white panels outlined in dark plum ink.
+
+  This look is a deliberate, opt-in exception to the "gradient blobs" ban in docs/LOOKS.md: the
+  gradients are the dyed fabric of the page only. Panels, tables, controls and badges stay flat and
+  solid, so text almost never sits on the swirl, and every ink below keeps 4.5:1 even on the darkest
+  pastel (lilac #d6c8f0). Nothing moves, so reduced motion has nothing to stop.
+
+  Every selector is scoped to [data-look="tiedye"] (docs/LOOKS.md): the page's <html> carries it, and
+  so does this look's preview card in the Display menu. Components draw from the tokens; this file
+  restyles no hook classes beyond the page ground and the Display menu's look cards.
+*/
+
+[data-look="tiedye"] {
+  /* Look-only palette (not part of the token contract): the six dyes. */
+  --tiedye-pink: #f7c6d9;
+  --tiedye-peach: #fbd3b8;
+  --tiedye-butter: #f8ecb0;
+  --tiedye-mint: #c4ecd6;
+  --tiedye-sky: #bfdcf4;
+  --tiedye-lilac: #d6c8f0;
+  /* The fabric: pale crinkle rings over a slow spiral of the six dyes, bleached toward the center. */
+  --tiedye-fabric:
+    radial-gradient(circle at 50% 42%, rgb(255 253 251 / 0.75) 0, rgb(255 253 251 / 0) 22%),
+    repeating-radial-gradient(
+      circle at 50% 42%,
+      rgb(255 255 255 / 0) 0 26px,
+      rgb(255 255 255 / 0.32) 34px,
+      rgb(255 255 255 / 0) 42px
+    ),
+    conic-gradient(
+      from 20deg at 50% 42%,
+      var(--tiedye-pink),
+      var(--tiedye-peach),
+      var(--tiedye-butter),
+      var(--tiedye-mint),
+      var(--tiedye-sky),
+      var(--tiedye-lilac),
+      var(--tiedye-pink)
+    );
+
+  /* Color. Inks checked against every dye and every surface (lowest: --ink-3 on lilac, 5.0:1). */
+  --paper: #fbf5f0;
+  --surface: #fffdfb;
+  --surface-2: #faf4f6;
+  --surface-3: #f2e8f0;
+  --ink: #2a1f33;
+  --ink-2: #4a3d55;
+  --ink-3: #5a4c66;
+  --line: #ddd0e2;
+  --line-strong: #8f7f9c;
+  /* 3:1 or more against every surface, so inputs read as inputs. */
+  --control-border: #7a6a88;
+  --accent: #8c2a6e;
+  --accent-hover: #72205a;
+  --accent-ink: #ffffff;
+  --accent-soft: #f6d9ea;
+  --accent-soft-ink: #6e1f56;
+  --good: #1d6438;
+  --good-soft: #d3f0de;
+  --warn: #7a4300;
+  --warn-soft: #fde3c4;
+  --bad: #a3162b;
+  --bad-soft: #fbd5da;
+  --focus: #6a2fa3;
+  --scrim: rgb(42 31 51 / 0.45);
+  /* Categorical chart hues: violet, red, cyan, gold, magenta, green. Validated (dataviz
+     validate_palette.js, light, surface #fffdfb): every check passes, all six at 3:1 or more. */
+  --cat-1: #7b4fd0;
+  --cat-2: #e0482e;
+  --cat-3: #0f8fb3;
+  --cat-4: #b47a00;
+  --cat-5: #c8378f;
+  --cat-6: #2e9a3e;
+  color-scheme: light;
+
+  /* Type: the same grotesk as Sleek (already loaded in fonts.css), set a little rounder and looser. */
+  --font-display: "Archivo Variable", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Archivo Variable", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-size-base: 15px;
+  --line-height-base: 1.55;
+  --heading-weight: 700;
+  --heading-transform: none;
+  --heading-tracking: -0.005em;
+  --eyebrow-transform: uppercase;
+  --eyebrow-tracking: 0.08em;
+
+  /* Shape and depth: gently rounded, flat panels; only things that float (menus, sheets) cast a shadow. */
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --r-xl: 10px;
+  --r-2xl: 12px;
+  --r-pill: 9999px;
+  --border-w: 1px;
+  --border-w-strong: 2px;
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-lg: 0 6px 18px rgb(42 31 51 / 0.18);
+  --focus-width: 3px;
+  --focus-style: solid;
+  --focus-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- page: the dyed fabric */
+
+/*
+  The root paints the whole canvas and the fabric stays put while the page scrolls, so a long page
+  never stretches the spiral into streaks.
+*/
+html[data-look="tiedye"] {
+  background-color: var(--paper);
+  background-image: var(--tiedye-fabric);
+  background-attachment: fixed;
+}
+
+[data-look="tiedye"] body {
+  background: transparent;
+}
+
+.ft-lookpreview[data-look="tiedye"] {
+  background-color: var(--paper);
+  background-image: var(--tiedye-fabric);
+}
+
+[data-look="tiedye"] ::selection {
+  background: var(--tiedye-lilac);
+  color: var(--ink);
+}
+
+/*
+  Hook rules. They sit in a donut scope: from a tie-dye root down to (not into) any element that
+  carries another look, so another look's preview card inside a tie-dye page keeps its own skin.
+*/
+@scope ([data-look="tiedye"]) to ([data-look]:not([data-look="tiedye"])) {
+  /* Display menu: the chosen look wears a 2px plum frame. */
+  :scope[data-look="tiedye"] .ft-lookcard--on {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+
+  :scope[data-look="tiedye"] .ft-lookcard__check {
+    color: var(--accent);
+  }
+}
