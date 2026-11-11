@@ -4119,11 +4119,6 @@ html[data-look="sleek"]::-webkit-scrollbar-corner {
     border-radius: 0;
   }
 
-  /* Org chart: a planned role is a dashed row with its words; the plus in a dashed circle goes. */
-  &:is(.ft-orgnode--planned > span[aria-hidden]):has(> svg[data-icon="plus"]) {
-    display: none;
-  }
-
   /* Pipeline list view: each stage opens like a board lane, a 2px rule over an uppercase label. */
   &:is(.ft-boardlist > * > h3) {
     padding-top: 8px;
