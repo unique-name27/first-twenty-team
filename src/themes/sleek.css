@@ -3679,64 +3679,6 @@ html[data-look="sleek"]::-webkit-scrollbar-corner {
     background: transparent;
   }
 
-  /* First twenty wall: a timetable of seats. Each seat is a 2px rule over its number, set as a big figure
-     (the monogram steps aside); dashed for someone starting soon, gray for alumni, dashed gray for a
-     planned or open seat. */
-  &.ft-seat {
-    background: transparent;
-    border: 0;
-    border-top: 2px solid var(--sleek-rule);
-    border-radius: 0;
-    box-shadow: none;
-    padding: 10px 4px 12px;
-  }
-
-  &:is(a).ft-seat:hover {
-    background: var(--sleek-hover);
-  }
-
-  &.ft-seat--incoming {
-    border-top-style: dashed;
-  }
-
-  &.ft-seat--alumni {
-    border-top-color: var(--line-strong);
-  }
-
-  &:is(.ft-seat--planned, .ft-seat--open) {
-    border-top: 2px dashed var(--line-strong);
-  }
-
-  &.ft-avatar:is(.ft-seat *) {
-    display: none;
-  }
-
-  &.ft-seat__num {
-    margin-top: 0;
-    font-family: inherit;
-    font-size: 30px;
-    font-weight: 700;
-    font-stretch: var(--sleek-figure-stretch);
-    line-height: 1;
-    letter-spacing: -0.01em;
-    color: var(--ink);
-  }
-
-  &.ft-seat__num:is(.ft-seat--alumni *) {
-    color: var(--ink-3);
-  }
-
-  &.ft-seat__name {
-    margin-top: 6px;
-  }
-
-  &.ft-seat__pos {
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--ink-2);
-  }
-
   &.ft-orgnode {
     border-radius: 0;
   }
@@ -4283,38 +4225,6 @@ html[data-look="sleek"]::-webkit-scrollbar-corner {
     font-stretch: 100%;
     font-size: 13px;
     font-weight: 400;
-    color: var(--ink-2);
-  }
-
-  /* First twenty wall: a planned or open seat shows its seat number as a figure, like a filled seat, in
-     the quiet ink (no plus sign in a dashed circle). */
-  &:is(.ft-seat--planned > span[aria-hidden]:not(.ft-seat__pos)) {
-    display: none;
-  }
-
-  &.ft-seat__pos {
-    position: static;
-    order: -1;
-    font-family: inherit;
-    font-size: 30px;
-    font-weight: 700;
-    font-stretch: var(--sleek-figure-stretch);
-    line-height: 1;
-    letter-spacing: -0.01em;
-    color: var(--ink-3);
-  }
-
-  &.ft-seat__pos::before {
-    content: "#";
-  }
-
-  &.ft-seat--open {
-    align-items: flex-start;
-    justify-content: flex-start;
-  }
-
-  &:is(.ft-seat--open > span:not(.ft-seat__pos)) {
-    margin-top: 6px;
     color: var(--ink-2);
   }
 

@@ -45,7 +45,6 @@ import {
   titleFromScope,
   visibleOrgNodes,
   visibleTasks,
-  wallSeats,
 } from './helpers'
 
 const TODAY = '2026-10-09'
@@ -127,18 +126,6 @@ describe('org chart', () => {
     const roots = buildOrgTree(db, TODAY, { planned: false, contractors: true })
     const elena = roots[0].children.find((n) => n.id === 'p-elena')
     expect(elena?.children.some((n) => n.id === 'k-marisol')).toBe(true)
-  })
-})
-
-describe('first twenty wall', () => {
-  it('keeps hire order, alumni seats, planned roles and at least 20 seats', () => {
-    const seats = wallSeats(db, TODAY)
-    expect(seats.length).toBeGreaterThanOrEqual(20)
-    expect(seats[0].person?.hireNumber).toBe(1)
-    expect(seats.find((s) => s.person?.id === 'p-omar')?.kind).toBe('alumni')
-    expect(seats.find((s) => s.person?.id === 'p-lucas')?.kind).toBe('incoming')
-    expect(seats.some((s) => s.kind === 'planned')).toBe(true)
-    seats.forEach((s, i) => expect(s.n).toBe(i + 1))
   })
 })
 

@@ -1782,45 +1782,6 @@
     border-left-width: 1px;
   }
 
-  /* First twenty wall: seats as quote tiles, the seat number as the symbol. */
-  &.ft-seat {
-    border-radius: 2px;
-    background: var(--surface);
-    border-color: var(--tr-frame);
-    box-shadow: none;
-  }
-
-  &:is(a).ft-seat:hover {
-    background: var(--tr-row-hover);
-    border-color: var(--line-strong);
-  }
-
-  &.ft-seat--incoming {
-    box-shadow: inset 0 2px 0 var(--good);
-  }
-
-  &.ft-seat--alumni {
-    background: var(--tr-field);
-    border-style: dashed;
-  }
-
-  &:is(.ft-seat--planned, .ft-seat--open) {
-    background: transparent;
-    border-style: dashed;
-    border-color: var(--line-strong);
-  }
-
-  &:is(.ft-seat__num, .ft-seat__pos) {
-    font-family: var(--font-mono);
-    color: var(--tr-amber);
-  }
-
-  &.ft-seat__date {
-    font-family: var(--font-mono);
-    font-size: 11.5px;
-    color: var(--ink-3);
-  }
-
   /* Compliance calendar date tiles: a settlement date box. */
   &.ft-datetile {
     border-radius: 2px;
