@@ -200,6 +200,19 @@ body {
   outline: none;
 }
 
+/*
+  Org chart (features/people/OrgChart.tsx): each treeitem holds its whole team, so the ring goes on
+  the focused person's box, not around everyone below them. Tokens only, so every look keeps its ring.
+*/
+.ft-orgchart [role="treeitem"]:focus-visible {
+  outline: none;
+}
+
+.ft-orgchart [role="treeitem"]:focus-visible > .ft-orgnode {
+  outline: var(--focus-width) var(--focus-style) var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
 .tabular,
 .num {
   font-variant-numeric: tabular-nums;

@@ -1715,22 +1715,13 @@
   }
 
   /*
-    Org chart: a tree grid. Rows dock on hairlines (no box per person, no gaps), 40px tall, the
-    avatar shrinks to a 24px chip so the amber #N leads; the active row takes the cyan edge. Planned
-    seats keep a dashed rule and gray words, contractors a dotted one. Elbows are 1px wiring.
+    Org chart: square windows on a wiring diagram. Each box is a 1px framed quote window on the
+    surface, the active one takes the cyan edge; planned seats keep a dashed frame and contractors a
+    dotted one. The lines between managers and reports are 1px wiring.
   */
-  &:is(ul[role="tree"]):has(> li > .ft-orgnode) {
-    gap: 0;
-    border-top: 1px solid var(--line);
-  }
-
   &.ft-orgnode {
-    min-height: 40px;
-    padding: 0 10px;
-    border: 0;
-    border-bottom: 1px solid var(--line);
     border-radius: 0;
-    background: transparent;
+    border-color: var(--tr-frame);
     box-shadow: none;
   }
 
@@ -1739,46 +1730,26 @@
   }
 
   &.ft-orgnode--planned {
-    border-bottom: 1px dashed var(--line-strong);
+    border: 1px dashed var(--line-strong);
   }
 
   &.ft-orgnode--contractor {
-    border-bottom: 1px dotted var(--line-strong);
+    border: 1px dotted var(--line-strong);
   }
 
   &.ft-orgnode--active,
   &.ft-orgnode--active:hover {
     background: var(--tr-row-hover);
-    box-shadow: inset 2px 0 0 var(--tr-cyan);
+    border-color: var(--tr-cyan);
   }
 
-  /* The expand chevron keeps a 40px row-height target. */
-  .ft-orgnode > &:is(span[title]) {
-    height: 40px;
+  &.ft-orgnode__toggle {
+    border-color: var(--tr-frame);
   }
 
-  /* The kit sizes avatars inline (style), so the smaller chip needs !important. */
-  .ft-orgnode > &.ft-avatar,
-  .ft-orgnode--planned > &:is(span[aria-hidden]):nth-child(2) {
-    width: 24px !important;
-    height: 24px !important;
-    font-size: 10px !important;
-  }
-
-  .ft-orgnode--planned > &:is(span[aria-hidden]):nth-child(2) {
-    border-width: 1px;
-    border-radius: 2px;
-  }
-
-  .ft-orgnode--planned > &:is(span[aria-hidden]):nth-child(2) > svg {
-    width: 12px;
-    height: 12px;
-  }
-
-  &.ft-orgnode__elbow {
-    border-radius: 0;
+  &.ft-orgchart__link {
     border-color: var(--line-strong);
-    border-bottom-width: 1px;
+    border-top-width: 1px;
     border-left-width: 1px;
   }
 
