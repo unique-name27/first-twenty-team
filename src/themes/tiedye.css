@@ -76,13 +76,14 @@
   --cat-6: #2e9a3e;
   color-scheme: light;
 
-  /* Type: the same grotesk as Sleek (already loaded in fonts.css), set a little rounder and looser. */
-  --font-display: "Archivo Variable", "Helvetica Neue", Arial, sans-serif;
-  --font-body: "Archivo Variable", "Helvetica Neue", Arial, sans-serif;
+  /* Type: Zilla Slab, a friendly slab serif (fonts.css: 400 and 600 only, so headings and bold use 600).
+     Figures and codes stay monospace so they line up. */
+  --font-display: "Zilla Slab", Rockwell, "Roboto Slab", Georgia, serif;
+  --font-body: "Zilla Slab", Rockwell, "Roboto Slab", Georgia, serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --font-size-base: 15px;
+  --font-size-base: 16px;
   --line-height-base: 1.55;
-  --heading-weight: 700;
+  --heading-weight: 600;
   --heading-transform: none;
   --heading-tracking: -0.005em;
   --eyebrow-transform: uppercase;
