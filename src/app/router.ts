@@ -80,7 +80,7 @@ export const links = {
   newCandidate: (jobId?: string) => href('hiring', 'add', jobId),
   newJob: (planSlotId?: string) => href('hiring', 'new-job', planSlotId),
   // People
-  people: (tab?: 'directory' | 'org' | 'wall' | 'checklists' | 'timeoff' | 'contractors') => href('people', tab),
+  people: (tab?: 'directory' | 'org' | 'checklists' | 'timeoff' | 'contractors') => href('people', tab),
   person: (id: string, tab?: 'overview' | 'job' | 'equity' | 'timeoff' | 'checklists' | 'emergency' | 'activity') =>
     href('person', id, tab),
   checklist: (id: string) => href('checklist', id),

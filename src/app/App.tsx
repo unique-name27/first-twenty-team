@@ -136,7 +136,6 @@ const TAB_TITLES: Record<string, string> = {
   org: 'Org chart',
   'settings.org': 'Org',
   'settings.timeoff': 'Time off policies',
-  wall: 'First twenty wall',
   kits: 'Interview kits',
   soc2: 'SOC 2',
   plan: 'Headcount plan',

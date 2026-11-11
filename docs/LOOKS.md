@@ -185,7 +185,6 @@ utility selectors still in the look files, and replace those when you next touch
 | Counts and tags | `ft-count` (a pill or badge that holds only a number: calendar panel counts, board and list column counts, Inbox group counts, kit step numbers); `ft-tag` (+ `--source` for SourceChip, `--removable` for candidate tags) |
 | Person page header | `ft-personhead` on the header, with `ft-pagehead__back`, `ft-pagehead__title` and `ft-pagehead__actions` inside; `ft-empno` on every employee number (`#5`) |
 | Org chart | `ft-orgnode` (+ `--person / --planned / --contractor / --active`) on the row box, `ft-orgnode__elbow` on the connector; the treeitem sets `--ft-level`, `--ft-indent` and `--ft-indent-step` (its indent minus its parent's) |
-| First twenty wall | `ft-seat` (+ `--current / --alumni / --incoming / --planned / --open`), `ft-seat__num` (the `#N`), `ft-seat__name`, `ft-seat__date`, `ft-seat__pos` (seat number on planned and open seats) |
 | Pipeline | `ft-board` (board scroller), `ft-board__col`, `ft-boardcard` (+ `--selected`), `ft-boardcard__next` (+ `--overdue`); List view: `ft-boardlist` (the region), `ft-boardlist__rows` (one stage's cards), `ft-boardcard--row` (a card shown as a list row) |
 | Candidate | `ft-stepper`, `ft-stepper__step` (+ `--current / --done`); sections inside the candidate panel (SubPanel: Interviews and scorecards, Offer, Background check, Contingencies; and the Next step box): `ft-subpanel`, `ft-subpanel__head`, `ft-subpanel__icon`, `ft-subpanel__title`, `ft-subpanel__subtitle`, `ft-subpanel__actions` |
 | Inbox | `ft-inboxrow` (+ `--bad` on overdue legal rows, which draw the red marker) |
@@ -269,9 +268,7 @@ What `src/themes/sleek.css` does beyond recoloring, so a screen change can be ch
 - **Overlays.** No shadows anywhere. Sheets, dialogs and menus are framed in ink; the toast is inverse ink (paper
   words, a paper-underlined link to the change, a paper-framed Undo, inverted key caps, a 40px close).
 - **Avatars** are square monogram tiles, dropped wherever words follow them (the name or the `#number` already
-  says who it is); avatar stacks stay. The person page leads with the employee number at title size, and the
-  First twenty wall is a grid of seats, each a 2px rule over a 30px `#n` (planned seats show their number in
-  ink-3 under a dashed rule).
+  says who it is); avatar stacks stay. The person page leads with the employee number at title size.
 - **Layout touches** (checked at 375px and 150% text):
   - Inbox: the row is a two-column grid when its list is at least 560px wide (title and meta left, actions right,
     about 60px a row). The title button is a 40px box (9px of padding taken back by negative margins; the meta words
