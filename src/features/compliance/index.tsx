@@ -1,5 +1,5 @@
 // Compliance (admin): what the law expects at your size, with one-tap tasks, official sources and the
-// proof that you did it. Tabs: #compliance.milestones[.<ruleId>] | calendar | training | notices | soc2 | records.
+// proof that you did it. Tabs: #compliance.milestones[.<ruleId>] | i9 | calendar | training | notices | soc2 | records.
 import { useMemo } from 'react'
 import { links } from '@/app/router'
 import type { PageProps } from '@/app/routes'
@@ -11,18 +11,20 @@ import { addDays, addMonths, today } from '@/lib/dates'
 import { useDB } from '@/store/db'
 import { EmptyState, PageHeader, type TabDef, Tabs } from '@/ui'
 import { CalendarTab } from './calendar'
-import { acksOwed, bucketCalendar, needsAction } from './helpers'
+import { acksOwed, bucketCalendar, i9AttentionCount, i9Rows, needsAction } from './helpers'
+import { I9Tab } from './i9'
 import { MilestonesTab } from './milestones'
 import { NoticesTab } from './notices'
 import { RecordsTab } from './records'
 import { Soc2Tab } from './soc2'
 import { TrainingTab } from './training'
 
-type TabKey = 'milestones' | 'calendar' | 'training' | 'notices' | 'soc2' | 'records'
-const TAB_KEYS: TabKey[] = ['milestones', 'calendar', 'training', 'notices', 'soc2', 'records']
+type TabKey = 'milestones' | 'i9' | 'calendar' | 'training' | 'notices' | 'soc2' | 'records'
+const TAB_KEYS: TabKey[] = ['milestones', 'i9', 'calendar', 'training', 'notices', 'soc2', 'records']
 
 const SUBTITLES: Record<TabKey, string> = {
   milestones: 'What the law expects at your size, in plain English, with one-tap tasks and official sources.',
+  i9: 'Form I-9 for every employee: who is done, what is due, and who needs reverifying.',
   calendar: 'Recurring and dated obligations, overdue first. Download them to your calendar.',
   training: 'Who needs which course, and when. One tap records a completion.',
   notices: 'Policy versions, who acknowledged them, and the notices every new hire gets.',
@@ -52,7 +54,8 @@ export function CompliancePage({ route }: PageProps) {
     const w = db.company.soc2?.typeIIWindow
     const soc2 = db.company.soc2Enabled && w ? soc2Evidence(db, w.from, w.to, t).controls.reduce((n, c) => n + c.gaps, 0) : 0
     const records = db.recordsRequests.filter((r) => !r.fulfilledOn).length
-    return { milestones: rules, calendar: overdueDates, training, notices, soc2, records }
+    const i9 = i9AttentionCount(i9Rows(db, t))
+    return { milestones: rules, i9, calendar: overdueDates, training, notices, soc2, records }
   }, [db, t])
 
   if (viewer.role !== 'admin') {
@@ -61,6 +64,7 @@ export function CompliancePage({ route }: PageProps) {
 
   const tabs: Array<TabDef<TabKey>> = [
     { key: 'milestones', label: 'Milestones', count: counts.milestones || undefined, href: links.compliance('milestones') },
+    { key: 'i9', label: 'I-9', count: counts.i9 || undefined, href: links.compliance('i9') },
     { key: 'calendar', label: 'Calendar', count: counts.calendar || undefined, href: links.compliance('calendar') },
     { key: 'training', label: 'Training', count: counts.training || undefined, href: links.compliance('training') },
     { key: 'notices', label: 'Notices and policies', count: counts.notices || undefined, href: links.compliance('notices') },
@@ -75,6 +79,7 @@ export function CompliancePage({ route }: PageProps) {
       <PageHeader title="Compliance" subtitle={SUBTITLES[tab]} />
       <Tabs<TabKey> tabs={tabs} value={tab} label="Compliance sections" className="mb-5" />
       {tab === 'milestones' && <MilestonesTab ruleId={ruleId} />}
+      {tab === 'i9' && <I9Tab />}
       {tab === 'calendar' && <CalendarTab />}
       {tab === 'training' && <TrainingTab />}
       {tab === 'notices' && <NoticesTab />}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { type CalendarItem, evaluateAll, evaluateRule, nextThreshold, RULE_BY_ID } from '@/domain/compliance'
 import { addMany, addPerson, ledgerlarkLite, makeDB } from '@/domain/compliance/testkit'
-import type { Policy } from '@/domain/types'
+import type { ChecklistTask, DB, Policy } from '@/domain/types'
 import {
   acksOwed,
   applicantRecordStats,
@@ -13,6 +13,9 @@ import {
   followUpPeople,
   futureCrossingText,
   groupResults,
+  i9AttentionCount,
+  i9Rows,
+  i9StepText,
   impactHeadline,
   needsAction,
   nextVersions,
@@ -411,5 +414,64 @@ describe('training cell dates', () => {
     const row = { kind: 'harassment_employee' as const, course: 'harassment' as const, title: 'x', required: true, recommended: false, reason: '', status: 'done' as const, completedOn: '2025-11-18', nextDueOn: '2027-11-18', dueOn: '2027-11-18' }
     expect(trainingCell(row, '2026-10-09').detail).toBe('Next by Nov 18, 2027')
     expect(trainingCell({ ...row, status: 'due', nextDueOn: '2026-11-01', dueOn: '2026-11-01' }, '2026-10-09').label).toBe('Due Nov 1')
+  })
+})
+
+describe('I-9 rows', () => {
+  const task = (id: string, dueOn: string, extra: Partial<ChecklistTask> = {}): ChecklistTask => ({
+    id: `t-${id}-${dueOn}`,
+    templateTaskId: id,
+    title: id,
+    ownerRole: 'admin',
+    dueOn,
+    status: 'open',
+    category: 'legal',
+    statutory: true,
+    ...extra,
+  })
+  const onboarding = (db: DB, personId: string, tasks: ChecklistTask[]) =>
+    db.checklists.push({ id: `cl-${personId}`, personId, kind: 'onboarding', templateId: 'tpl-onboarding', anchorDate: D, createdOn: D, tasks })
+
+  it('reads section status from tasks and documents, and puts overdue first', () => {
+    const db = makeDB()
+    addPerson(db, { id: 'p-done', startDate: '2026-01-05' })
+    addPerson(db, { id: 'p-late', startDate: '2026-10-05' })
+    addPerson(db, { id: 'p-next', startDate: '2026-10-26' })
+    addPerson(db, { id: 'p-gone', startDate: '2025-03-03', endDate: '2026-06-30' })
+    db.documents.push(
+      { id: 'd1', personId: 'p-done', type: 'i9_section1', name: 'I-9 s1', status: 'signed', date: '2026-01-05' },
+      { id: 'd2', personId: 'p-done', type: 'i9_section2', name: 'I-9 s2', status: 'filed', date: '2026-01-07' },
+    )
+    onboarding(db, 'p-late', [task('on-i9-section1', '2026-10-05', { status: 'done', doneOn: '2026-10-05' }), task('on-i9-section2', '2026-10-08')])
+    onboarding(db, 'p-next', [task('on-i9-section1', '2026-10-26'), task('on-i9-section2', '2026-10-29')])
+    const rows = i9Rows(db, D)
+    const ids = rows.map((r) => r.person.id)
+    expect(ids).not.toContain('p-gone')
+    expect(ids[0]).toBe('p-late')
+    const late = rows[0]
+    expect(late.state).toBe('overdue')
+    expect(i9StepText(late.section1)).toBe('Done Oct 5, 2026')
+    expect(late.section2).toEqual({ state: 'overdue', on: '2026-10-08' })
+    const next = rows.find((r) => r.person.id === 'p-next')
+    expect(next?.state).toBe('due')
+    expect(i9StepText(next?.section2 ?? { state: 'unknown' })).toBe('Due Oct 29, 2026')
+    const done = rows.find((r) => r.person.id === 'p-done')
+    expect(done?.state).toBe('done')
+    expect(done?.section2).toEqual({ state: 'done', on: '2026-01-07' })
+    expect(done?.keepAtLeastUntil).toBe('2029-01-05')
+  })
+
+  it('flags reverification within 90 days, and past dates as overdue', () => {
+    const db = makeDB()
+    addPerson(db, { id: 'p-soon', startDate: '2026-01-05', i9ReverifyOn: '2027-01-07' })
+    addPerson(db, { id: 'p-later', startDate: '2026-01-05', i9ReverifyOn: '2027-01-08' })
+    addPerson(db, { id: 'p-past', startDate: '2026-01-05', i9ReverifyOn: '2026-10-01' })
+    const rows = i9Rows(db, D)
+    const by = (id: string) => rows.find((r) => r.person.id === id)
+    expect(by('p-soon')?.reverify).toBe('soon')
+    expect(by('p-soon')?.state).toBe('reverify_soon')
+    expect(by('p-later')?.reverify).toBe('later')
+    expect(by('p-past')?.state).toBe('overdue')
+    expect(i9AttentionCount(rows)).toBe(2)
   })
 })

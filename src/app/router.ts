@@ -94,7 +94,7 @@ export const links = {
   /** Comp and plan > Pay runs, on one pay period when its start date is given. */
   payRun: (periodStart?: string) => href('comp', 'payruns', periodStart),
   // Compliance
-  compliance: (tab?: 'milestones' | 'calendar' | 'training' | 'notices' | 'soc2' | 'records') => href('compliance', tab),
+  compliance: (tab?: 'milestones' | 'i9' | 'calendar' | 'training' | 'notices' | 'soc2' | 'records') => href('compliance', tab),
   rule: (ruleId: string) => href('compliance', 'milestones', ruleId),
   // Me
   me: (tab?: 'summary' | 'job' | 'equity' | 'timeoff' | 'tasks' | 'profile' | 'roles') => href('me', tab),
