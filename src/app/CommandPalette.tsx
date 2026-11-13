@@ -48,6 +48,7 @@ const PAGES: Array<{
   { label: 'Cost and runway', href: links.comp('cost'), keywords: 'run-rate payroll cost runway burn', section: 'comp' },
   { label: 'Pay runs', href: links.comp('payruns'), keywords: 'payroll pay run prep payday cutoff peo gusto adp justworks export csv', section: 'comp' },
   { label: 'Milestones', href: links.compliance('milestones'), keywords: 'compliance thresholds law headcount', section: 'compliance' },
+  { label: 'Form I-9', href: links.compliance('i9'), keywords: 'i-9 i9 work authorization reverify reverification uscis', section: 'compliance' },
   { label: 'Compliance calendar', href: links.compliance('calendar'), keywords: 'deadlines filings 1099 sb 294', section: 'compliance' },
   { label: 'Training tracker', href: links.compliance('training'), keywords: 'harassment training security awareness', section: 'compliance' },
   { label: 'Notices and policies', href: links.compliance('notices'), keywords: 'handbook acknowledgements posters', section: 'compliance' },
