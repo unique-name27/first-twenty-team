@@ -92,6 +92,9 @@ export const LAW_SOURCES: Record<string, LawSource> = {
     label: 'UC Berkeley Labor Center minimum wage inventory',
     url: 'https://laborcenter.berkeley.edu/inventory-of-us-city-and-county-minimum-wage-ordinances/',
   },
+  // New York pay transparency (docs/LAW.md, New York pay transparency section, 2026-11-13).
+  nyLabor194b: { label: 'NY Labor Law 194-b', url: 'https://www.nysenate.gov/legislation/laws/LAB/194-B' },
+  nyPayTransparencyFaq: { label: 'NYS DOL pay transparency FAQ', url: 'https://dol.ny.gov/pay-transparency-act-frequently-asked-questions' },
 }
 
 /** Local minimum wages in effect on 2026-10-09 (dated rows so future rates can be added). */
@@ -152,4 +155,11 @@ export const FINAL_PAY = {
   voluntaryWithNotice: 'On the last day of work, when the employee gave at least 72 hours notice (Labor Code 202).',
   voluntaryWithoutNotice: 'Within 72 hours of quitting, when the employee gave less than 72 hours notice (Labor Code 202).',
   waitingTimePenaltyMaxDays: 30,
+} as const
+
+/** New York pay transparency (Labor Law 194-b; LAW.md ny-paytrans-4, ny-paytrans-range, ny-paytrans-description). */
+export const NY_PAY_TRANSPARENCY = {
+  /** Employers with this many employees or more must put a range (or fixed rate) in every job post. */
+  employeeThreshold: 4,
+  effective: '2023-09-17',
 } as const
