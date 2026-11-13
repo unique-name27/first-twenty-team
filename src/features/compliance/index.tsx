@@ -9,7 +9,7 @@ import { trainingMatrix } from '@/domain/trainings'
 import { isEmployedOn } from '@/domain/people'
 import { addDays, addMonths, today } from '@/lib/dates'
 import { useDB } from '@/store/db'
-import { EmptyState, PageHeader, type TabDef, Tabs, TextLink } from '@/ui'
+import { EmptyState, PageHeader, Stat, type TabDef, Tabs } from '@/ui'
 import { CalendarTab } from './calendar'
 import { acksOwed, bucketCalendar, needsAction } from './helpers'
 import { MilestonesTab } from './milestones'
@@ -30,13 +30,14 @@ const SUBTITLES: Record<TabKey, string> = {
   soc2: 'People evidence for your SOC 2 audit.',
 }
 
-/** The 'needs action now' strip: one link per area with something open, in tab order. */
-const ATTENTION: Array<{ key: Exclude<TabKey, 'soc2'>; one: string; many: string }> = [
-  { key: 'milestones', one: 'rule needs action', many: 'rules need action' },
-  { key: 'calendar', one: 'calendar date overdue', many: 'calendar dates overdue' },
-  { key: 'training', one: 'training overdue', many: 'trainings overdue' },
-  { key: 'notices', one: 'acknowledgment or notice owed', many: 'acknowledgments or notices owed' },
-  { key: 'records', one: 'records request open', many: 'records requests open' },
+/** The overview boxes: one clickable box per area, in tab order, with a few words under the number. */
+const OVERVIEW: Array<{ key: TabKey; label: string; open: string; clear: string; tone: 'warn' | 'bad' }> = [
+  { key: 'milestones', label: 'Rules', open: 'need action', clear: 'All handled', tone: 'warn' },
+  { key: 'calendar', label: 'Calendar', open: 'overdue', clear: 'Nothing overdue', tone: 'bad' },
+  { key: 'training', label: 'Training', open: 'overdue', clear: 'All current', tone: 'bad' },
+  { key: 'notices', label: 'Notices', open: 'owed', clear: 'All acknowledged', tone: 'warn' },
+  { key: 'records', label: 'Records', open: 'requests open', clear: 'No open requests', tone: 'warn' },
+  { key: 'soc2', label: 'SOC 2', open: 'gaps', clear: 'No gaps', tone: 'warn' },
 ]
 
 export function CompliancePage({ route }: PageProps) {
@@ -78,22 +79,25 @@ export function CompliancePage({ route }: PageProps) {
       ? [{ key: 'soc2' as const, label: 'SOC 2 evidence', count: counts.soc2 || undefined, href: links.compliance('soc2') }]
       : []),
   ]
-  const open = ATTENTION.filter((a) => counts[a.key] > 0)
+  const boxes = OVERVIEW.filter((o) => o.key !== 'soc2' || db.company.soc2Enabled)
 
   return (
     <>
       <PageHeader title="Compliance" subtitle={SUBTITLES[tab]} />
-      <nav aria-label="Needs action now" className="mb-4 flex flex-wrap items-baseline gap-x-5 gap-y-1 border-y border-line py-2.5 text-[14.5px]">
-        <span className="text-[12px] font-semibold uppercase tracking-wide text-ink-3">Needs action now</span>
-        {open.length === 0 ? (
-          <span className="text-ink-2">Nothing is open today.</span>
-        ) : (
-          open.map((a) => (
-            <TextLink key={a.key} href={links.compliance(a.key)}>
-              <span className="font-semibold tabular-nums">{counts[a.key]}</span> {counts[a.key] === 1 ? a.one : a.many}
-            </TextLink>
-          ))
-        )}
+      <nav aria-label="Compliance overview" className="mb-5">
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {boxes.map((o) => (
+            <li key={o.key} className="flex">
+              <Stat
+                href={links.compliance(o.key)}
+                label={o.label}
+                value={counts[o.key]}
+                tone={counts[o.key] ? o.tone : 'good'}
+                sub={counts[o.key] ? o.open : o.clear}
+              />
+            </li>
+          ))}
+        </ul>
       </nav>
       <Tabs<TabKey> tabs={tabs} value={tab} label="Compliance sections" className="mb-5" />
       {tab === 'milestones' && <MilestonesTab ruleId={ruleId} />}

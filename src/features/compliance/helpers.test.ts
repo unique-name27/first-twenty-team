@@ -27,6 +27,7 @@ import {
   ruleOwnDue,
   rulerX,
   RULER_MAIN,
+  shortStatus,
   sameVersion,
   stateChip,
   statesOutsideCalifornia,
@@ -91,6 +92,18 @@ describe('rule cards', () => {
     const db = ledgerlarkLite()
     db.people = db.people.filter((p) => p.homeState !== 'TX')
     expect(jurisdictionCoverage(db, 'other_state', D)).toBe('Everyone works in California today.')
+  })
+
+  it('keeps the words on a rule box short', () => {
+    const db = ledgerlarkLite()
+    const results = evaluateAll(db, D)
+    for (const r of results) expect(shortStatus(r).split(' ').length, `${r.rule.id}: ${shortStatus(r)}`).toBeLessThanOrEqual(5)
+    const at15 = results.find((r) => r.rule.id === 'title-vii-ada-gina-pwfa')
+    expect(at15 && shortStatus({ ...at15, state: 'not_yet' })).toBe('At 15 employees')
+    const overdue = results.find((r) => r.followUps?.length)
+    if (overdue) expect(shortStatus(overdue)).toMatch(/^Overdue for \d+ (person|people)$/)
+    const done = results.find((r) => r.state === 'done' && r.rule.actions.length)
+    if (done) expect(shortStatus(done)).toBe(`All ${done.rule.actions.length} done`)
   })
 
   it('writes status lines and why text in plain words', () => {

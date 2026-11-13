@@ -179,6 +179,35 @@ export function groupResultsByJurisdiction(
   })).filter((g) => g.results.length > 0)
 }
 
+/**
+ * A few words for a rule box (the full statusLine shows in the rule's side panel): '2 of 3 done',
+ * 'Due Oct 29', 'Overdue for 1 person', 'At 15 employees', 'When it first happens'.
+ */
+export function shortStatus(r: RuleResult): string {
+  const total = r.rule.actions.length
+  const done = r.rule.actions.filter((a) => r.actionsDone[a.id]).length
+  const t = r.rule.trigger
+  switch (r.state) {
+    case 'applies':
+      if (r.followUps?.length) return `Overdue for ${plural(followUpPeople(r), 'person', 'people')}`
+      if (r.dueOn && r.openActions.length) return `Due ${fmtShort(r.dueOn)}`
+      return total ? `${done} of ${total} done` : 'Applies now'
+    case 'approaching': {
+      const d = r.projectedOn ?? r.projectedIfOffersAccepted
+      return d ? `Likely from ${fmtShort(d)}` : 'Close to applying'
+    }
+    case 'done':
+      return total ? `All ${total} done` : 'Done'
+    case 'not_applicable':
+      return 'Marked not applicable'
+    case 'not_yet':
+      if (t.kind === 'headcount') return `At ${t.n} employees`
+      if (t.kind === 'site') return `At ${t.n} on site`
+      if (t.kind === 'event') return 'When it first happens'
+      return 'Not yet'
+  }
+}
+
 /** One short line under a collapsed card title. */
 export function statusLine(r: RuleResult): string {
   const total = r.rule.actions.length
