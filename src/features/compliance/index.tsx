@@ -9,7 +9,7 @@ import { trainingMatrix } from '@/domain/trainings'
 import { isEmployedOn } from '@/domain/people'
 import { addDays, addMonths, today } from '@/lib/dates'
 import { useDB } from '@/store/db'
-import { EmptyState, PageHeader, type TabDef, Tabs } from '@/ui'
+import { EmptyState, PageHeader, type TabDef, Tabs, TextLink } from '@/ui'
 import { CalendarTab } from './calendar'
 import { acksOwed, bucketCalendar, needsAction } from './helpers'
 import { MilestonesTab } from './milestones'
@@ -18,17 +18,26 @@ import { RecordsTab } from './records'
 import { Soc2Tab } from './soc2'
 import { TrainingTab } from './training'
 
-type TabKey = 'milestones' | 'calendar' | 'training' | 'notices' | 'soc2' | 'records'
-const TAB_KEYS: TabKey[] = ['milestones', 'calendar', 'training', 'notices', 'soc2', 'records']
+type TabKey = 'milestones' | 'calendar' | 'training' | 'notices' | 'records' | 'soc2'
+const TAB_KEYS: TabKey[] = ['milestones', 'calendar', 'training', 'notices', 'records', 'soc2']
 
 const SUBTITLES: Record<TabKey, string> = {
-  milestones: 'What the law expects at your size, in plain English, with one-tap tasks and official sources.',
-  calendar: 'Recurring and dated obligations, overdue first. Download them to your calendar.',
-  training: 'Who needs which course, and when. One tap records a completion.',
-  notices: 'Policy versions, who acknowledged them, and the notices every new hire gets.',
-  soc2: 'People evidence for your SOC 2 audit: populations, 5 controls, gaps and CSVs.',
-  records: 'Retain-until dates, the applicant anonymize queue and records requests.',
+  milestones: 'What the law expects at your size and in each state, with official sources.',
+  calendar: 'Dated and yearly obligations, overdue first.',
+  training: 'Who needs which course, and by when.',
+  notices: 'Policies, who acknowledged them, and the notices each new hire gets.',
+  records: 'How long to keep records, and requests to see them.',
+  soc2: 'People evidence for your SOC 2 audit.',
 }
+
+/** The 'needs action now' strip: one link per area with something open, in tab order. */
+const ATTENTION: Array<{ key: Exclude<TabKey, 'soc2'>; one: string; many: string }> = [
+  { key: 'milestones', one: 'rule needs action', many: 'rules need action' },
+  { key: 'calendar', one: 'calendar date overdue', many: 'calendar dates overdue' },
+  { key: 'training', one: 'training overdue', many: 'trainings overdue' },
+  { key: 'notices', one: 'acknowledgment or notice owed', many: 'acknowledgments or notices owed' },
+  { key: 'records', one: 'records request open', many: 'records requests open' },
+]
 
 export function CompliancePage({ route }: PageProps) {
   const viewer = useViewer()
@@ -64,15 +73,28 @@ export function CompliancePage({ route }: PageProps) {
     { key: 'calendar', label: 'Calendar', count: counts.calendar || undefined, href: links.compliance('calendar') },
     { key: 'training', label: 'Training', count: counts.training || undefined, href: links.compliance('training') },
     { key: 'notices', label: 'Notices and policies', count: counts.notices || undefined, href: links.compliance('notices') },
+    { key: 'records', label: 'Records', count: counts.records || undefined, href: links.compliance('records') },
     ...(db.company.soc2Enabled || tab === 'soc2'
       ? [{ key: 'soc2' as const, label: 'SOC 2 evidence', count: counts.soc2 || undefined, href: links.compliance('soc2') }]
       : []),
-    { key: 'records', label: 'Records', count: counts.records || undefined, href: links.compliance('records') },
   ]
+  const open = ATTENTION.filter((a) => counts[a.key] > 0)
 
   return (
     <>
       <PageHeader title="Compliance" subtitle={SUBTITLES[tab]} />
+      <nav aria-label="Needs action now" className="mb-4 flex flex-wrap items-baseline gap-x-5 gap-y-1 border-y border-line py-2.5 text-[14.5px]">
+        <span className="text-[12px] font-semibold uppercase tracking-wide text-ink-3">Needs action now</span>
+        {open.length === 0 ? (
+          <span className="text-ink-2">Nothing is open today.</span>
+        ) : (
+          open.map((a) => (
+            <TextLink key={a.key} href={links.compliance(a.key)}>
+              <span className="font-semibold tabular-nums">{counts[a.key]}</span> {counts[a.key] === 1 ? a.one : a.many}
+            </TextLink>
+          ))
+        )}
+      </nav>
       <Tabs<TabKey> tabs={tabs} value={tab} label="Compliance sections" className="mb-5" />
       {tab === 'milestones' && <MilestonesTab ruleId={ruleId} />}
       {tab === 'calendar' && <CalendarTab />}

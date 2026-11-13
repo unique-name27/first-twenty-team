@@ -13,6 +13,8 @@ import {
   followUpPeople,
   futureCrossingText,
   groupResults,
+  groupResultsByJurisdiction,
+  jurisdictionCoverage,
   impactHeadline,
   needsAction,
   nextVersions,
@@ -27,6 +29,7 @@ import {
   RULER_MAIN,
   sameVersion,
   stateChip,
+  statesOutsideCalifornia,
   statusLine,
   thresholdImpact,
   thresholdLead,
@@ -62,6 +65,32 @@ describe('rule cards', () => {
     expect(ruleGroupOf(RULE_BY_ID['first-contractor'])).toBe('events')
     expect(ruleGroupOf(RULE_BY_ID['cal-warn'])).toBe('upcoming')
     expect(ruleGroupOf(RULE_BY_ID['salary-history-ban'])).toBe('any')
+  })
+
+  it('puts hiring rules right after the cards that need action', () => {
+    const db = ledgerlarkLite()
+    for (const g of groupResults(evaluateAll(db, D))) {
+      const rest = g.results.filter((r) => !needsAction(r))
+      const firstOther = rest.findIndex((r) => r.rule.category !== 'hiring')
+      const lastHiring = rest.map((r) => r.rule.category === 'hiring').lastIndexOf(true)
+      if (firstOther >= 0 && lastHiring >= 0) expect(lastHiring).toBeLessThan(firstOther)
+    }
+  })
+
+  it('groups by state: Federal, California, San Jose, Other state, each saying who it covers', () => {
+    const db = ledgerlarkLite()
+    const groups = groupResultsByJurisdiction(evaluateAll(db, D), db, D)
+    expect(groups.map((g) => g.key)).toEqual(['federal', 'california', 'san_jose', 'other_state'])
+    expect(groups.every((g) => g.results.every((r) => r.rule.jurisdiction === g.key))).toBe(true)
+    expect(groups.find((g) => g.key === 'other_state')?.subtitle).toBe('1 person outside California: TX (1).')
+    expect(groups.find((g) => g.key === 'federal')?.subtitle).toMatch(/^Every employee in every state: \d+ people today\.$/)
+    expect(statesOutsideCalifornia(db, D).map((s) => s.state)).toEqual(['TX'])
+  })
+
+  it('says when nobody works outside California', () => {
+    const db = ledgerlarkLite()
+    db.people = db.people.filter((p) => p.homeState !== 'TX')
+    expect(jurisdictionCoverage(db, 'other_state', D)).toBe('Everyone works in California today.')
   })
 
   it('writes status lines and why text in plain words', () => {

@@ -47,6 +47,7 @@ import {
   followUpPeople,
   futureCrossingText,
   groupResults,
+  groupResultsByJurisdiction,
   impactHeadline,
   needsAction,
   postingBlock,
@@ -62,6 +63,7 @@ import { commit } from './mutate'
 import { NextThresholdBody, ThresholdPreview } from './panels'
 
 type Filter = 'all' | 'action' | 'done' | 'later'
+type GroupBy = 'size' | 'state'
 
 /**
  * The longest note a rule card keeps (a not-applicable reason, a deadline's source, a count override's why).
@@ -81,6 +83,7 @@ export function MilestonesTab({ ruleId }: { ruleId?: string }) {
   const nt = useMemo(() => nextThreshold(db, t), [db, t])
   const dots = useMemo(() => headcountRuler(db, t), [db, t])
   const [filter, setFilter] = useState<Filter>('all')
+  const [groupBy, setGroupBy] = useState<GroupBy>('size')
   const [openIds, setOpenIds] = useState<Set<string>>(() => new Set(ruleId ? [ruleId] : []))
   const [naFor, setNaFor] = useState<RuleResult | null>(null)
   const [deadlineFor, setDeadlineFor] = useState<RuleResult | null>(null)
@@ -108,7 +111,8 @@ export function MilestonesTab({ ruleId }: { ruleId?: string }) {
   const shown = results.filter((r) =>
     filter === 'all' ? true : filter === 'action' ? needsAction(r) : filter === 'done' ? r.state === 'done' : r.state === 'not_yet',
   )
-  const groups = groupResults(shown)
+  const groups: Array<{ key: string; title: string; subtitle: string; results: RuleResult[] }> =
+    groupBy === 'state' ? groupResultsByJurisdiction(shown, db, t) : groupResults(shown)
   const toggle = (id: string) =>
     setOpenIds((s) => {
       const n = new Set(s)
@@ -145,17 +149,28 @@ export function MilestonesTab({ ruleId }: { ruleId?: string }) {
             </p>
             <LegalNote className="mt-0.5" />
           </div>
-          <Segmented<Filter>
-            label="Show rules"
-            value={filter}
-            onChange={setFilter}
-            options={[
-              { value: 'all', label: 'All', count: counts.all },
-              { value: 'action', label: 'Needs action', count: counts.action },
-              { value: 'done', label: 'Done', count: counts.done },
-              { value: 'later', label: 'Not yet', count: counts.later },
-            ]}
-          />
+          <div className="flex flex-wrap items-end gap-3">
+            <Segmented<GroupBy>
+              label="Group rules by"
+              value={groupBy}
+              onChange={setGroupBy}
+              options={[
+                { value: 'size', label: 'By size' },
+                { value: 'state', label: 'By state' },
+              ]}
+            />
+            <Segmented<Filter>
+              label="Show rules"
+              value={filter}
+              onChange={setFilter}
+              options={[
+                { value: 'all', label: 'All', count: counts.all },
+                { value: 'action', label: 'Needs action', count: counts.action },
+                { value: 'done', label: 'Done', count: counts.done },
+                { value: 'later', label: 'Not yet', count: counts.later },
+              ]}
+            />
+          </div>
         </div>
         {groups.length === 0 && <p className="text-[14.5px] text-ink-3">Nothing here. Pick another filter.</p>}
         {groups.map((g) => {
@@ -168,6 +183,12 @@ export function MilestonesTab({ ruleId }: { ruleId?: string }) {
               padded={false}
               actions={<Badge tone={open ? 'warn' : 'neutral'}>{open ? `${open} ${open === 1 ? 'needs' : 'need'} action` : plural(g.results.length, 'rule')}</Badge>}
             >
+              {g.key === 'other_state' && (
+                <p className="border-b border-line px-5 py-2.5 text-[14px] text-ink-3">
+                  Each state has its own withholding, leave, posting and pay range rules. The{' '}
+                  <TextLink href={links.people('checklists')}>new-state checklist</TextLink> walks through them for each state you hire in.
+                </p>
+              )}
               <ul className="divide-y divide-line">
                 {g.results.map((r) => (
                   <li key={r.rule.id}>
