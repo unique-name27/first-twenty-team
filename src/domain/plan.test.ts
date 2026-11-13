@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { blankDB } from '@/data/blank'
 import { loadedCost, runRate } from '@/domain/pay'
-import { budgetVariance, headcountProjection, jobHasPlanLine, planCost, planRollup, planSlotForHire, planStatusCounts, planSummary, slotStatus } from '@/domain/plan'
+import {
+  budgetVariance,
+  headcountProjection,
+  jobHasPlanLine,
+  plannedHiresBy,
+  planCost,
+  planRollup,
+  planSlotForHire,
+  planStatusCounts,
+  planSummary,
+  slotStatus,
+} from '@/domain/plan'
 import type { CompRecord, DB, Job, Offer, Person, PlanSlot } from '@/domain/types'
 
 const D = '2026-10-09'
@@ -205,6 +216,23 @@ describe('headcount projection', () => {
     expect(p.plan).toEqual([{ date: D, value: 2, label: 'ps-late' }])
     expect(planSummary(db, D)).toBe('Plan: 2 by Dec 31, 2026')
     expect(planCost(db, D).rows[0].quarter).toBe('2026-Q4')
+  })
+})
+
+describe('planned hires', () => {
+  it('counts plan lines still to hire by a date, not known starts or departures', () => {
+    const db = planDB()
+    // Ivan and Mei start and Leah leaves, but none of them is a plan line to hire; ps-filled and ps-acc are made.
+    expect(plannedHiresBy(db, D, '2026-11-30')).toBe(0)
+    expect(plannedHiresBy(db, D, '2026-12-31')).toBe(1)
+    expect(plannedHiresBy(db, D, '2027-03-31')).toBe(2)
+    expect(plannedHiresBy(db, D, '2027-06-30')).toBe(4)
+  })
+
+  it('is zero with no plan, even when someone accepted and has yet to start', () => {
+    const db = blankDB({ companyName: 'Solo', founderFirstName: 'Maya', founderLastName: 'Raman', foundedOn: '2025-02-03' })
+    db.people.push(mkPerson('p-in', 'Ivan', '2026-10-19'))
+    expect(plannedHiresBy(db, D, '2026-12-31')).toBe(0)
   })
 })
 
