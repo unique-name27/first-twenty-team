@@ -35,6 +35,7 @@ import {
   NumberInput,
   Panel,
   Segmented,
+  Sheet,
   TextArea,
   TextInput,
   TextLink,
@@ -47,12 +48,14 @@ import {
   followUpPeople,
   futureCrossingText,
   groupResults,
+  groupResultsByJurisdiction,
   impactHeadline,
   needsAction,
   postingBlock,
   type RuleFollowUp,
   ruleOwnDue,
   stateChip,
+  shortStatus,
   statusLine,
   thresholdImpact,
   twentyWeekPaceText,
@@ -62,6 +65,7 @@ import { commit } from './mutate'
 import { NextThresholdBody, ThresholdPreview } from './panels'
 
 type Filter = 'all' | 'action' | 'done' | 'later'
+type GroupBy = 'size' | 'state'
 
 /**
  * The longest note a rule card keeps (a not-applicable reason, a deadline's source, a count override's why).
@@ -81,21 +85,18 @@ export function MilestonesTab({ ruleId }: { ruleId?: string }) {
   const nt = useMemo(() => nextThreshold(db, t), [db, t])
   const dots = useMemo(() => headcountRuler(db, t), [db, t])
   const [filter, setFilter] = useState<Filter>('all')
-  const [openIds, setOpenIds] = useState<Set<string>>(() => new Set(ruleId ? [ruleId] : []))
+  const [groupBy, setGroupBy] = useState<GroupBy>('size')
+  const [openRuleId, setOpenRuleId] = useState<string | null>(ruleId && RULE_BY_ID[ruleId] ? ruleId : null)
   const [naFor, setNaFor] = useState<RuleResult | null>(null)
   const [deadlineFor, setDeadlineFor] = useState<RuleResult | null>(null)
 
-  // Deep link: open the rule, make sure the filter shows it, then scroll after the page's own scroll-to-top.
+  // Deep link: make sure the filter shows the rule, scroll its box into view after the page's own
+  // scroll-to-top, and open its side panel.
   useEffect(() => {
     if (!ruleId || !RULE_BY_ID[ruleId]) return
     setFilter('all')
-    setOpenIds((s) => (s.has(ruleId) ? s : new Set(s).add(ruleId)))
-    const timer = setTimeout(() => {
-      const el = document.getElementById(`rule-${ruleId}`)
-      if (!el) return
-      el.scrollIntoView({ block: 'start' })
-      el.querySelector<HTMLElement>('[data-rule-toggle]')?.focus({ preventScroll: true })
-    }, 120)
+    setOpenRuleId(ruleId)
+    const timer = setTimeout(() => document.getElementById(`rule-${ruleId}`)?.scrollIntoView({ block: 'center' }), 120)
     return () => clearTimeout(timer)
   }, [ruleId])
 
@@ -108,14 +109,9 @@ export function MilestonesTab({ ruleId }: { ruleId?: string }) {
   const shown = results.filter((r) =>
     filter === 'all' ? true : filter === 'action' ? needsAction(r) : filter === 'done' ? r.state === 'done' : r.state === 'not_yet',
   )
-  const groups = groupResults(shown)
-  const toggle = (id: string) =>
-    setOpenIds((s) => {
-      const n = new Set(s)
-      if (n.has(id)) n.delete(id)
-      else n.add(id)
-      return n
-    })
+  const groups: Array<{ key: string; title: string; subtitle: string; results: RuleResult[] }> =
+    groupBy === 'state' ? groupResultsByJurisdiction(shown, db, t) : groupResults(shown)
+  const openResult = openRuleId ? results.find((r) => r.rule.id === openRuleId) : undefined
 
   return (
     <div className="flex flex-col gap-5">
@@ -127,12 +123,16 @@ export function MilestonesTab({ ruleId }: { ruleId?: string }) {
           </Panel>
           <div className="flex min-w-0 flex-col gap-5">
             <FederalCounter results={results} />
-            <MilestoneStory db={db} />
           </div>
         </div>
       </div>
 
-      <HirePreviewPanel />
+      <Disclosure label="More about your size: your history and a hire preview">
+        <div className="flex flex-col gap-5 pt-2">
+          <MilestoneStory db={db} />
+          <HirePreviewPanel />
+        </div>
+      </Disclosure>
 
       <section aria-labelledby="rules-heading" className="flex flex-col gap-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
@@ -141,21 +141,32 @@ export function MilestonesTab({ ruleId }: { ruleId?: string }) {
               Rules at your size
             </h2>
             <p className="text-[14px] text-ink-3">
-              {plural(counts.action, 'rule')} {counts.action === 1 ? 'needs' : 'need'} action, {counts.done} done, {counts.later} not yet. Each card says how we counted and what to do.
+              {counts.action} need action, {counts.done} done, {counts.later} not yet. Open a box for the details.
             </p>
             <LegalNote className="mt-0.5" />
           </div>
-          <Segmented<Filter>
-            label="Show rules"
-            value={filter}
-            onChange={setFilter}
-            options={[
-              { value: 'all', label: 'All', count: counts.all },
-              { value: 'action', label: 'Needs action', count: counts.action },
-              { value: 'done', label: 'Done', count: counts.done },
-              { value: 'later', label: 'Not yet', count: counts.later },
-            ]}
-          />
+          <div className="flex flex-wrap items-end gap-3">
+            <Segmented<GroupBy>
+              label="Group rules by"
+              value={groupBy}
+              onChange={setGroupBy}
+              options={[
+                { value: 'size', label: 'By size' },
+                { value: 'state', label: 'By state' },
+              ]}
+            />
+            <Segmented<Filter>
+              label="Show rules"
+              value={filter}
+              onChange={setFilter}
+              options={[
+                { value: 'all', label: 'All', count: counts.all },
+                { value: 'action', label: 'Needs action', count: counts.action },
+                { value: 'done', label: 'Done', count: counts.done },
+                { value: 'later', label: 'Not yet', count: counts.later },
+              ]}
+            />
+          </div>
         </div>
         {groups.length === 0 && <p className="text-[14.5px] text-ink-3">Nothing here. Pick another filter.</p>}
         {groups.map((g) => {
@@ -168,17 +179,16 @@ export function MilestonesTab({ ruleId }: { ruleId?: string }) {
               padded={false}
               actions={<Badge tone={open ? 'warn' : 'neutral'}>{open ? `${open} ${open === 1 ? 'needs' : 'need'} action` : plural(g.results.length, 'rule')}</Badge>}
             >
-              <ul className="divide-y divide-line">
+              {g.key === 'other_state' && (
+                <p className="border-b border-line px-5 py-2.5 text-[14px] text-ink-3">
+                  Each state has its own withholding, leave, posting and pay range rules. The{' '}
+                  <TextLink href={links.people('checklists')}>new-state checklist</TextLink> walks through them for each state you hire in.
+                </p>
+              )}
+              <ul className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
                 {g.results.map((r) => (
-                  <li key={r.rule.id}>
-                    <RuleCard
-                      r={r}
-                      db={db}
-                      open={openIds.has(r.rule.id)}
-                      onToggle={() => toggle(r.rule.id)}
-                      onNotApplicable={() => setNaFor(r)}
-                      onDeadline={() => setDeadlineFor(r)}
-                    />
+                  <li key={r.rule.id} className="flex">
+                    <RuleBox r={r} open={openRuleId === r.rule.id} onOpen={() => setOpenRuleId(r.rule.id)} />
                   </li>
                 ))}
               </ul>
@@ -186,6 +196,29 @@ export function MilestonesTab({ ruleId }: { ruleId?: string }) {
           )
         })}
       </section>
+
+      <Sheet
+        open={!!openResult}
+        onClose={() => setOpenRuleId(null)}
+        title={openResult?.rule.title ?? ''}
+        subtitle={openResult ? statusLine(openResult) : undefined}
+        returnFocus={() => (openRuleId ? document.getElementById(`rule-${openRuleId}`) : null)}
+      >
+        {openResult && (
+          <RuleDetail
+            r={openResult}
+            db={db}
+            onNotApplicable={() => {
+              setOpenRuleId(null)
+              setNaFor(openResult)
+            }}
+            onDeadline={() => {
+              setOpenRuleId(null)
+              setDeadlineFor(openResult)
+            }}
+          />
+        )}
+      </Sheet>
 
       <NotApplicableModal result={naFor} onClose={() => setNaFor(null)} />
       <DeadlineModal result={deadlineFor} onClose={() => setDeadlineFor(null)} />
@@ -326,24 +359,35 @@ function HirePreviewPanel() {
 // Rule card
 // ---------------------------------------------------------------------------------------------
 
-function RuleCard({
-  r,
-  db,
-  open,
-  onToggle,
-  onNotApplicable,
-  onDeadline,
-}: {
-  r: RuleResult
-  db: DB
-  open: boolean
-  onToggle: () => void
-  onNotApplicable: () => void
-  onDeadline: () => void
-}) {
+/** A rule as a small clickable box: its title, a status word and a few words. Details open in the side panel. */
+function RuleBox({ r, open, onOpen }: { r: RuleResult; open: boolean; onOpen: () => void }) {
   const rule = r.rule
   const chip = stateChip(r)
-  const bodyId = `rule-body-${rule.id}`
+  return (
+    <button
+      type="button"
+      id={`rule-${rule.id}`}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      onClick={onOpen}
+      className={cx(
+        'ft-stat ft-rulebox flex min-h-24 w-full scroll-mt-24 flex-col items-start gap-2 rounded-2xl border border-line bg-surface px-4 py-3.5 text-left shadow-card hover:border-line-strong',
+        rule.upcoming && r.state === 'not_yet' && 'opacity-80',
+      )}
+    >
+      <span className="text-[15px] leading-snug font-semibold text-ink">{rule.title}</span>
+      <span className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1">
+        <Badge tone={chip.tone}>{chip.label}</Badge>
+        <span className="text-[13.5px] text-ink-3">{shortStatus(r)}</span>
+      </span>
+    </button>
+  )
+}
+
+/** Everything about one rule, shown in the side panel: dates, overdue people, what to do, why, sources. */
+function RuleDetail({ r, db, onNotApplicable, onDeadline }: { r: RuleResult; db: DB; onNotApplicable: () => void; onDeadline: () => void }) {
+  const rule = r.rule
+  const chip = stateChip(r)
   const t = rule.trigger
   const countable = t.kind === 'headcount' || t.kind === 'site'
   const cycle = cycleLine(r)
@@ -353,112 +397,83 @@ function RuleCard({
   const hardStop = rule.hardStop ? postingBlock(db, today()) : null
   const blockEarly = !!hardStop?.on && (r.state === 'not_yet' || r.state === 'approaching')
   return (
-    <article id={`rule-${rule.id}`} className={cx('scroll-mt-24', rule.upcoming && r.state === 'not_yet' && 'opacity-80')}>
-      <button
-        type="button"
-        data-rule-toggle
-        aria-expanded={open}
-        aria-controls={bodyId}
-        onClick={onToggle}
-        className="flex min-h-14 w-full items-start gap-3 px-5 py-3.5 text-left hover:bg-surface-2/60"
-      >
-        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={18} className="mt-0.5 shrink-0 text-ink-3" />
-        <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-[15px] font-semibold text-ink">{rule.title}</span>
-            {/* On a narrow screen the state chip sits here, under the title, so the text keeps the full width. */}
-            <Badge tone={chip.tone} className="sm:hidden">
-              {chip.label}
-            </Badge>
-            <Badge tone="neutral">{JURISDICTION_LABELS[rule.jurisdiction]}</Badge>
-            {rule.hardStop && (
-              <Badge tone="warn" icon="lock">
-                {hardStop?.on ? 'Hard stop on' : 'Hard stop'}
-              </Badge>
-            )}
-            {r.recommended && <Badge tone="accent">Recommended now</Badge>}
-            {r.overridden && <Badge tone="outline">Count set by admin</Badge>}
-          </span>
-          <span className="mt-0.5 block text-[13.5px] text-ink-3">{statusLine(r)}</span>
-          {blockEarly && hardStop?.line && <span className="mt-0.5 block text-[13.5px] font-semibold text-ink-2">{hardStop.line}</span>}
-        </span>
-        {/* Beside the text only from sm up: on a phone (or at 150% text) a long chip such as "Approaching
-            (Oct 19)" would squeeze the title and status lines into a column of one word per line. */}
-        <Badge tone={chip.tone} className="mt-0.5 max-sm:hidden">
-          {chip.label}
-        </Badge>
-      </button>
-      {open && (
-        <div id={bodyId} className="flex flex-col gap-3 px-5 pb-5 sm:pl-[52px]">
-          <div className="flex flex-wrap gap-2">
-            <Badge tone="outline">{rule.statutory ? 'Statutory' : 'Good practice'}</Badge>
-            {rule.verification === 'needs_review' && <Badge tone="outline">Source not yet double-checked</Badge>}
-          </div>
-          <p className="max-w-[75ch] text-[14.5px] leading-relaxed text-ink">{rule.summary}</p>
-          {(ownDue || cycle || r.projectedIfOffersAccepted) && (
-            <ul className="flex flex-col gap-1 text-[14px] text-ink-2">
-              {ownDue && (
-                <li>
-                  {r.dueEstimated && !ownDue.recorded ? (
-                    <>
-                      Due about {fmtDate(ownDue.on)} (estimated).{' '}
-                      <TextLink href={links.settings('company')}>Add your first payroll date in Settings, Company</TextLink>{' '}
-                      for the exact deadline.
-                    </>
-                  ) : (
-                    <>
-                      Due {fmtDate(ownDue.on)}
-                      {ownDue.recorded ? ' (deadline you recorded)' : ''}.
-                    </>
-                  )}
-                </li>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-2">
+        <Badge tone={chip.tone}>{chip.label}</Badge>
+        <Badge tone="neutral">{JURISDICTION_LABELS[rule.jurisdiction]}</Badge>
+        {rule.hardStop && (
+          <Badge tone="warn" icon="lock">
+            {hardStop?.on ? 'Hard stop on' : 'Hard stop'}
+          </Badge>
+        )}
+        {r.recommended && <Badge tone="accent">Recommended now</Badge>}
+        {r.overridden && <Badge tone="outline">Count set by admin</Badge>}
+        <Badge tone="outline">{rule.statutory ? 'Statutory' : 'Good practice'}</Badge>
+        {rule.verification === 'needs_review' && <Badge tone="outline">Source not yet double-checked</Badge>}
+      </div>
+      <p className="max-w-[75ch] text-[14.5px] leading-relaxed text-ink">{rule.summary}</p>
+      {(ownDue || cycle || r.projectedIfOffersAccepted) && (
+        <ul className="flex flex-col gap-1 text-[14px] text-ink-2">
+          {ownDue && (
+            <li>
+              {r.dueEstimated && !ownDue.recorded ? (
+                <>
+                  Due about {fmtDate(ownDue.on)} (estimated).{' '}
+                  <TextLink href={links.settings('company')}>Add your first payroll date in Settings, Company</TextLink>{' '}
+                  for the exact deadline.
+                </>
+              ) : (
+                <>
+                  Due {fmtDate(ownDue.on)}
+                  {ownDue.recorded ? ' (deadline you recorded)' : ''}.
+                </>
               )}
-              {cycle && <li>{cycle}</li>}
-              {r.projectedIfOffersAccepted && <li>If outstanding offers are accepted: {fmtDate(r.projectedIfOffersAccepted)}.</li>}
-            </ul>
+            </li>
           )}
-          {r.followUps?.length ? <RuleFollowUps r={r} followUps={r.followUps} db={db} /> : null}
-          {hardStop && (
-            <div className="rounded-xl bg-warn-soft px-4 py-3 text-[14px] text-ink">
-              <p className="font-semibold">{hardStop.on ? 'The posting block is on.' : 'The posting block is off for now.'}</p>
-              {blockEarly && (
-                <p className="text-ink-2">
-                  It counts people starting soon and accepted offers, so it is on before the rule applies by law
-                  {r.projectedOn ? ` (projected ${fmtDate(r.projectedOn)})` : ''}.
-                </p>
-              )}
-              <p className="text-ink-2">{hardStop.howCounted}</p>
-              {r.status?.countOverride && <p className="text-ink-2">The count override on this card does not change the posting block.</p>}
-            </div>
+          {cycle && <li>{cycle}</li>}
+          {r.projectedIfOffersAccepted && <li>If outstanding offers are accepted: {fmtDate(r.projectedIfOffersAccepted)}.</li>}
+        </ul>
+      )}
+      {r.followUps?.length ? <RuleFollowUps r={r} followUps={r.followUps} db={db} /> : null}
+      {hardStop && (
+        <div className="rounded-xl bg-warn-soft px-4 py-3 text-[14px] text-ink">
+          <p className="font-semibold">{hardStop.on ? 'The posting block is on.' : 'The posting block is off for now.'}</p>
+          {blockEarly && (
+            <p className="text-ink-2">
+              It counts people starting soon and accepted offers, so it is on before the rule applies by law
+              {r.projectedOn ? ` (projected ${fmtDate(r.projectedOn)})` : ''}.
+            </p>
           )}
-          {r.status?.note && <p className="text-[14px] text-ink-2">Note: {r.status.note}</p>}
-
-          <div>
-            <h4 className="text-[14px] font-bold text-ink">What to do</h4>
-            <RuleActions r={r} db={db} />
-          </div>
-
-          <Disclosure label="Why am I seeing this?" size="sm">
-            <p className="max-w-[75ch] text-[14px] text-ink-2">{whyText(r)}</p>
-          </Disclosure>
-          <Disclosure label="How we counted" size="sm">
-            <p className="max-w-[75ch] text-[14px] text-ink-2">{r.howCounted}</p>
-            <p className="mt-1 max-w-[75ch] text-[13.5px] text-ink-3">The rule's count: {rule.countMethod}</p>
-            {countable && <CountOverride r={r} />}
-          </Disclosure>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
-            <div className="flex min-w-0 flex-col gap-1.5">
-              <div>
-                <CitationChip label={rule.citation.label} url={rule.citation.url} />
-              </div>
-              <LegalNote reviewedOn={rule.lastReviewedOn} />
-            </div>
-            <RuleMenu r={r} onNotApplicable={onNotApplicable} onDeadline={onDeadline} />
-          </div>
+          <p className="text-ink-2">{hardStop.howCounted}</p>
+          {r.status?.countOverride && <p className="text-ink-2">The count override on this card does not change the posting block.</p>}
         </div>
       )}
-    </article>
+      {r.status?.note && <p className="text-[14px] text-ink-2">Note: {r.status.note}</p>}
+
+      <div>
+        <h4 className="text-[14px] font-bold text-ink">What to do</h4>
+        <RuleActions r={r} db={db} />
+      </div>
+
+      <Disclosure label="Why am I seeing this?" size="sm">
+        <p className="max-w-[75ch] text-[14px] text-ink-2">{whyText(r)}</p>
+      </Disclosure>
+      <Disclosure label="How we counted" size="sm">
+        <p className="max-w-[75ch] text-[14px] text-ink-2">{r.howCounted}</p>
+        <p className="mt-1 max-w-[75ch] text-[13.5px] text-ink-3">The rule's count: {rule.countMethod}</p>
+        {countable && <CountOverride r={r} />}
+      </Disclosure>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <div>
+            <CitationChip label={rule.citation.label} url={rule.citation.url} />
+          </div>
+          <LegalNote reviewedOn={rule.lastReviewedOn} />
+        </div>
+        <RuleMenu r={r} onNotApplicable={onNotApplicable} onDeadline={onDeadline} />
+      </div>
+    </div>
   )
 }
 

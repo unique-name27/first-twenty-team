@@ -206,7 +206,7 @@ What `src/themes/sleek.css` does beyond recoloring, so a screen change can be ch
 
 - **Rules, in three weights.** A page head (`ft-pagehead`, `ft-personhead`) opens under a thick-and-thin rule (3px
   ink, 2px paper, 1px ink). `ft-panel`, `ft-stat`, board columns, the rail's headcount and Viewing as are open on
-  the paper under a 2px `--sleek-rule` (ink); a panel with no title is a sub-section and takes 1px. Rows, ledgers
+  the paper under a 2px `--sleek-rule` (ink); a clickable `ft-stat` (an `a` or `button`, such as the Compliance overview and rule boxes) adds a 1px ink frame, since frames mean "you can click this"; a panel with no title is a sub-section and takes 1px. Rows, ledgers
   and sub-sections are divided by 1px `--line`. Sub-panels (`ft-subpanel`) are a 1px ink rule and a 20px title at
   full width (every heading is set at 100% width; the condensed width is for numerals only); sections inside a sheet or dialog (`section > h3`, Offer: Base pay, Equity, Exempt check)
   are a 1px ink rule over an uppercase micro label. A tab strip stands on a full-width 1px ink rule; when a Panel
