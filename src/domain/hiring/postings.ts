@@ -3,15 +3,64 @@
 //
 // Hard stop 1 of 2 (docs/SPEC.md): once employees plus accepted offers reach 15, a job cannot be
 // marked posted without a pay range (Labor Code 432.3, as amended by SB 1162 and SB 642; LAW.md
-// a-paytrans-15, b-ca-pay-scale-15). Everything else here is a warning with a why and a citation.
+// a-paytrans-15, b-ca-pay-scale-15). A job with a New York location reaches the same stop at 4
+// (Labor Law 194-b; LAW.md ny-paytrans-4). Everything else here is a warning with a why and a citation.
+import { LAW_SOURCES, NY_PAY_TRANSPARENCY } from '@/data/law'
 import { headcountOn, incomingOn } from '@/domain/people'
 import type { DB, ID, Job } from '@/domain/types'
 import { type ISODate } from '@/lib/dates'
 import { money, pct } from '@/lib/format'
 import { type Citation, vestingText } from './util'
 
+/** The California threshold (Labor Code 432.3). For one job's rules, use payTransparencyRules. */
 export function payTransparencyThreshold(): number {
   return 15
+}
+
+const LC_4323_URL = 'https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?sectionNum=432.3.&lawCode=LAB'
+
+/** A state's rule that a job post must carry a pay range once the posting headcount reaches the threshold. */
+export type PayTransparencyRule = {
+  state: 'CA' | 'NY'
+  threshold: number
+  /** The hard stop's reason, shown when Mark posted is off. */
+  reason: string
+  citation: Citation
+}
+
+const CA_PAY_RULE: PayTransparencyRule = {
+  state: 'CA',
+  threshold: payTransparencyThreshold(),
+  reason: 'At 15 employees, California requires a pay range on every job post (Labor Code 432.3).',
+  citation: { label: 'Labor Code 432.3', url: LC_4323_URL },
+}
+
+const NY_PAY_RULE: PayTransparencyRule = {
+  state: 'NY',
+  threshold: NY_PAY_TRANSPARENCY.employeeThreshold,
+  reason: `At ${NY_PAY_TRANSPARENCY.employeeThreshold} employees, New York requires a pay range on every post for a job done at least in part in New York (Labor Law 194-b).`,
+  citation: { label: 'Labor Law 194-b', url: LAW_SOURCES.nyLabor194b.url },
+}
+
+/** Two-letter states of the job's locations; a job with none is at the company's HQ. */
+export function jobStates(db: Pick<DB, 'locations' | 'company'>, job: Pick<Job, 'locationIds'>): Set<string> {
+  const states = job.locationIds
+    .map((id) => db.locations.find((l) => l.id === id)?.state)
+    .filter((st): st is string => !!st)
+    .map((st) => st.trim().toUpperCase())
+  return new Set(states.length ? states : [db.company.hq.state.trim().toUpperCase()])
+}
+
+/**
+ * The pay-range rules that apply to a job, lowest threshold first. California's applies to every job,
+ * as before (the company is California-based); New York's is added when the job has a New York
+ * location. A job outside New York that reports to a New York office is covered too (LAW.md
+ * ny-paytrans-scope), but the app does not know reporting lines, so it is not detected.
+ */
+export function payTransparencyRules(db: Pick<DB, 'locations' | 'company'>, job: Pick<Job, 'locationIds'>): PayTransparencyRule[] {
+  const rules = [CA_PAY_RULE]
+  if (jobStates(db, job).has('NY')) rules.push(NY_PAY_RULE)
+  return rules.sort((a, b) => a.threshold - b.threshold)
 }
 
 /**
@@ -33,15 +82,21 @@ export function postingHeadcount(db: DB, date: ISODate): { employed: number; inc
 }
 
 /**
- * Hard stop: at 15+ (employees today plus incoming hires and accepted offers) a job cannot be posted
- * without a pay range. Returns the reason, or null when posting is allowed.
+ * The rule behind the hard stop: a job without a pay range, once the posting headcount (employees
+ * today plus incoming hires and accepted offers) reaches the lowest threshold that applies to it
+ * (15 in California, 4 for a job in New York). Null when posting is allowed.
  */
-export function postingBlockReason(db: DB, jobId: ID, date: ISODate): string | null {
+export function postingBlockRule(db: DB, jobId: ID, date: ISODate): PayTransparencyRule | null {
   const job = db.jobs.find((j) => j.id === jobId)
   if (!job) return null
   if (job.payMin != null && job.payMax != null) return null
-  if (postingHeadcount(db, date).total < payTransparencyThreshold()) return null
-  return 'At 15 employees, California requires a pay range on every job post (Labor Code 432.3).'
+  const total = postingHeadcount(db, date).total
+  return payTransparencyRules(db, job).find((r) => total >= r.threshold) ?? null
+}
+
+/** Hard stop: the reason a job cannot be posted without a pay range, or null when posting is allowed. */
+export function postingBlockReason(db: DB, jobId: ID, date: ISODate): string | null {
+  return postingBlockRule(db, jobId, date)?.reason ?? null
 }
 
 function workModeText(job: Job): string {
@@ -186,7 +241,16 @@ export function postingText(db: DB, jobId: ID, date?: ISODate): string {
 // ---- Linting --------------------------------------------------------------------------------
 
 export type LintWarning = {
-  code: 'missing_range' | 'missing_fair_chance' | 'criminal_history' | 'age_coded' | 'jargon' | 'salary_history' | 'cannabis'
+  code:
+    | 'missing_range'
+    | 'missing_fair_chance'
+    | 'criminal_history'
+    | 'age_coded'
+    | 'jargon'
+    | 'salary_history'
+    | 'cannabis'
+    | 'ny_description'
+    | 'ny_range_per_location'
   message: string
   match?: string
   citation?: Citation
@@ -228,17 +292,39 @@ function lintRules(): Array<{ code: LintWarning['code']; re: RegExp; message: (m
  * Job post linter. Lints the given posting text (or the job description): missing pay range, missing
  * Fair Chance statement (only when full posting text is passed, since postingText adds it), 'no
  * felons' language, age-coded words, 'rockstar' or 'ninja', cannabis questions and salary history.
+ * Pass `db` with a job's `locationIds` to add New York's rules for a job in New York: the range at 4
+ * employees, the job description, and one range per location (Labor Law 194-b).
  */
-export function postingLint(job: Pick<Job, 'payMin' | 'payMax' | 'description'> & Partial<Pick<Job, 'workMode'>>, text?: string): LintWarning[] {
+export function postingLint(
+  job: Pick<Job, 'payMin' | 'payMax' | 'description'> & Partial<Pick<Job, 'workMode' | 'locationIds'>>,
+  text?: string,
+  ctx?: { db: Pick<DB, 'locations' | 'company'> },
+): LintWarning[] {
   const body = text ?? job.description ?? ''
   const out: LintWarning[] = []
+  const inNY = !!ctx && !!job.locationIds && jobStates(ctx.db, { locationIds: job.locationIds }).has('NY')
   if (job.payMin == null || job.payMax == null) {
     const remote = job.workMode === 'remote'
+    const ny = inNY ? ` New York requires it on every post for this job once you have ${NY_PAY_TRANSPARENCY.employeeThreshold} employees (Labor Law 194-b).` : ''
     out.push({
       code: 'missing_range',
-      message: `Add a pay range. Applicants can ask for it at any size, and California requires it on every job post once you have 15 employees (Labor Code 432.3).${remote ? ' Remote roles a Colorado resident could fill need a range at any size.' : ''}`,
-      citation: { label: 'Labor Code 432.3', url: 'https://www.dir.ca.gov/dlse/california_equal_pay_act.htm' },
+      message: `Add a pay range. Applicants can ask for it at any size, and California requires it on every job post once you have 15 employees (Labor Code 432.3).${ny}${remote ? ' Remote roles a Colorado resident could fill need a range at any size.' : ''}`,
+      citation: inNY ? { label: 'Labor Law 194-b', url: LAW_SOURCES.nyLabor194b.url } : { label: 'Labor Code 432.3', url: 'https://www.dir.ca.gov/dlse/california_equal_pay_act.htm' },
       ...(remote ? { reviewNote: 'The Colorado rule is not verified here; confirm with counsel.' } : {}),
+    })
+  }
+  if (inNY && !job.description?.trim()) {
+    out.push({
+      code: 'ny_description',
+      message: 'Add a job description. New York requires it in the post along with the pay range, unless the title alone says what the job is (Labor Law 194-b).',
+      citation: { label: 'Labor Law 194-b', url: LAW_SOURCES.nyLabor194b.url },
+    })
+  }
+  if (inNY && (job.locationIds?.length ?? 0) > 1) {
+    out.push({
+      code: 'ny_range_per_location',
+      message: `This post lists ${job.locationIds?.length} locations under one pay range. New York needs a separate range for each location: list one per location, or post one job per location.`,
+      citation: { label: 'NYS DOL pay transparency FAQ', url: LAW_SOURCES.nyPayTransparencyFaq.url },
     })
   }
   if (text != null && !/fair chance|arrest and conviction|conviction records|criminal history only after/i.test(body)) {

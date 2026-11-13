@@ -1,6 +1,6 @@
 // Posting (#job.<id>.posting): copy-ready posting text, the job post linter and hard stop 1 of 2: once
 // employees plus incoming hires and accepted offers reach 15, Mark posted is disabled without a pay
-// range (Labor Code 432.3). Everything else is a warning with a why and a citation. The benefits line
+// range (Labor Code 432.3); for a job in New York the stop starts at 4 (Labor Law 194-b). Everything else is a warning with a why and a citation. The benefits line
 // promises health coverage only once Settings > Company records a group health plan; until it is
 // recorded either way, the checks ask for it.
 import { useRef } from 'react'
@@ -9,8 +9,8 @@ import {
   healthPlanUnrecorded,
   isPendingRequisition,
   markPosted,
-  payTransparencyThreshold,
-  postingBlockReason,
+  payTransparencyRules,
+  postingBlockRule,
   postingHeadcount,
   postingLint,
   postingText,
@@ -24,18 +24,19 @@ import { Badge, Button, Callout, CitationChip, Icon, Sheet, toast } from '@/ui'
 import { commit } from './actions'
 import { NotLegalAdvice } from './parts'
 
-const LC_4323 = 'https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?sectionNum=432.3.&lawCode=LAB'
-
 export function PostingSheet({ job, open, onClose, canManage }: { job: Job; open: boolean; onClose: () => void; canManage: boolean }) {
   const db = useDB((s) => s.db)
   const copyRef = useRef<HTMLButtonElement>(null)
   if (!open) return null
   const t = today()
   const text = postingText(db, job.id, t)
-  const block = postingBlockReason(db, job.id, t)
+  const blockRule = postingBlockRule(db, job.id, t)
+  const block = blockRule?.reason ?? null
+  // The lowest threshold that applies to this job: 15 (California), or 4 when the job is in New York.
+  const firstRule = payTransparencyRules(db, job)[0]
   const waiting = isPendingRequisition(job)
   // The hard stop callout already explains a missing range; do not say it twice.
-  const lint = postingLint(job, text).filter((w) => !(block && w.code === 'missing_range'))
+  const lint = postingLint(job, text, { db }).filter((w) => !(block && w.code === 'missing_range'))
   // Not recorded (as opposed to recorded as no plan): the posting leaves health coverage out until it is.
   const healthUnknown = healthPlanUnrecorded(db)
   const hc = postingHeadcount(db, t)
@@ -105,7 +106,7 @@ export function PostingSheet({ job, open, onClose, canManage }: { job: Job; open
             </a>
           )}
           <span>
-            Counted toward the 15-employee rule: {hc.employed} employed
+            Counted toward the {firstRule.threshold}-employee {firstRule.state === 'NY' ? 'New York ' : ''}rule: {hc.employed} employed
             {hc.incoming ? `, ${hc.incoming} starting soon` : ''}
             {hc.acceptedOffers ? `, ${plural(hc.acceptedOffers, 'accepted offer')}` : ''} = {hc.total}.
           </span>
@@ -130,9 +131,9 @@ export function PostingSheet({ job, open, onClose, canManage }: { job: Job; open
               ) : undefined
             }
           >
-            {block} You have {hc.total}, counting people starting soon and accepted offers, and the rule starts at {payTransparencyThreshold()}.
+            {block} You have {hc.total}, counting people starting soon and accepted offers, and the rule starts at {blockRule?.threshold}.
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <CitationChip label="Labor Code 432.3" url={LC_4323} />
+              {blockRule && <CitationChip label={blockRule.citation.label} url={blockRule.citation.url} />}
               <NotLegalAdvice />
             </div>
           </Callout>
