@@ -9,7 +9,7 @@ First Twenty ships several complete visual styles ("looks"). The user can switch
 | `web90s` | 1990s web | A 1997 company intranet built in Netscape Composer: gray beveled chrome, Times New Roman, blue underlined links, bordered tables, a visitor counter, "best viewed at 800x600". Period-true, still easy to use. | Fixed palette |
 | `comic` | Comic book | A Silver Age print comic: newsprint, thick black ink outlines, Ben-Day halftone dots, CMYK primaries, caption boxes, speech-bubble notices, hand-lettered headlines. | Fixed palette |
 | `trading` | Trading desk | A professional trading terminal for running the company's people like a portfolio: near-black workspace, panels docked as square bordered windows with amber title bars, IBM Plex Mono figures in order-book tables, cyan for links and selection, green and red only for good and bad (always with a word), a ticker tape of real figures, a headcount quote with a sparkline, a quick-links bar in the function-key style (keycaps only for keys that work, such as Search; no F numbers, which the browser owns). Replaced the green-bar ledger look on 2026-10-10. | Fixed palette (dark) |
-| `tiedye` | Tie-dye | A soft pastel tie-dye shirt laid flat behind the app: a still spiral of pink, peach, butter, mint, sky and lilac with pale crinkle rings, under flat off-white panels outlined in dark plum ink, a plum accent, the Zilla Slab slab serif (monospace figures), gently rounded corners and no shadows except on things that float. Added 2026-11-11. | Fixed palette |
+| `tiedye` | Tie-dye | A soft pastel tie-dye shirt laid flat behind the app: a still spiral of pink, peach, butter, mint, sky and lilac with pale crinkle rings, under flat off-white panels outlined in dark plum ink, a plum accent, the Zilla Slab slab serif (tabular figures), gently rounded corners and no shadows except on things that float. Added 2026-11-11. | Fixed palette |
 
 ## Why this exists
 
@@ -136,7 +136,7 @@ What the engine does today (built 2026-10-10), so a look can be written in its o
   (`text-[14.5px]`), so `--font-size-base` only moves inherited text.
 - **Fonts.** `src/themes/fonts.css` loads Latin woff2 only: "Archivo Variable" (sleek: weight 100-900 and width
   62-125% in one file, shipped in `src/themes/sleek/fonts/` with its OFL license), "Geist Variable" 100-900
-  (trading's reading text; the Geist Mono face went with the old sleek), "Bangers" 400, "Comic Neue" 400 and 700, "IBM Plex Mono" 400 and 600. The 1990s
+  (trading's reading text; the Geist Mono face went with the old sleek), "Bangers" 400, "Comic Neue" 400 and 700, "IBM Plex Mono" 400 and 600, "Zilla Slab" 400 and 600 (tiedye). The 1990s
   look uses system fonts (Times New Roman, Arial, Courier New); sleek's key caps use the system mono (Cascadia
   Mono, Consolas). Need another weight? Add a face there; never import a package index.
 - **Light and dark.** Only sleek has dark tokens. A fixed-palette file must never mention `data-theme` or
