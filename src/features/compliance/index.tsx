@@ -35,7 +35,7 @@ const SUBTITLES: Record<TabKey, string> = {
 /** The overview boxes: one clickable box per area, in tab order, with a few words under the number. */
 const OVERVIEW: Array<{ key: TabKey; label: string; open: string; clear: string; tone: 'warn' | 'bad' }> = [
   { key: 'milestones', label: 'Rules', open: 'need action', clear: 'All handled', tone: 'warn' },
-  { key: 'i9', label: 'I-9', open: 'need attention', clear: 'All up to date', tone: 'warn' },
+  { key: 'i9', label: 'I-9', open: 'need attention', clear: 'Nothing overdue', tone: 'warn' },
   { key: 'calendar', label: 'Calendar', open: 'overdue', clear: 'Nothing overdue', tone: 'bad' },
   { key: 'training', label: 'Training', open: 'overdue', clear: 'All current', tone: 'bad' },
   { key: 'notices', label: 'Notices', open: 'owed', clear: 'All acknowledged', tone: 'warn' },
