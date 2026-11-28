@@ -48,6 +48,9 @@ submit to the project is under Apache-2.0 too, unless you explicitly say otherwi
 
 ## The seven steps
 
+New to git? [`docs/GIT.md`](docs/GIT.md) explains these steps in plain words: where your code lives,
+what a branch, a pull request and a squash merge are, and why the Merge button can be grey.
+
 1. **Pick an issue** from the project board and assign it to yourself. If "Done when" is unclear, ask in
    the issue before starting.
 2. **Branch from `main`**: `git switch main && git pull && git switch -c s1/password-reset`.
@@ -57,7 +60,7 @@ submit to the project is under Apache-2.0 too, unless you explicitly say otherwi
    - `s3/`: workstream 3, product, access and AI
    - `team/`: shared work
 3. **Plan with Claude Code first.** Describe the issue and ask for a plan before any code (plan mode:
-   Shift+Tab). Push back on the plan until you agree with it.
+   press Shift+Tab until the status bar shows "plan mode on"). Push back on the plan until you agree with it.
 4. **Build and check locally.** Let Claude write the code and its tests, read every change it makes, then run
    `npm run verify` (while you work, `npm run check` is quicker: see "Tests" below). For UI, try it in the
    browser at 375px wide and by keyboard only. A change to hiring, onboarding, payroll or sync

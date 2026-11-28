@@ -18,7 +18,8 @@ up. You only need a browser and your GitHub account.
    database. Edit code in the editor; the app reloads by itself, and the API restarts when server code changes.
 
 Every time you open the codespace again, `npm run stack` starts again in a terminal. A codespace stops by
-itself after a while without activity, and keeps your files and database until you delete it. Codespaces
+itself after a while without activity, and keeps your files and database while it exists. GitHub deletes a
+codespace that stays stopped for 30 days (the default), so push your work before you leave it. Codespaces
 on a personal account come with a free monthly allowance; stop or delete codespaces you no longer use
 (github.com/codespaces).
 
