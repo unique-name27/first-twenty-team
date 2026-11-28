@@ -1,6 +1,6 @@
-// Comp and plan (#comp[.plan|.bands|.table|.equity|.benefits|.cost|.payruns[.<period start>]]): what we pay, what we've
-// granted, who we hire next, what it costs, and each pay run prepared for the payroll provider. Admin only; the
-// person panels below are reused by People, Me and Home.
+// Comp and plan (#comp[.table|.components|.plan|.cost|.payruns[.<period start>]], and under Components
+// .bands|.variable|.benefits|.equity): what we pay, what we've granted, who we hire next, what it costs, and each pay
+// run prepared for the payroll provider. Admin only; the person panels below are reused by People, Me and Home.
 import type { PageProps } from '@/app/routes'
 import { links } from '@/app/router'
 import { useViewer } from '@/app/useViewer'
@@ -14,17 +14,15 @@ import { BenefitsTab } from './BenefitsTab'
 import { CompTableTab } from './CompTableTab'
 import { CostTab } from './CostTab'
 import { EquityTab } from './EquityTab'
+import { compTabFor } from './helpers'
 import { PayRunsTab } from './PayRunsTab'
 import { PlanTab } from './PlanTab'
-
-type TabKey = 'plan' | 'bands' | 'table' | 'equity' | 'benefits' | 'cost' | 'payruns'
-const TABS: TabKey[] = ['plan', 'bands', 'table', 'equity', 'benefits', 'cost', 'payruns']
+import { VariableTab } from './VariableTab'
 
 export function CompPage({ route }: PageProps) {
   const viewer = useViewer()
   const db = useDB((s) => s.db)
-  const seg = route.segments[1] as TabKey | undefined
-  const tab: TabKey = seg && TABS.includes(seg) ? seg : 'plan'
+  const { tab, sub } = compTabFor(route.segments[1])
   if (viewer.role !== 'admin') {
     return (
       <>
@@ -46,20 +44,34 @@ export function CompPage({ route }: PageProps) {
         value={tab}
         className="mb-5"
         tabs={[
+          { key: 'table', label: 'Summary table', href: links.comp('table'), ...(oob ? { count: oob } : {}) },
+          { key: 'components', label: 'Components', href: links.comp('components') },
           { key: 'plan', label: 'Headcount plan', href: links.comp('plan') },
-          { key: 'bands', label: 'Levels and bands', href: links.comp('bands') },
-          { key: 'table', label: 'Comp table', href: links.comp('table'), ...(oob ? { count: oob } : {}) },
-          { key: 'equity', label: 'Equity', href: links.comp('equity'), ...(queue ? { count: queue } : {}) },
-          { key: 'benefits', label: 'Benefits', href: links.comp('benefits') },
           { key: 'cost', label: 'Cost and runway', href: links.comp('cost') },
           { key: 'payruns', label: 'Pay runs', href: links.comp('payruns') },
         ]}
       />
-      {tab === 'plan' && <PlanTab />}
-      {tab === 'bands' && <BandsTab />}
       {tab === 'table' && <CompTableTab />}
-      {tab === 'equity' && <EquityTab />}
-      {tab === 'benefits' && <BenefitsTab />}
+      {tab === 'components' && (
+        <>
+          <Tabs
+            label="Components sections"
+            value={sub}
+            className="mb-4"
+            tabs={[
+              { key: 'bands', label: 'Base salary', href: links.comp('bands') },
+              { key: 'variable', label: 'Variable pay', href: links.comp('variable') },
+              { key: 'benefits', label: 'Benefits', href: links.comp('benefits') },
+              { key: 'equity', label: 'Equity', href: links.comp('equity'), ...(queue ? { count: queue } : {}) },
+            ]}
+          />
+          {sub === 'bands' && <BandsTab />}
+          {sub === 'variable' && <VariableTab />}
+          {sub === 'benefits' && <BenefitsTab />}
+          {sub === 'equity' && <EquityTab />}
+        </>
+      )}
+      {tab === 'plan' && <PlanTab />}
       {tab === 'cost' && <CostTab />}
       {tab === 'payruns' && <PayRunsTab segment={route.segments[2]} />}
     </>

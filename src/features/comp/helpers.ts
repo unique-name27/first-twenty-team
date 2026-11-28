@@ -24,6 +24,26 @@ import { escapeHTML, toCSV } from '@/lib/files'
 import { listJoin, money, money2, moneyShort, num, pct, plural } from '@/lib/format'
 
 // ---------------------------------------------------------------------------------------------
+// Tabs
+// ---------------------------------------------------------------------------------------------
+
+export type CompTab = 'table' | 'components' | 'plan' | 'cost' | 'payruns'
+export type ComponentsTab = 'bands' | 'variable' | 'benefits' | 'equity'
+const COMP_TABS: CompTab[] = ['table', 'components', 'plan', 'cost', 'payruns']
+const COMPONENTS_TABS: ComponentsTab[] = ['bands', 'variable', 'benefits', 'equity']
+
+/**
+ * The tab and the Components sub-tab a route segment opens (#comp.<segment>). Each sub-tab keeps its own segment,
+ * so #comp.equity and #comp.bands still open Components on that sub-tab; Components itself opens Base salary,
+ * and anything else (no segment, an unknown one) opens the Summary table.
+ */
+export function compTabFor(segment: string | undefined): { tab: CompTab; sub: ComponentsTab } {
+  const sub = COMPONENTS_TABS.find((k) => k === segment)
+  if (sub) return { tab: 'components', sub }
+  return { tab: COMP_TABS.find((k) => k === segment) ?? 'table', sub: 'bands' }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Labels
 // ---------------------------------------------------------------------------------------------
 
@@ -504,6 +524,18 @@ export function median(values: number[]): number | null {
   const s = [...values].sort((a, b) => a - b)
   const m = Math.floor(s.length / 2)
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
+}
+
+// ---------------------------------------------------------------------------------------------
+// Variable pay
+// ---------------------------------------------------------------------------------------------
+
+/** The people with variable pay at target, what it adds up to a year, and its share of their base. */
+export function variableSummary(rows: Array<Pick<CompTableRow, 'base' | 'variable'>>): { people: number; variable: number; shareOfBase: number } {
+  const paid = rows.filter((r) => r.variable > 0)
+  const variable = paid.reduce((t, r) => t + r.variable, 0)
+  const base = paid.reduce((t, r) => t + r.base, 0)
+  return { people: paid.length, variable, shareOfBase: base > 0 ? variable / base : 0 }
 }
 
 // ---------------------------------------------------------------------------------------------
