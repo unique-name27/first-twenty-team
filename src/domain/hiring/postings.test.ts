@@ -1,7 +1,19 @@
 import { produce } from 'immer'
 import { describe, expect, it, vi } from 'vitest'
 import type { DB, Offer } from '@/domain/types'
-import { healthPlanUnrecorded, offersHealthPlanOn, payRangeLine, postingBlockReason, postingHeadcount, postingLint, postingText, salaryHistoryLint } from './postings'
+import {
+  healthPlanUnrecorded,
+  jobStates,
+  offersHealthPlanOn,
+  payRangeLine,
+  payTransparencyRules,
+  postingBlockReason,
+  postingBlockRule,
+  postingHeadcount,
+  postingLint,
+  postingText,
+  salaryHistoryLint,
+} from './postings'
 import { fixtureDB, FRI, person } from './testkit'
 
 vi.mock('@/data/seed', async () => {
@@ -219,5 +231,98 @@ describe('salaryHistoryLint', () => {
     expect(salaryHistoryLint('We will not ask about your pay history')).toBeNull()
     expect(salaryHistoryLint('Making 3 hires this quarter')).toBeNull()
     expect(salaryHistoryLint('Wants $210K base')).toBeNull()
+  })
+})
+
+/** A job in New York: the fixture's first job moved to a remote New York location (or added to its locations). */
+function inNewYork(db: DB, opts: { alsoHQ?: boolean } = {}): DB {
+  return produce(db, (d) => {
+    // minWageHourly is a placeholder: New York wage rules are not researched yet (LAW.md, issue #8).
+    d.locations.push({ id: 'loc-remote-ny', name: 'Remote (New York)', kind: 'remote', state: 'NY', minWageHourly: 0 })
+    d.jobs[0].locationIds = opts.alsoHQ ? ['loc-hq', 'loc-remote-ny'] : ['loc-remote-ny']
+    d.jobs[0].workMode = 'remote'
+  })
+}
+
+/** The fixture (4 people) cut down to its first `employed` people, plus incoming hires and accepted offers. */
+function smallCompany(employed: number, opts: { incoming?: number; acceptedOffers?: number } = {}): DB {
+  return produce(withHeadcount(0, opts), (d) => {
+    const incoming = d.people.filter((p) => p.id.startsWith('p-in'))
+    d.people = [...d.people.filter((p) => !p.id.startsWith('p-in')).slice(0, employed), ...incoming]
+  })
+}
+
+describe('New York pay range (Labor Law 194-b, LAW.md ny-paytrans-4)', () => {
+  const NY_REASON = 'At 4 employees, New York requires a pay range on every post for a job done at least in part in New York (Labor Law 194-b).'
+
+  it('reads the states from the job locations, and the HQ state when it has none', () => {
+    const db = inNewYork(fixtureDB(), { alsoHQ: true })
+    expect([...jobStates(db, db.jobs[0])].sort()).toEqual(['CA', 'NY'])
+    expect([...jobStates(db, { locationIds: [] })]).toEqual(['CA'])
+    expect(payTransparencyRules(db, { locationIds: ['loc-hq'] }).map((r) => r.state)).toEqual(['CA'])
+    expect(payTransparencyRules(db, db.jobs[0]).map((r) => `${r.state} ${r.threshold}`)).toEqual(['NY 4', 'CA 15'])
+  })
+
+  it('blocks a New York job without a range at 4, with the New York reason and citation', () => {
+    const db = inNewYork(withHeadcount(4))
+    expect(postingHeadcount(db, FRI).total).toBe(4)
+    expect(postingBlockReason(db, 'j-fullstack', FRI)).toBe(NY_REASON)
+    expect(postingBlockRule(db, 'j-fullstack', FRI)).toMatchObject({ state: 'NY', threshold: 4, citation: { label: 'Labor Law 194-b', url: 'https://www.nysenate.gov/legislation/laws/LAB/194-B' } })
+  })
+
+  it('counts incoming hires and accepted offers toward the 4, as in California', () => {
+    const db = inNewYork(smallCompany(2, { incoming: 1, acceptedOffers: 1 }))
+    expect(postingHeadcount(db, FRI)).toEqual({ employed: 2, incoming: 1, acceptedOffers: 1, total: 4 })
+    expect(postingBlockReason(db, 'j-fullstack', FRI)).toBe(NY_REASON)
+  })
+
+  it('allows a New York job without a range below 4, while the same job in California stays postable until 15', () => {
+    const three = inNewYork(smallCompany(3))
+    expect(postingHeadcount(three, FRI).total).toBe(3)
+    expect(postingBlockReason(three, 'j-fullstack', FRI)).toBeNull()
+    expect(postingBlockReason(withHeadcount(4), 'j-fullstack', FRI)).toBeNull()
+  })
+
+  it('applies the lower threshold to a job in both California and New York', () => {
+    expect(postingBlockReason(inNewYork(withHeadcount(4), { alsoHQ: true }), 'j-fullstack', FRI)).toBe(NY_REASON)
+    expect(postingBlockReason(inNewYork(withHeadcount(16), { alsoHQ: true }), 'j-fullstack', FRI)).toBe(NY_REASON)
+  })
+
+  it('posts a New York job with a range, and prints the range and the description', () => {
+    const db = produce(inNewYork(withHeadcount(16)), (d) => {
+      d.jobs[0].payMin = 180_000
+      d.jobs[0].payMax = 235_000
+      d.jobs[0].description = 'Build the close agents.'
+    })
+    expect(postingBlockReason(db, 'j-fullstack', FRI)).toBeNull()
+    const text = postingText(db, 'j-fullstack', FRI)
+    expect(text).toContain('Remote (New York) (remote)')
+    expect(text).toContain('Pay range: $180,000 to $235,000 base salary. This is a good-faith estimate of what we expect to pay.')
+    expect(text).toContain('Build the close agents.')
+    expect(postingLint(db.jobs[0], text, { db })).toEqual([])
+  })
+
+  it('warns about a missing range with the New York rule, and leaves the California warning as it was', () => {
+    const db = inNewYork(withHeadcount(1))
+    const [ny] = postingLint({ ...db.jobs[0], description: 'Build things.' }, undefined, { db })
+    expect(ny.code).toBe('missing_range')
+    expect(ny.message).toContain('New York requires it on every post for this job once you have 4 employees (Labor Law 194-b).')
+    expect(ny.citation).toEqual({ label: 'Labor Law 194-b', url: 'https://www.nysenate.gov/legislation/laws/LAB/194-B' })
+    const ca = { ...fixtureDB().jobs[0], payMin: null, payMax: null, description: 'Build things.' }
+    const [caWarning] = postingLint(ca, undefined, { db: fixtureDB() })
+    expect(caWarning).toEqual(postingLint(ca)[0])
+    expect(caWarning.message).not.toContain('New York')
+    expect(caWarning.citation?.label).toBe('Labor Code 432.3')
+  })
+
+  it('asks for a job description and a range per location on a New York post', () => {
+    const db = produce(inNewYork(fixtureDB(), { alsoHQ: true }), (d) => {
+      d.jobs[0].payMin = 1
+      d.jobs[0].payMax = 2
+      d.jobs[0].description = '   '
+    })
+    expect(postingLint(db.jobs[0], undefined, { db }).map((w) => w.code)).toEqual(['ny_description', 'ny_range_per_location'])
+    // Without the db the linter cannot see the locations, so it stays as it was.
+    expect(postingLint(db.jobs[0])).toEqual([])
   })
 })
