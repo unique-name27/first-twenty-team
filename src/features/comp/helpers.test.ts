@@ -15,6 +15,7 @@ import {
   boardText,
   cliffCards,
   cliffCountdown,
+  compTabFor,
   cliffSentence,
   combinedVesting,
   compTableCSV,
@@ -39,6 +40,7 @@ import {
   scenarioDeltaParts,
   snapTo1K,
   splitMoneyText,
+  variableSummary,
   stepChartSVG,
   variableLabel,
   vestingMilestones,
@@ -492,5 +494,41 @@ describe('overtimeStatusText', () => {
     expect(overtimeStatusText('exempt', 'computer_professional')).toBe('Exempt (computer professional)')
     expect(overtimeStatusText('exempt')).toBe('Exempt')
     expect(overtimeStatusText('non_exempt', 'executive')).toBe('Non-exempt')
+  })
+})
+
+describe('comp tabs', () => {
+  it('opens a sub-tab under Components by its own segment, so older links keep working', () => {
+    expect(compTabFor('equity')).toEqual({ tab: 'components', sub: 'equity' })
+    expect(compTabFor('bands')).toEqual({ tab: 'components', sub: 'bands' })
+    expect(compTabFor('variable')).toEqual({ tab: 'components', sub: 'variable' })
+    expect(compTabFor('benefits')).toEqual({ tab: 'components', sub: 'benefits' })
+  })
+  it('opens Components on Base salary, and the other tabs as themselves', () => {
+    expect(compTabFor('components')).toEqual({ tab: 'components', sub: 'bands' })
+    for (const tab of ['table', 'plan', 'cost', 'payruns'] as const) expect(compTabFor(tab).tab).toBe(tab)
+  })
+  it('opens the Summary table with no segment or an unknown one', () => {
+    expect(compTabFor(undefined)).toEqual({ tab: 'table', sub: 'bands' })
+    expect(compTabFor('nope')).toEqual({ tab: 'table', sub: 'bands' })
+  })
+})
+
+describe('variable pay summary', () => {
+  it('counts only people with variable pay, and their share of their own base', () => {
+    const rows = [
+      { base: 100_000, variable: 10_000 },
+      { base: 150_000, variable: 0 },
+      { base: 80_000, variable: 80_000 },
+    ]
+    expect(variableSummary(rows)).toEqual({ people: 2, variable: 90_000, shareOfBase: 0.5 })
+    expect(variableSummary([{ base: 150_000, variable: 0 }])).toEqual({ people: 0, variable: 0, shareOfBase: 0 })
+    expect(variableSummary([])).toEqual({ people: 0, variable: 0, shareOfBase: 0 })
+  })
+  it('matches the sample company', () => {
+    const s = variableSummary(compTable(buildSampleDB(), D))
+    expect(s.people).toBeGreaterThan(0)
+    expect(s.shareOfBase).toBeGreaterThan(0)
+    expect(s.shareOfBase).toBeLessThanOrEqual(1)
   })
 })
