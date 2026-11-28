@@ -25,6 +25,12 @@ export type Config = {
   secureCookies: boolean
   serveApp: boolean
   appFile: string
+  /**
+   * The simulator's worker (first-twenty-sim-worker.js), served at /sim.worker.js: set only when SERVE_APP is on
+   * and the file sits beside the app file, which a build made with VITE_SIMULATOR=1 (staging) leaves and an
+   * ordinary build removes (scripts/copy-single.mjs). Null on any other server: the route is then not there.
+   */
+  simWorkerFile: string | null
   /** Development only: one extra origin allowed to call the API with credentials (CORS). */
   allowedOrigin: string | undefined
   sessionIdleHours: number
@@ -69,6 +75,9 @@ export type Config = {
 }
 
 /** scrypt's cost for password hashes (auth.ts): N=2^15, 32 MiB and tens of milliseconds per hash. */
+/** Where a build made with VITE_SIMULATOR=1 leaves the simulator's worker, beside the app file (scripts/copy-single.mjs). */
+export const SIM_WORKER_FILE = 'first-twenty-sim-worker.js'
+
 export const SCRYPT_N = 2 ** 15
 /** The cost tests hash with (testConfig, test/helpers.ts createAdmin): 32 times cheaper than SCRYPT_N. */
 export const TEST_SCRYPT_N = 2 ** 10
@@ -301,6 +310,9 @@ export function loadConfig(env: Env = process.env, options: LoadConfigOptions = 
     throw new ConfigError(`SERVE_APP=true but the app file ${appFile} does not exist. Run "npm run build" or set APP_FILE.`)
   }
 
+  const simWorker = path.join(path.dirname(appFile), SIM_WORKER_FILE)
+  const simWorkerFile = serveApp && existsSync(simWorker) ? simWorker : null
+
   const trustRaw = env.TRUST_PROXY?.trim()
   const trustProxy: string | boolean =
     !trustRaw ? 'loopback' : /^(false|0|no|off)$/i.test(trustRaw) ? false : /^(true|yes|on)$/i.test(trustRaw) ? true : trustRaw
@@ -353,6 +365,7 @@ export function loadConfig(env: Env = process.env, options: LoadConfigOptions = 
     secureCookies,
     serveApp,
     appFile,
+    simWorkerFile,
     allowedOrigin,
     sessionIdleHours: positiveInt(env, 'SESSION_IDLE_HOURS', 12, 24 * 365),
     sessionMaxDays: positiveInt(env, 'SESSION_MAX_DAYS', 7, 365),
@@ -418,6 +431,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     secureCookies: false,
     serveApp: false,
     appFile: path.join(findRootDir(), 'first-twenty.html'),
+    simWorkerFile: null,
     allowedOrigin: undefined,
     sessionIdleHours: 12,
     sessionMaxDays: 7,

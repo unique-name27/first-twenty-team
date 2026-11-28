@@ -580,8 +580,10 @@ out of CI until it has been timed (it has never finished on the computers it was
 A development build of the app (`npm run dev` or `npm run stack`) has a simulator at `#sim`: the
 **Simulator (dev)** link under the navigation, in the rail and in the phone menu. It plays a company forward
 in fast time, lets you set up situations and change the pace while it plays, and opens the result in the
-real screens. A build never has it: `main.tsx` loads `src/dev/sim/register.ts` only behind
-`import.meta.env.DEV`, and the guards and CI's build check prove it ("Where it lives" below).
+real screens. A build never has it, except staging's: `main.tsx` loads `src/dev/sim/register.ts` only behind
+`import.meta.env.DEV` or a build made with `VITE_SIMULATOR=1`, which only `deploy.sh --instance staging` sets
+(`docs/SERVER.md`, "The simulator on staging"). The guards and CI's build check prove that no other build has it
+("Where it lives" below).
 
 **Demo stories.** To show the simulator to people, use one of the three ready-made runs at the top of the
 page. Each starts and plays by itself at 1 month a second, so a year takes about 12 seconds:

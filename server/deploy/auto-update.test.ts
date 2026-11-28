@@ -1708,6 +1708,7 @@ EOF
 cat > "$work/bin/npm" <<'EOF'
 #!/usr/bin/env bash
 echo "npm $*" >> "$CALLS"
+[ "$*" != 'run build:all' ] || echo "env VITE_SIMULATOR=\${VITE_SIMULATOR:-unset}" >> "$CALLS"
 [ "$*" != 'run server:migrate -- --status' ] || echo 'Pending (0): none'
 exit 0
 EOF
@@ -1793,6 +1794,8 @@ run bad-instance '' --instance demo
     // The live service, the backup, with-env.sh and the settings file are never touched.
     expect(calls.filter((c) => /first-twenty-backup|server:migrate|restart first-twenty$/.test(c))).toEqual([])
     expect(calls).toContain('systemctl show -p WorkingDirectory --value first-twenty-staging')
+    // Staging's app has the simulator panel (docs/SERVER.md, "The simulator on staging").
+    expect(calls).toContain('env VITE_SIMULATOR=1')
     const out = outOf(s)
     expect(out).toContain('Deploying First Twenty staging in')
     expect(out).toContain('Reachable through Caddy at https://staging.test.example/api/health')
@@ -1826,6 +1829,8 @@ run bad-instance '' --instance demo
     expect(s).toContain('rc=1')
     const calls = callsOf(s)
     expect(calls).toContain('sudo true')
+    // The live app never has the simulator: its build gets no flag.
+    expect(calls).toContain('env VITE_SIMULATOR=unset')
     expect(calls).toContain('npm ci --no-audit --no-fund')
     expect(calls).toContain('systemctl restart first-twenty')
     expect(outOf(s)).toContain('git checkout 89abcdef0123 && bash server/deploy/deploy.sh --no-pull')
@@ -1845,10 +1850,12 @@ run bad-instance '' --instance demo
 
 /**
  * A git checkout for deploy.sh with three commits: OLD (migration 001), NEW (adds 002) and NEWER (adds a
- * README only). Its build files (node_modules, dist-server, dist-single, first-twenty.html) say "old-...".
+ * README only). Its build files (node_modules, dist-server, dist-single, first-twenty.html and the simulator's
+ * worker, first-twenty-sim-worker.js, as if staging built it last) say "old-...".
  * The stub npm behaves like the real commands where it matters here: npm ci removes everything in
  * node_modules before it installs (FAKE_CI=fail stops it halfway), the build empties dist-server and
- * dist-single and writes first-twenty.html in place, as copyFileSync does (FAKE_BUILD=fail stops it before
+ * dist-single and writes first-twenty.html in place, as copyFileSync does, and writes the worker in place with
+ * VITE_SIMULATOR=1 or removes it without, as scripts/copy-single.mjs does (FAKE_BUILD=fail stops it before
  * the server bundle; FAKE_BUILD=term sends deploy.sh SIGTERM, as systemctl stop does, and dies of it too),
  * and server:migrate applies 002 (FAKE_MIGRATE=fail fails after that; FAKE_PENDING=0 has nothing pending,
  * FAKE_PENDING=unknown prints no Pending line). The stub systemctl writes a dump for the backup service
@@ -1866,7 +1873,7 @@ mkdir -p "$tpl/server/deploy" "$tpl/server/sql"
 cp "$DEPLOY/deploy.sh" "$DEPLOY/first-twenty.service" "$tpl/server/deploy/"
 printf '#!/usr/bin/env bash\\nexec "$@"\\n' > "$tpl/server/deploy/with-env.sh"
 echo '{"name":"first-twenty"}' > "$tpl/package.json"
-printf 'node_modules/\\ndist-server/\\ndist-single/\\nfirst-twenty.html\\n.deploy-prev/\\n' > "$tpl/.gitignore"
+printf 'node_modules/\\ndist-server/\\ndist-single/\\nfirst-twenty.html\\nfirst-twenty-sim-worker.js\\n.deploy-prev/\\n' > "$tpl/.gitignore"
 echo 'SELECT 1;' > "$tpl/server/sql/001_init.sql"
 "$REAL_GIT" init -q "$tpl"
 g "$tpl" config core.autocrlf false
@@ -1881,6 +1888,7 @@ echo old-module > "$tpl/node_modules/fastify/index.js"
 echo old-bundle > "$tpl/dist-server/server.mjs"
 echo old-single > "$tpl/dist-single/index.html"
 echo old-app > "$tpl/first-twenty.html"
+echo old-worker > "$tpl/first-twenty-sim-worker.js"
 : > "$work/autodeploy-state"
 echo "--- shas"
 echo "OLD=$OLD"; echo "NEW=$NEW"; echo "NEWER=$NEWER"
@@ -1902,6 +1910,7 @@ case "$*" in
     mkdir -p dist-server dist-single
     echo new-single > dist-single/index.html
     echo new-app > first-twenty.html
+    if [ "\${VITE_SIMULATOR:-}" = 1 ]; then echo new-worker > first-twenty-sim-worker.js; else rm -f first-twenty-sim-worker.js; fi
     if [ "\${FAKE_BUILD:-ok}" = term ]; then kill -TERM "$PPID"; command -p sleep 1; exit 143; fi
     [ "\${FAKE_BUILD:-ok}" = ok ] || { echo 'error during build' >&2; exit 1; }
     echo new-bundle > dist-server/server.mjs
@@ -1978,7 +1987,7 @@ run() { # run <name> <commit> "<VAR=value ...>" [deploy.sh options]
   sed 's/^/call: /' "$dir/calls"
   sed 's/^/report: /' "$dir/report" 2>/dev/null || true
   echo "head=$(g "$app" rev-parse HEAD)"
-  for f in node_modules/fastify/index.js dist-server/server.mjs dist-single/index.html first-twenty.html; do
+  for f in node_modules/fastify/index.js dist-server/server.mjs dist-single/index.html first-twenty.html first-twenty-sim-worker.js; do
     echo "file: $f=$(cat "$app/$f" 2>/dev/null || echo missing)"
   done
   [ ! -e "$app/node_modules/partial" ] || echo "partial=left"
@@ -2022,7 +2031,7 @@ INSTANCE=staging PAUSE_FILE=/etc/first-twenty-staging/autodeploy.paused manual_d
     return s
   }
   const reportOf = (name: string) => linesOf(get(name), 'report: ')
-  const oldBuild = ['node_modules/fastify/index.js=old-module', 'dist-server/server.mjs=old-bundle', 'dist-single/index.html=old-single', 'first-twenty.html=old-app']
+  const oldBuild = ['node_modules/fastify/index.js=old-module', 'dist-server/server.mjs=old-bundle', 'dist-single/index.html=old-single', 'first-twenty.html=old-app', 'first-twenty-sim-worker.js=old-worker']
 
   it('puts the build and the previous commit back when npm ci, the build or a migration fails before the restart', () => {
     for (const name of ['a-ci', 'a-build', 'a-migrate']) {
@@ -2058,6 +2067,8 @@ INSTANCE=staging PAUSE_FILE=/etc/first-twenty-staging/autodeploy.paused manual_d
     for (const file of ['node_modules/fastify/index.js=new-module', 'dist-server/server.mjs=new-bundle', 'first-twenty.html=new-app']) {
       expect(s, file).toContain(`file: ${file}\n`)
     }
+    // A live build has no simulator, so the worker a staging build left is gone.
+    expect(s).toContain('file: first-twenty-sim-worker.js=missing\n')
     expect(s).not.toContain('prev=left')
     expect(reportOf('a-ok')).toEqual(['phase=before-restart', expect.stringMatching(/^dump=\S+\.dump$/), 'migrated=1', 'phase=restarted', 'phase=finished'])
     expect(outOf(s)).toContain('Deploy finished.')

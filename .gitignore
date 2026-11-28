@@ -5,6 +5,7 @@ dist-careers/
 *.log
 .vite
 first-twenty.html
+first-twenty-sim-worker.js
 scripts/profile*
 scripts/*.png
 

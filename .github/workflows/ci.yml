@@ -71,7 +71,19 @@ jobs:
             echo "::error::A development-only route (/__dev/, server/src/dev) reached dist-server."
             exit 1
           fi
+          if [ -e first-twenty-sim-worker.js ]; then
+            echo "::error::The simulator's worker (first-twenty-sim-worker.js) is left from a build that has the simulator."
+            exit 1
+          fi
           echo "The builds hold no development-only code."
+
+      # Staging's build has the simulator (VITE_SIMULATOR=1, set by server/deploy/deploy.sh for staging only). This proves
+      # the switch still works and brings the worker file the server serves. Last, because it replaces first-twenty.html.
+      - name: The staging build holds the simulator
+        run: |
+          VITE_SIMULATOR=1 npm run build
+          grep -q -F 'Simulator (dev)' first-twenty.html
+          [ -f first-twenty-sim-worker.js ]
 
   unit:
     name: unit
