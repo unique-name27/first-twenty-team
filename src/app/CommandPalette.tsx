@@ -41,12 +41,15 @@ const PAGES: Array<{
   { label: 'Time off', href: links.people('timeoff'), keywords: 'vacation sick leave pto calendar holidays', section: 'people', show: notEmployee },
   { label: 'Contractors and advisors', href: links.people('contractors'), keywords: 'ab5 1099 de 542 w-9', section: 'people', show: isAdmin },
   { label: 'Headcount plan', href: links.comp('plan'), keywords: 'plan quarters roles budget board', section: 'comp' },
-  { label: 'Levels and bands', href: links.comp('bands'), keywords: 'pay bands salary ranges levels', section: 'comp' },
-  { label: 'Comp table', href: links.comp('table'), keywords: 'salaries compa-ratio pay', section: 'comp' },
+  { label: 'Base salary', href: links.comp('bands'), keywords: 'levels and bands pay bands salary ranges levels components', section: 'comp' },
+  { label: 'Variable pay', href: links.comp('variable'), keywords: 'bonus commission target ote components', section: 'comp' },
+  { label: 'Summary table', href: links.comp('table'), keywords: 'comp table salaries compa-ratio pay', section: 'comp' },
   { label: 'Equity', href: links.comp('equity'), keywords: 'options pool grants vesting 409a board consent', section: 'comp' },
+  { label: 'Benefits', href: links.comp('benefits'), keywords: 'health plan medical dental vision insurance per head peo broker enrollment', section: 'comp' },
   { label: 'Cost and runway', href: links.comp('cost'), keywords: 'run-rate payroll cost runway burn', section: 'comp' },
   { label: 'Pay runs', href: links.comp('payruns'), keywords: 'payroll pay run prep payday cutoff peo gusto adp justworks export csv', section: 'comp' },
   { label: 'Milestones', href: links.compliance('milestones'), keywords: 'compliance thresholds law headcount', section: 'compliance' },
+  { label: 'Form I-9', href: links.compliance('i9'), keywords: 'i-9 i9 work authorization reverify reverification uscis', section: 'compliance' },
   { label: 'Compliance calendar', href: links.compliance('calendar'), keywords: 'deadlines filings 1099 sb 294', section: 'compliance' },
   { label: 'Training tracker', href: links.compliance('training'), keywords: 'harassment training security awareness', section: 'compliance' },
   { label: 'Notices and policies', href: links.compliance('notices'), keywords: 'handbook acknowledgements posters', section: 'compliance' },
@@ -221,7 +224,7 @@ export function CommandPalette() {
     if (query) {
       const words = query.split(/\s+/)
       for (const l of LOOK_LIST) {
-        const hay = `look ${l.name} theme style skin appearance display ${l.blurb}`.toLowerCase()
+        const hay = `look ${l.id} ${l.name} theme style skin appearance display ${l.blurb}`.toLowerCase()
         if (!words.every((w) => hay.includes(w))) continue
         out.push({
           id: `look-${l.id}`,

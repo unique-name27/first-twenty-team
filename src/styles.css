@@ -11,6 +11,7 @@
 @import "./themes/web90s.css";
 @import "./themes/comic.css";
 @import "./themes/trading.css";
+@import "./themes/tiedye.css";
 
 /*
   Breakpoints follow the width the layout really has, not the window. Text size (Display menu) zooms
@@ -198,6 +199,19 @@ body {
 [data-focus-target]:focus,
 [data-focus-target]:focus-visible {
   outline: none;
+}
+
+/*
+  Org chart (features/people/OrgChart.tsx): each treeitem holds its whole team, so the ring goes on
+  the focused person's box, not around everyone below them. Tokens only, so every look keeps its ring.
+*/
+.ft-orgchart [role="treeitem"]:focus-visible {
+  outline: none;
+}
+
+.ft-orgchart [role="treeitem"]:focus-visible > .ft-orgnode {
+  outline: var(--focus-width) var(--focus-style) var(--focus);
+  outline-offset: var(--focus-offset);
 }
 
 .tabular,

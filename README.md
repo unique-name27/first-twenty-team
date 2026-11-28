@@ -62,7 +62,7 @@ from the others.
 | Home | "Tonight" header with a time estimate, an action inbox computed from your data (one big action per row, Undo, snooze; legal deadlines in red and never snoozed past due), next legal threshold, headcount vs plan, this week, hiring pulse, people cost. A First hire kit while it is just you. |
 | Hiring | Jobs with planned rows from the headcount plan, pipeline board or list with keyboard moves (A, R, S, J) and Sweep mode, quick add by pasting, required next steps and SLAs, interview scheduling with .ics files and dual time zones, 4-point scorecards hidden until you submit yours, offer builder with band meter and exempt check, offer letter and wage notice, background checks with the Fair Chance Act steps, one-click Hire with a threshold preview. |
 | People | Directory, org chart, profiles (job and pay history, equity, time off, checklists, emergency contacts), California-aware onboarding, offboarding with final pay deadlines, leave cases, contractors with the AB5 check. |
-| Comp and plan | Headcount plan by quarter, levels and bands, comp table with compa-ratio, option pool and board consent queue, 409A history, fully loaded run-rate and runway. |
+| Comp and plan | Headcount plan by quarter, levels and bands, comp table with compa-ratio, option pool and board consent queue, 409A history, the benefits cost and group health plan, fully loaded run-rate and runway. |
 | Compliance | Milestones that switch on with headcount (5, 10 on site, 15, 20; 25 to 100 upcoming), each with "How we counted" and a citation; calendar; training tracker; notices and policies; SOC 2 people evidence; records retention. |
 | Me | Self-service: pay and band, vesting, time off, tasks, profile, open roles and referrals. |
 | Settings | Company, org, hiring defaults, checklist templates, time off and holidays, rules and rates with sources, link-outs, backup and import, start fresh, demo clock. |
@@ -70,8 +70,8 @@ from the others.
 **Viewing as** (left rail) previews the app as Admin, Hiring manager or Employee. It is a preview, not
 security: anyone using this browser can switch.
 
-**Looks** (Display menu, or type "look" in `Ctrl K`): Sleek (the default, light or dark), 1990s web, Comic book
-and Trading desk. A look changes how the app looks, never what it says or does.
+**Looks** (Display menu, or type "look" in `Ctrl K`): Sleek (the default, light or dark), 1990s web, Comic book,
+Trading desk and Tie-dye. A look changes how the app looks, never what it says or does.
 
 ## Built for accessibility
 

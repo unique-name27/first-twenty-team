@@ -117,7 +117,7 @@ the UI must say so where it matters and never pretend otherwise. Access helpers 
 
 ## Design rules
 
-- **Looks.** The app ships several complete visual styles (Sleek, 1990s web, Comic book, Trading desk),
+- **Looks.** The app ships several complete visual styles (Sleek, 1990s web, Comic book, Trading desk, Tie-dye),
   picked in the Display menu. `docs/LOOKS.md` is the contract: read it before any UI work. Every screen must
   work in every look, so new UI is built only from the tokens and the kit, never from one look's colors,
   fonts, radii or shadows. Never put look-specific values in `src/styles.css` or a component.
@@ -217,7 +217,7 @@ Pure logic in `src/domain/**` gets unit tests next to it (`*.test.ts`). Use fixe
 | `#person.<id>[.overview\|.job\|.equity\|.timeoff\|.checklists\|.emergency\|.activity\|.offboard\|.change]` | Person profile; `.offboard` and `.change` open those sheets | features/people |
 | `#checklist.<id>` | One checklist | features/people |
 | `#contractor.<id>` | Contractor or advisor | features/people |
-| `#comp[.plan\|.bands\|.table\|.equity\|.cost\|.payruns[.<period start>]]` | Comp and plan (admin). `#comp.payruns.<YYYY-MM-DD>` (`links.payRun`) opens Pay runs on the pay period starting that day (default: the next payroll to run, `nextPayRunDue`): pay run prep for the payroll provider or PEO (docs/SPEC.md PAY RUN PREP; logic in `src/domain/payrun`). Its marks and provider totals (`company.payRuns`) and settings (`company.payroll`, edited in Settings > Link-outs) are fields of the company document, which syncs by field: no record collection or SQL migration. | features/comp |
+| `#comp[.table\|.components\|.plan\|.cost\|.payruns[.<period start>]]` | Comp and plan (admin). Opens on the Summary table. `.components` is a tab with its own strip (`.bands` Base salary, `.variable`, `.benefits`, `.equity`): each sub-tab keeps its own segment, so `#comp.equity` opens Components on Equity (`compTabFor`). `#comp.benefits` is read only: the group health plan and the benefits cost from Settings, no data of its own. `.variable` is read only too: variable pay targets, never results (no performance reviews). `#comp.payruns.<YYYY-MM-DD>` (`links.payRun`) opens Pay runs on the pay period starting that day (default: the next payroll to run, `nextPayRunDue`): pay run prep for the payroll provider or PEO (docs/SPEC.md PAY RUN PREP; logic in `src/domain/payrun`). Its marks and provider totals (`company.payRuns`) and settings (`company.payroll`, edited in Settings > Link-outs) are fields of the company document, which syncs by field: no record collection or SQL migration. | features/comp |
 | `#compliance[.milestones[.<ruleId>]\|.calendar\|.training\|.notices\|.soc2\|.records]` | Compliance (admin) | features/compliance |
 | `#me[.summary\|.job\|.equity\|.timeoff\|.tasks\|.profile\|.roles]` | Me; `#me.timeoff.request` opens the request sheet | features/me |
 | `#settings[.company\|.org\|.hiring\|.templates\|.timeoff\|.rules\|.links\|.data\|.server]` | Settings (admin). `#settings.data.fresh` and `#settings.server.fresh` open Start fresh; `#settings.data.import` focuses Import; `#settings.server` connects to the optional server (docs/SYNC.md); on a demo server (anyone may sign up) it also offers Create a demo company, and `#settings.server.signup` puts focus there. Signed in, it shows the company on the server, invite links and its careers page. | features/settings |

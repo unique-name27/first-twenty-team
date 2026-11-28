@@ -1,24 +1,31 @@
+import { produce } from 'immer'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { blankDB } from '@/data/blank'
 import { buildSampleDB } from '@/data/seed'
+import { postingText } from '@/domain/hiring/postings'
 import type { CompRecord, EquityGrant } from '@/domain/types'
 import { setClockOverride } from '@/lib/dates'
 import {
   bandErrors,
   bandFieldErrors,
+  benefitsSummary,
   changeParts,
   boardHTML,
   boardSummary,
   boardText,
   cliffCards,
   cliffCountdown,
+  compTabFor,
   cliffSentence,
   combinedVesting,
   compTableCSV,
   effectiveDatePresets,
   equityGuidelineLabel,
+  healthPlanText,
   hiringManagerForSlot,
+  linkOut,
   median,
+  postingHealthText,
   mlPremium,
   nextLevel,
   nextPayPeriodStart,
@@ -33,11 +40,12 @@ import {
   scenarioDeltaParts,
   snapTo1K,
   splitMoneyText,
+  variableSummary,
   stepChartSVG,
   variableLabel,
   vestingMilestones,
 } from './helpers'
-import { compTable, type RunRate } from '@/domain/pay'
+import { compTable, runRate, type RunRate } from '@/domain/pay'
 
 const D = '2026-10-09'
 
@@ -291,6 +299,89 @@ describe('cost scenarios', () => {
   })
 })
 
+describe('benefits', () => {
+  it('counts the same people and cost as Cost and runway', () => {
+    const db = buildSampleDB()
+    const s = benefitsSummary(db, D)
+    const now = runRate(db, D, { include: 'now' })
+    expect(s).toMatchObject({ basis: 'plan', planStartedOn: '2025-05-12', planInPlace: true, perHeadMonthly: 1150 })
+    expect(s.monthly).toBe(now.breakdown.benefits)
+    expect(s.monthly).toBe(s.counted * s.perHeadMonthly)
+    expect(s.counted + s.belowHours.length).toBe(now.headcount)
+    // Luis works 24 hours a week, under the 30-hour line, so the per-head cost leaves him out.
+    expect(s.belowHours).toEqual([{ personId: 'p-luis', name: 'Luis Ortega', hoursPerWeek: 24 }])
+  })
+  it('counts no benefits with no plan, and the assumed cost while the plan is not recorded', () => {
+    const db = buildSampleDB()
+    const none = produce(db, (d) => {
+      d.company.groupHealthPlanStartedOn = null
+    })
+    expect(benefitsSummary(none, D)).toMatchObject({ basis: 'none', planInPlace: false, monthly: 0 })
+    const assumed = benefitsSummary(
+      produce(db, (d) => {
+        delete d.company.groupHealthPlanStartedOn
+      }),
+      D,
+    )
+    expect(assumed).toMatchObject({ basis: 'assumed', planInPlace: false })
+    expect(assumed.planStartedOn).toBeUndefined()
+    expect(assumed.monthly).toBe(assumed.counted * 1150)
+  })
+  it('counts a plan that starts later from today, as Cost and runway does, and says it has not started', () => {
+    const later = produce(buildSampleDB(), (d) => {
+      d.company.groupHealthPlanStartedOn = '2027-01-01'
+    })
+    const s = benefitsSummary(later, D)
+    expect(s).toMatchObject({ basis: 'plan', planStartedOn: '2027-01-01', planInPlace: false })
+    expect(s.monthly).toBe(runRate(later, D, { include: 'now' }).breakdown.benefits)
+    expect(s.monthly).toBeGreaterThan(0)
+  })
+  it('words the plan and what postings say about it, in every state', () => {
+    const states = {
+      started: { basis: 'plan', planStartedOn: '2025-05-12', planInPlace: true },
+      starting: { basis: 'plan', planStartedOn: '2027-01-01', planInPlace: false },
+      none: { basis: 'none', planInPlace: false },
+      unrecorded: { basis: 'assumed', planInPlace: false },
+    } as const
+    expect(healthPlanText(states.started)).toBe('Started May 12, 2025')
+    expect(healthPlanText(states.starting)).toBe('Starts Jan 1, 2027')
+    expect(healthPlanText(states.none)).toBe('None offered')
+    expect(healthPlanText(states.unrecorded)).toBe('Not recorded')
+    expect(postingHealthText(states.started)).toBe('Postings list medical, dental and vision coverage.')
+    expect(postingHealthText(states.starting)).toBe('Postings leave out health coverage until the plan starts on Jan 1, 2027.')
+    expect(postingHealthText(states.none)).toBe('Postings leave out health coverage.')
+    expect(postingHealthText(states.unrecorded)).toBe('Postings leave out health coverage until a plan is recorded.')
+  })
+  it('says what the generated posting says about health coverage', () => {
+    // 'listed' means the posting's benefits line names medical, dental and vision coverage.
+    const cases: Array<{ start: string | null | undefined; listed: boolean }> = [
+      { start: '2025-05-12', listed: true },
+      { start: D, listed: true },
+      { start: '2027-01-01', listed: false },
+      { start: null, listed: false },
+      { start: undefined, listed: false },
+    ]
+    for (const { start, listed } of cases) {
+      const db = produce(buildSampleDB(), (d) => {
+        if (start === undefined) delete d.company.groupHealthPlanStartedOn
+        else d.company.groupHealthPlanStartedOn = start
+      })
+      const benefitsLine = postingText(db, 'j-fullstack', D).split('\n').find((l) => l.startsWith('Benefits:'))
+      expect(benefitsLine?.includes('medical, dental and vision coverage'), String(start)).toBe(listed)
+      expect(postingHealthText(benefitsSummary(db, D)).startsWith('Postings list'), String(start)).toBe(listed)
+    }
+  })
+  it('links only to web addresses', () => {
+    expect(linkOut('https://www.example.com/peo/benefits')).toEqual({ text: 'example.com/peo/benefits', href: 'https://www.example.com/peo/benefits' })
+    expect(linkOut(' https://example.com/ ')).toEqual({ text: 'example.com', href: 'https://example.com/' })
+    expect(linkOut(`https://example.com/${'a'.repeat(60)}`)?.text).toBe(`example.com/${'a'.repeat(28)}...`)
+    expect(linkOut('javascript:alert(1)')).toEqual({ text: 'javascript:alert(1)' })
+    expect(linkOut('benefits.example.com')).toEqual({ text: 'benefits.example.com' })
+    expect(linkOut('  ')).toBeNull()
+    expect(linkOut(undefined)).toBeNull()
+  })
+})
+
 describe('board print', () => {
   it('summarizes the sample company', () => {
     const db = buildSampleDB()
@@ -403,5 +494,41 @@ describe('overtimeStatusText', () => {
     expect(overtimeStatusText('exempt', 'computer_professional')).toBe('Exempt (computer professional)')
     expect(overtimeStatusText('exempt')).toBe('Exempt')
     expect(overtimeStatusText('non_exempt', 'executive')).toBe('Non-exempt')
+  })
+})
+
+describe('comp tabs', () => {
+  it('opens a sub-tab under Components by its own segment, so older links keep working', () => {
+    expect(compTabFor('equity')).toEqual({ tab: 'components', sub: 'equity' })
+    expect(compTabFor('bands')).toEqual({ tab: 'components', sub: 'bands' })
+    expect(compTabFor('variable')).toEqual({ tab: 'components', sub: 'variable' })
+    expect(compTabFor('benefits')).toEqual({ tab: 'components', sub: 'benefits' })
+  })
+  it('opens Components on Base salary, and the other tabs as themselves', () => {
+    expect(compTabFor('components')).toEqual({ tab: 'components', sub: 'bands' })
+    for (const tab of ['table', 'plan', 'cost', 'payruns'] as const) expect(compTabFor(tab).tab).toBe(tab)
+  })
+  it('opens the Summary table with no segment or an unknown one', () => {
+    expect(compTabFor(undefined)).toEqual({ tab: 'table', sub: 'bands' })
+    expect(compTabFor('nope')).toEqual({ tab: 'table', sub: 'bands' })
+  })
+})
+
+describe('variable pay summary', () => {
+  it('counts only people with variable pay, and their share of their own base', () => {
+    const rows = [
+      { base: 100_000, variable: 10_000 },
+      { base: 150_000, variable: 0 },
+      { base: 80_000, variable: 80_000 },
+    ]
+    expect(variableSummary(rows)).toEqual({ people: 2, variable: 90_000, shareOfBase: 0.5 })
+    expect(variableSummary([{ base: 150_000, variable: 0 }])).toEqual({ people: 0, variable: 0, shareOfBase: 0 })
+    expect(variableSummary([])).toEqual({ people: 0, variable: 0, shareOfBase: 0 })
+  })
+  it('matches the sample company', () => {
+    const s = variableSummary(compTable(buildSampleDB(), D))
+    expect(s.people).toBeGreaterThan(0)
+    expect(s.shareOfBase).toBeGreaterThan(0)
+    expect(s.shareOfBase).toBeLessThanOrEqual(1)
   })
 })
