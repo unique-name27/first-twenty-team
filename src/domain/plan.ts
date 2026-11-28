@@ -120,7 +120,8 @@ export type HeadcountProjection = {
   final: number
 }
 
-type PlanEvent = { date: ISODate; delta: number; label: string }
+/** `slot` marks a plan line still to hire; the other events are known starts and departures. */
+type PlanEvent = { date: ISODate; delta: number; label: string; slot?: true }
 
 function planEvents(db: DB, date: ISODate): PlanEvent[] {
   const events: PlanEvent[] = []
@@ -131,12 +132,17 @@ function planEvents(db: DB, date: ISODate): PlanEvent[] {
     const st = planSlotStatus(db, s)
     if (st !== 'planned' && st !== 'open' && st !== 'offer') continue
     const offer = st === 'offer' ? slotOffer(db, s) : undefined
-    events.push({ date: at(offer?.startDate ?? s.targetStart), delta: 1, label: s.title })
+    events.push({ date: at(offer?.startDate ?? s.targetStart), delta: 1, label: s.title, slot: true })
   }
   for (const p of employedOn(db, date)) {
     if (p.endDate && p.endDate >= date) events.push({ date: addDays(p.endDate, 1), delta: -1, label: `${fullName(p)} leaves` })
   }
   return events.sort((a, b) => a.date.localeCompare(b.date))
+}
+
+/** Plan lines (planned, open or with an offer out) due to start by `by`: the hires the plan still needs. Known starts and departures are not hires to make. */
+export function plannedHiresBy(db: DB, date: ISODate, by: ISODate): number {
+  return planEvents(db, date).filter((e) => e.slot && e.date <= by).length
 }
 
 /** Actual and planned W-2 headcount as step points, plus plan targets at each quarter end. */
