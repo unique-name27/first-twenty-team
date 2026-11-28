@@ -127,13 +127,14 @@ esac
 # Before npm ci they are kept in .deploy-prev (gitignored), so a failure before the restart can put them
 # back. Hard links make that copy cheap, and they are safe here because nothing writes into the old files:
 # npm ci deletes everything in node_modules before it installs, and Vite empties dist-server and
-# dist-single (emptyOutDir) before it writes new files. first-twenty.html is the exception: copyFileSync
-# overwrites it in place, which would change a hard-linked copy too, so it is copied for real. A finished
+# dist-single (emptyOutDir) before it writes new files. first-twenty.html and first-twenty-sim-worker.js (the
+# simulator's worker, on staging only) are the exceptions: copyFileSync overwrites them in place, which would
+# change a hard-linked copy too, so they are copied for real. A finished
 # copy holds .pending: the commit the build came from (commit=, when known) and the paths it kept (kept=).
 # It goes just before the restart, so a copy with .pending is the build the server still runs, and a copy
 # without it was left after a restart and is out of date.
 PREV_DIR=$APP_DIR/.deploy-prev
-BUILD_PATHS=(node_modules dist-server dist-single first-twenty.html)
+BUILD_PATHS=(node_modules dist-server dist-single first-twenty.html first-twenty-sim-worker.js)
 KEPT=()
 
 # The folder the installed service runs its code from (WorkingDirectory= in its unit), or nothing when
@@ -609,7 +610,7 @@ else
   SNAPSHOT=started
   mkdir "$PREV_DIR"
   for p in "${BUILD_PATHS[@]}"; do
-    if [ "$p" = first-twenty.html ]; then
+    if [ "$p" = first-twenty.html ] || [ "$p" = first-twenty-sim-worker.js ]; then
       [ ! -e "$p" ] || { cp -p "$p" "$PREV_DIR/" && KEPT+=("$p"); }
     elif [ -e "$p" ] || [ -L "$p" ]; then
       cp -al "$p" "$PREV_DIR/"
@@ -634,11 +635,12 @@ fi
 
 # ------------------------------------------------------------------------------------------------
 step "Building the app and the server (npm run build:all)"
-# Staging's app has the simulator panel (docs/SERVER.md, "The simulator on staging"); the live app never does.
+# Staging's app has the simulator panel (docs/SERVER.md, "The simulator on staging"); the live app never does,
+# even when the flag is left set in the environment.
 if [ "$INSTANCE" = staging ]; then
   VITE_SIMULATOR=1 npm run build:all
 else
-  npm run build:all
+  env -u VITE_SIMULATOR npm run build:all
 fi
 [ -f dist-server/server.mjs ] || die "The build finished but dist-server/server.mjs is missing."
 APP_FILE=$(env_value APP_FILE)
