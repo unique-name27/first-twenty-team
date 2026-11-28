@@ -70,8 +70,8 @@ from the others.
 **Viewing as** (left rail) previews the app as Admin, Hiring manager or Employee. It is a preview, not
 security: anyone using this browser can switch.
 
-**Looks** (Display menu, or type "look" in `Ctrl K`): Sleek (the default, light or dark), 1990s web, Comic book
-and Trading desk. A look changes how the app looks, never what it says or does.
+**Looks** (Display menu, or type "look" in `Ctrl K`): Sleek (the default, light or dark), 1990s web, Comic book,
+Trading desk and Tie-dye. A look changes how the app looks, never what it says or does.
 
 ## Built for accessibility
 

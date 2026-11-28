@@ -1,9 +1,9 @@
 // Look ids (no React here, so prefs and tests can import it cheaply). See docs/LOOKS.md.
 
-export type LookId = 'sleek' | 'web90s' | 'comic' | 'trading'
+export type LookId = 'sleek' | 'web90s' | 'comic' | 'trading' | 'tiedye'
 
 /** Display order in the Display menu and the command palette. */
-export const LOOK_IDS: readonly LookId[] = ['sleek', 'web90s', 'comic', 'trading']
+export const LOOK_IDS: readonly LookId[] = ['sleek', 'web90s', 'comic', 'trading', 'tiedye']
 
 export const DEFAULT_LOOK: LookId = 'sleek'
 

@@ -117,7 +117,7 @@ the UI must say so where it matters and never pretend otherwise. Access helpers 
 
 ## Design rules
 
-- **Looks.** The app ships several complete visual styles (Sleek, 1990s web, Comic book, Trading desk),
+- **Looks.** The app ships several complete visual styles (Sleek, 1990s web, Comic book, Trading desk, Tie-dye),
   picked in the Display menu. `docs/LOOKS.md` is the contract: read it before any UI work. Every screen must
   work in every look, so new UI is built only from the tokens and the kit, never from one look's colors,
   fonts, radii or shadows. Never put look-specific values in `src/styles.css` or a component.

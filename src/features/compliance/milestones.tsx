@@ -181,7 +181,7 @@ export function MilestonesTab({ ruleId }: { ruleId?: string }) {
             >
               {g.key === 'other_state' && (
                 <p className="border-b border-line px-5 py-2.5 text-[14px] text-ink-3">
-                  Each state has its own withholding, leave, posting and pay range rules. The{' '}
+                  States can have their own withholding, leave, posting and pay range rules. The{' '}
                   <TextLink href={links.people('checklists')}>new-state checklist</TextLink> walks through them for each state you hire in.
                 </p>
               )}

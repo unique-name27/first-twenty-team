@@ -69,6 +69,12 @@ export const LOOKS: Record<LookId, LookInfo> = {
     supportsDark: false,
     decor: tradingDecor,
   },
+  tiedye: {
+    id: 'tiedye',
+    name: 'Tie-dye',
+    blurb: 'Soft pastel swirls behind plain, readable panels.',
+    supportsDark: false,
+  },
 }
 
 /** Looks in display order. */
