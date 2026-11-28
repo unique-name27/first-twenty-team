@@ -63,7 +63,7 @@ from the others.
 | Hiring | Jobs with planned rows from the headcount plan, pipeline board or list with keyboard moves (A, R, S, J) and Sweep mode, quick add by pasting, required next steps and SLAs, interview scheduling with .ics files and dual time zones, 4-point scorecards hidden until you submit yours, offer builder with band meter and exempt check, offer letter and wage notice, background checks with the Fair Chance Act steps, one-click Hire with a threshold preview. |
 | People | Directory, org chart, the First twenty wall, profiles (job and pay history, equity, time off, checklists, emergency contacts), California-aware onboarding, offboarding with final pay deadlines, leave cases, contractors with the AB5 check. |
 | Comp and plan | Headcount plan by quarter, levels and bands, comp table with compa-ratio, option pool and board consent queue, 409A history, fully loaded run-rate and runway. |
-| Compliance | Milestones that switch on with headcount (5, 10 on site, 15, 20; 25 to 100 upcoming), each with "How we counted" and a citation; calendar; training tracker; notices and policies; SOC 2 people evidence; records retention. |
+| Compliance | Milestones that switch on with headcount (5, 10 on site, 15, 20; 25 to 100 upcoming), each with "How we counted" and a citation; Form I-9 status for every employee with reverify dates; calendar; training tracker; notices and policies; SOC 2 people evidence; records retention. |
 | Me | Self-service: pay and band, vesting, time off, tasks, profile, open roles and referrals. |
 | Settings | Company, org, hiring defaults, checklist templates, time off and holidays, rules and rates with sources, link-outs, backup and import, start fresh, demo clock. |
 

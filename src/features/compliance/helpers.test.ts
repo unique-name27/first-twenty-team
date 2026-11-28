@@ -458,7 +458,7 @@ describe('I-9 rows', () => {
     const done = rows.find((r) => r.person.id === 'p-done')
     expect(done?.state).toBe('done')
     expect(done?.section2).toEqual({ state: 'done', on: '2026-01-07' })
-    expect(done?.keepAtLeastUntil).toBe('2029-01-05')
+    expect(done?.keepAtLeastUntil).toBeNull()
   })
 
   it('flags reverification within 90 days, and past dates as overdue', () => {
@@ -473,5 +473,77 @@ describe('I-9 rows', () => {
     expect(by('p-later')?.reverify).toBe('later')
     expect(by('p-past')?.state).toBe('overdue')
     expect(i9AttentionCount(rows)).toBe(2)
+  })
+
+  it('shows a person with no I-9 task or document as not tracked, never done, and leaves them out of the count', () => {
+    const db = makeDB()
+    addPerson(db, { id: 'p-none', startDate: '2026-03-02' })
+    addPerson(db, { id: 'p-half', startDate: '2026-04-06' })
+    addPerson(db, { id: 'p-done', startDate: '2026-01-05' })
+    db.documents.push(
+      { id: 'd1', personId: 'p-half', type: 'i9_section1', name: 'I-9 s1', status: 'signed', date: '2026-04-06' },
+      { id: 'd2', personId: 'p-done', type: 'i9_section1', name: 'I-9 s1', status: 'signed', date: '2026-01-05' },
+      { id: 'd3', personId: 'p-done', type: 'i9_section2', name: 'I-9 s2', status: 'filed', date: '2026-01-07' },
+    )
+    const rows = i9Rows(db, D)
+    const by = (id: string) => rows.find((r) => r.person.id === id)
+    expect(by('p-none')?.state).toBe('not_tracked')
+    expect(by('p-half')?.state).toBe('not_tracked')
+    expect(by('p-done')?.state).toBe('done')
+    // makeDB's founder has no I-9 records either
+    expect(rows.map((r) => r.person.id)).toEqual(['p-founder', 'p-none', 'p-half', 'p-done'])
+    expect(i9AttentionCount(rows)).toBe(0)
+  })
+
+  it('keeps the form while employed, then until the later of 3 years from hire or 1 year after the last day', () => {
+    const db = makeDB()
+    addPerson(db, { id: 'p-long', startDate: '2022-06-06' })
+    addPerson(db, { id: 'p-old', startDate: '2021-02-01', endDate: '2026-09-30' })
+    addPerson(db, { id: 'p-short', startDate: '2026-02-02', endDate: '2026-09-30' })
+    // Former employees stay listed while a step is still open
+    onboarding(db, 'p-old', [task('on-i9-section2', '2021-02-04')])
+    onboarding(db, 'p-short', [task('on-i9-section2', '2026-02-05')])
+    const rows = i9Rows(db, D)
+    const by = (id: string) => rows.find((r) => r.person.id === id)
+    expect(by('p-long')?.keepAtLeastUntil).toBeNull()
+    expect(by('p-old')?.keepAtLeastUntil).toBe('2027-09-30') // last day + 1 year wins
+    expect(by('p-short')?.keepAtLeastUntil).toBe('2029-02-02') // hire + 3 years wins
+    expect(by('p-short')?.state).toBe('overdue')
+  })
+
+  it('leaves out a hire who never started, even with I-9 tasks still open', () => {
+    const db = makeDB()
+    addPerson(db, { id: 'p-withdrew', startDate: '2026-11-02', endDate: '2026-10-20' })
+    addPerson(db, { id: 'p-next', startDate: '2026-11-02' })
+    onboarding(db, 'p-withdrew', [task('on-i9-section1', '2026-11-02'), task('on-i9-section2', '2026-11-05')])
+    const ids = i9Rows(db, D).map((r) => r.person.id)
+    expect(ids).toContain('p-next')
+    expect(ids).not.toContain('p-withdrew')
+  })
+
+  it('ignores a reverify date after a scheduled last day', () => {
+    const db = makeDB()
+    addPerson(db, { id: 'p-leaving', startDate: '2026-01-05', endDate: '2026-10-30', i9ReverifyOn: '2026-11-16' })
+    addPerson(db, { id: 'p-staying', startDate: '2026-01-05', i9ReverifyOn: '2026-11-16' })
+    const rows = i9Rows(db, D)
+    const by = (id: string) => rows.find((r) => r.person.id === id)
+    expect(by('p-leaving')?.reverify).toBe('none')
+    expect(by('p-leaving')?.state).toBe('not_tracked')
+    expect(by('p-staying')?.reverify).toBe('soon')
+    expect(i9AttentionCount(rows)).toBe(1)
+  })
+
+  it('lets an open onboarding task decide over a signed document', () => {
+    const db = makeDB()
+    addPerson(db, { id: 'p-mixed', startDate: '2026-10-05' })
+    db.documents.push(
+      { id: 'd1', personId: 'p-mixed', type: 'i9_section1', name: 'I-9 s1', status: 'signed', date: '2026-10-05' },
+      { id: 'd2', personId: 'p-mixed', type: 'i9_section2', name: 'I-9 s2', status: 'signed', date: '2026-10-06' },
+    )
+    onboarding(db, 'p-mixed', [task('on-i9-section1', '2026-10-05', { status: 'done' }), task('on-i9-section2', '2026-10-08')])
+    const row = i9Rows(db, D).find((r) => r.person.id === 'p-mixed')
+    expect(row?.section1).toEqual({ state: 'done', on: '2026-10-05' }) // a done task with no date takes the document's
+    expect(row?.section2).toEqual({ state: 'overdue', on: '2026-10-08' })
+    expect(row?.state).toBe('overdue')
   })
 })
