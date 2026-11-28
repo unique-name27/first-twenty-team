@@ -1296,7 +1296,15 @@ html[data-look="sleek"]::-webkit-scrollbar-corner {
     padding: 8px 0 4px;
   }
 
-  &:is(a).ft-stat:hover {
+  /* A stat or rule box you can click (Compliance overview and rule boxes) is framed: frames mean "you can
+     click this". The 2px rule stays on top. */
+  &:is(a, button).ft-stat {
+    border: 1px solid var(--sleek-rule);
+    border-top-width: 2px;
+    padding: 10px 12px 8px;
+  }
+
+  &:is(a, button).ft-stat:hover {
     background: var(--sleek-hover);
   }
 

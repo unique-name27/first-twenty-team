@@ -1,5 +1,5 @@
 // Compliance (admin): what the law expects at your size, with one-tap tasks, official sources and the
-// proof that you did it. Tabs: #compliance.milestones[.<ruleId>] | i9 | calendar | training | notices | soc2 | records.
+// proof that you did it. Tabs: #compliance.milestones[.<ruleId>] | i9 | calendar | training | notices | records | soc2.
 import { useMemo } from 'react'
 import { links } from '@/app/router'
 import type { PageProps } from '@/app/routes'
@@ -9,28 +9,39 @@ import { trainingMatrix } from '@/domain/trainings'
 import { isEmployedOn } from '@/domain/people'
 import { addDays, addMonths, today } from '@/lib/dates'
 import { useDB } from '@/store/db'
-import { EmptyState, PageHeader, type TabDef, Tabs } from '@/ui'
+import { EmptyState, PageHeader, Stat, type TabDef, Tabs } from '@/ui'
 import { CalendarTab } from './calendar'
 import { acksOwed, bucketCalendar, i9AttentionCount, i9Rows, needsAction } from './helpers'
 import { I9Tab } from './i9'
 import { MilestonesTab } from './milestones'
 import { NoticesTab } from './notices'
 import { RecordsTab } from './records'
-import { Soc2Tab } from './soc2'
+import { Soc2Tab, windowFor } from './soc2'
 import { TrainingTab } from './training'
 
-type TabKey = 'milestones' | 'i9' | 'calendar' | 'training' | 'notices' | 'soc2' | 'records'
-const TAB_KEYS: TabKey[] = ['milestones', 'i9', 'calendar', 'training', 'notices', 'soc2', 'records']
+type TabKey = 'milestones' | 'i9' | 'calendar' | 'training' | 'notices' | 'records' | 'soc2'
+const TAB_KEYS: TabKey[] = ['milestones', 'i9', 'calendar', 'training', 'notices', 'records', 'soc2']
 
 const SUBTITLES: Record<TabKey, string> = {
-  milestones: 'What the law expects at your size, in plain English, with one-tap tasks and official sources.',
-  i9: 'Form I-9 for every employee: who is done, what is due, and who needs reverifying.',
-  calendar: 'Recurring and dated obligations, overdue first. Download them to your calendar.',
-  training: 'Who needs which course, and when. One tap records a completion.',
-  notices: 'Policy versions, who acknowledged them, and the notices every new hire gets.',
-  soc2: 'People evidence for your SOC 2 audit: populations, 5 controls, gaps and CSVs.',
-  records: 'Retain-until dates, the applicant anonymize queue and records requests.',
+  milestones: 'What the law expects at your size and in each state, with official sources.',
+  i9: 'Form I-9 for every employee: what is due, and who needs reverifying.',
+  calendar: 'Dated and yearly obligations, overdue first.',
+  training: 'Who needs which course, and by when.',
+  notices: 'Policies, who acknowledged them, and the notices each new hire gets.',
+  records: 'How long to keep records, and requests to see them.',
+  soc2: 'People evidence for your SOC 2 audit.',
 }
+
+/** The overview boxes: one clickable box per area, in tab order, with a few words under the number. */
+const OVERVIEW: Array<{ key: TabKey; label: string; open: string; clear: string; tone: 'warn' | 'bad' }> = [
+  { key: 'milestones', label: 'Rules', open: 'need action', clear: 'All handled', tone: 'warn' },
+  { key: 'i9', label: 'I-9', open: 'need attention', clear: 'All up to date', tone: 'warn' },
+  { key: 'calendar', label: 'Calendar', open: 'overdue', clear: 'Nothing overdue', tone: 'bad' },
+  { key: 'training', label: 'Training', open: 'overdue', clear: 'All current', tone: 'bad' },
+  { key: 'notices', label: 'Notices', open: 'owed', clear: 'All acknowledged', tone: 'warn' },
+  { key: 'records', label: 'Records', open: 'requests open', clear: 'No open requests', tone: 'warn' },
+  { key: 'soc2', label: 'SOC 2', open: 'gaps', clear: 'No gaps', tone: 'warn' },
+]
 
 export function CompliancePage({ route }: PageProps) {
   const viewer = useViewer()
@@ -51,8 +62,8 @@ export function CompliancePage({ route }: PageProps) {
       db.checklists
         .filter((c) => c.kind === 'onboarding' && db.people.some((p) => p.id === c.personId && (isEmployedOn(p, t) || p.startDate > t)))
         .reduce((n, c) => n + c.tasks.filter((x) => x.category === 'notice' && x.status === 'open' && x.dueOn < t).length, 0)
-    const w = db.company.soc2?.typeIIWindow
-    const soc2 = db.company.soc2Enabled && w ? soc2Evidence(db, w.from, w.to, t).controls.reduce((n, c) => n + c.gaps, 0) : 0
+    const w = windowFor(db, t)
+    const soc2 = db.company.soc2Enabled ? soc2Evidence(db, w.from, w.to, t).controls.reduce((n, c) => n + c.gaps, 0) : 0
     const records = db.recordsRequests.filter((r) => !r.fulfilledOn).length
     const i9 = i9AttentionCount(i9Rows(db, t))
     return { milestones: rules, i9, calendar: overdueDates, training, notices, soc2, records }
@@ -68,15 +79,31 @@ export function CompliancePage({ route }: PageProps) {
     { key: 'calendar', label: 'Calendar', count: counts.calendar || undefined, href: links.compliance('calendar') },
     { key: 'training', label: 'Training', count: counts.training || undefined, href: links.compliance('training') },
     { key: 'notices', label: 'Notices and policies', count: counts.notices || undefined, href: links.compliance('notices') },
+    { key: 'records', label: 'Records', count: counts.records || undefined, href: links.compliance('records') },
     ...(db.company.soc2Enabled || tab === 'soc2'
       ? [{ key: 'soc2' as const, label: 'SOC 2 evidence', count: counts.soc2 || undefined, href: links.compliance('soc2') }]
       : []),
-    { key: 'records', label: 'Records', count: counts.records || undefined, href: links.compliance('records') },
   ]
+  const boxes = OVERVIEW.filter((o) => o.key !== 'soc2' || db.company.soc2Enabled)
 
   return (
     <>
       <PageHeader title="Compliance" subtitle={SUBTITLES[tab]} />
+      <nav aria-label="Compliance overview" className="mb-5">
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+          {boxes.map((o) => (
+            <li key={o.key} className="flex">
+              <Stat
+                href={links.compliance(o.key)}
+                label={o.label}
+                value={counts[o.key]}
+                tone={counts[o.key] ? o.tone : 'good'}
+                sub={counts[o.key] ? o.open : o.clear}
+              />
+            </li>
+          ))}
+        </ul>
+      </nav>
       <Tabs<TabKey> tabs={tabs} value={tab} label="Compliance sections" className="mb-5" />
       {tab === 'milestones' && <MilestonesTab ruleId={ruleId} />}
       {tab === 'i9' && <I9Tab />}

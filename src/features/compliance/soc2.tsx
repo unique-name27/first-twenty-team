@@ -17,7 +17,8 @@ import { commit } from './mutate'
 
 type PeriodKey = 'window' | 'quarter' | 'year' | 'custom'
 
-function windowFor(db: DB, t: ISODate): { from: ISODate; to: ISODate } {
+/** The SOC 2 period: the Type II window when one is set, otherwise the last 6 months. */
+export function windowFor(db: DB, t: ISODate): { from: ISODate; to: ISODate } {
   const w = db.company.soc2?.typeIIWindow
   if (w?.from && w.to) return { from: w.from, to: w.to }
   return { from: addMonths(t, -6), to: t }
