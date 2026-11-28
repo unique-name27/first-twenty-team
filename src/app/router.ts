@@ -90,7 +90,7 @@ export const links = {
   offboard: (personId: string) => href('person', personId, 'offboard'),
   changeJob: (personId: string) => href('person', personId, 'change'),
   // Comp and plan
-  comp: (tab?: 'plan' | 'bands' | 'table' | 'equity' | 'cost' | 'payruns') => href('comp', tab),
+  comp: (tab?: 'plan' | 'bands' | 'table' | 'equity' | 'benefits' | 'cost' | 'payruns') => href('comp', tab),
   /** Comp and plan > Pay runs, on one pay period when its start date is given. */
   payRun: (periodStart?: string) => href('comp', 'payruns', periodStart),
   // Compliance

@@ -1,4 +1,4 @@
-// Comp and plan (#comp[.plan|.bands|.table|.equity|.cost|.payruns[.<period start>]]): what we pay, what we've
+// Comp and plan (#comp[.plan|.bands|.table|.equity|.benefits|.cost|.payruns[.<period start>]]): what we pay, what we've
 // granted, who we hire next, what it costs, and each pay run prepared for the payroll provider. Admin only; the
 // person panels below are reused by People, Me and Home.
 import type { PageProps } from '@/app/routes'
@@ -10,14 +10,15 @@ import { today } from '@/lib/dates'
 import { useDB } from '@/store/db'
 import { EmptyState, PageHeader, Tabs } from '@/ui'
 import { BandsTab } from './BandsTab'
+import { BenefitsTab } from './BenefitsTab'
 import { CompTableTab } from './CompTableTab'
 import { CostTab } from './CostTab'
 import { EquityTab } from './EquityTab'
 import { PayRunsTab } from './PayRunsTab'
 import { PlanTab } from './PlanTab'
 
-type TabKey = 'plan' | 'bands' | 'table' | 'equity' | 'cost' | 'payruns'
-const TABS: TabKey[] = ['plan', 'bands', 'table', 'equity', 'cost', 'payruns']
+type TabKey = 'plan' | 'bands' | 'table' | 'equity' | 'benefits' | 'cost' | 'payruns'
+const TABS: TabKey[] = ['plan', 'bands', 'table', 'equity', 'benefits', 'cost', 'payruns']
 
 export function CompPage({ route }: PageProps) {
   const viewer = useViewer()
@@ -49,6 +50,7 @@ export function CompPage({ route }: PageProps) {
           { key: 'bands', label: 'Levels and bands', href: links.comp('bands') },
           { key: 'table', label: 'Comp table', href: links.comp('table'), ...(oob ? { count: oob } : {}) },
           { key: 'equity', label: 'Equity', href: links.comp('equity'), ...(queue ? { count: queue } : {}) },
+          { key: 'benefits', label: 'Benefits', href: links.comp('benefits') },
           { key: 'cost', label: 'Cost and runway', href: links.comp('cost') },
           { key: 'payruns', label: 'Pay runs', href: links.comp('payruns') },
         ]}
@@ -57,6 +59,7 @@ export function CompPage({ route }: PageProps) {
       {tab === 'bands' && <BandsTab />}
       {tab === 'table' && <CompTableTab />}
       {tab === 'equity' && <EquityTab />}
+      {tab === 'benefits' && <BenefitsTab />}
       {tab === 'cost' && <CostTab />}
       {tab === 'payruns' && <PayRunsTab segment={route.segments[2]} />}
     </>
