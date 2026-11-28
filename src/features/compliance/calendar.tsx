@@ -135,6 +135,7 @@ const DONE_LABEL: Record<CalendarDone['kind'], string> = {
 
 function itemLink(item: CalendarItem): { href: string; label: string } | null {
   if (item.kind === 'training') return { href: links.compliance('training'), label: 'Open training' }
+  if (item.kind === 'i9_reverify') return { href: links.compliance('i9'), label: 'Open I-9' }
   if (item.personId) return { href: links.person(item.personId), label: 'Open person' }
   if (item.contractorId) return { href: links.contractor(item.contractorId), label: 'Open contractor' }
   if (item.kind === 'valuation_409a') return { href: links.comp('equity'), label: 'Open equity' }
