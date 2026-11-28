@@ -97,6 +97,7 @@ What we pay, what we've granted, who we hire next, what it costs and each payrol
 What the law expects at your size, in plain English, with one-tap tasks, official sources and the proof that you did it. Headcount thresholds, site counts, first-time events and calendar dates all trigger obligations. Admin only.
 
 - Milestones (ruler 0 to 20 with faded 25 to 100; threshold, site and event cards, each with 'How we counted')
+- Form I-9 (each employee's Section 1 and 2 status, reverify-by dates for work authorization that expires, keep-at-least-until dates; dates only, never the form)
 - Calendar (recurring and dated obligations, .ics download)
 - Training tracker (grid of people by course)
 - Notices and policies (required notices packet, handbook versions, acknowledgements)

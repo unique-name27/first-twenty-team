@@ -139,6 +139,7 @@ const TAB_TITLES: Record<string, string> = {
   wall: 'First twenty wall',
   kits: 'Interview kits',
   soc2: 'SOC 2',
+  i9: 'Form I-9',
   plan: 'Headcount plan',
   bands: 'Levels and bands',
   table: 'Comp table',

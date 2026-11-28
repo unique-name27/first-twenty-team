@@ -370,7 +370,7 @@ export const RULES: ComplianceRule[] = [
     ],
     citation: SRC.i9,
     category: 'hiring',
-    lawIds: ['b-i9-deadlines', 'b-i9-retention', 'b-i9-edition'],
+    lawIds: ['b-i9-deadlines', 'b-i9-retention', 'b-i9-edition', 'b-i9-reverify'],
   }),
   rule({
     id: 'w4-de4',

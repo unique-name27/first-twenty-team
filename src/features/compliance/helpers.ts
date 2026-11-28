@@ -16,10 +16,11 @@ import {
   type RuleState,
 } from '@/domain/compliance'
 import { payTransparencyThreshold, postingHeadcount } from '@/domain/hiring'
+import { i9RetainUntil } from '@/domain/compliance/retention'
 import { fullName, isEmployedOn } from '@/domain/people'
 import { isStatutoryTraining, type TrainingRow } from '@/domain/trainings'
 import type { Acknowledgment, DB, ID, Person, Policy, RecordsRequest, TrainingKind } from '@/domain/types'
-import { addDays, addMonths, daysBetween, fmtDate, fmtShort, fmtShort as fmtShortDate, type ISODate } from '@/lib/dates'
+import { addDays, daysBetween, fmtDate, fmtShort, fmtShort as fmtShortDate, type ISODate } from '@/lib/dates'
 import { listJoin, plural } from '@/lib/format'
 
 // ---------------------------------------------------------------------------------------------
@@ -709,7 +710,7 @@ export const REVERIFY_SOON_DAYS = 90
 
 export type I9StepState = 'done' | 'due' | 'overdue' | 'not_applicable' | 'unknown'
 export type I9Step = { state: I9StepState; on?: ISODate }
-export type I9RowState = 'overdue' | 'reverify_soon' | 'due' | 'done'
+export type I9RowState = 'overdue' | 'reverify_soon' | 'due' | 'not_tracked' | 'done'
 
 export type I9Row = {
   person: Person
@@ -717,8 +718,8 @@ export type I9Row = {
   section2: I9Step
   reverifyOn?: ISODate
   reverify: 'none' | 'overdue' | 'soon' | 'later'
-  /** Keep the form at least until this date (3 years from hire; the date can move later after an exit). */
-  keepAtLeastUntil: ISODate
+  /** Keep the form at least until this date: the later of hire + 3 years or last day + 1 year. null while still employed. */
+  keepAtLeastUntil: ISODate | null
   state: I9RowState
 }
 
@@ -731,32 +732,36 @@ function i9Step(db: DB, personId: ID, which: 'section1' | 'section2', date: ISOD
     .filter((c) => c.personId === personId && c.kind === 'onboarding')
     .flatMap((c) => c.tasks)
     .find((x) => x.templateTaskId === I9_TASK[which])
-  if (doc || task?.status === 'done') return { state: 'done', on: doc?.date ?? task?.doneOn }
-  if (!task) return { state: 'unknown' }
+  if (!task) return doc ? { state: 'done', on: doc.date } : { state: 'unknown' }
+  if (task.status === 'done') return { state: 'done', on: task.doneOn ?? doc?.date }
   if (task.status === 'not_applicable') return { state: 'not_applicable' }
   return { state: task.dueOn < date ? 'overdue' : 'due', on: task.dueOn }
 }
 
-const I9_ROW_ORDER: Record<I9RowState, number> = { overdue: 0, reverify_soon: 1, due: 2, done: 3 }
+const I9_ROW_ORDER: Record<I9RowState, number> = { overdue: 0, reverify_soon: 1, due: 2, not_tracked: 3, done: 4 }
 
 /**
- * One row per current or pre-start employee: section 1 and 2 status from the onboarding tasks and
- * document records, the reverification date, and the earliest keep-until date. Overdue rows first.
+ * One row per current or incoming employee, plus anyone who left with section 1 or 2 still open (that
+ * obligation survives the exit), never someone who never started: section 1 and 2 status from the
+ * onboarding tasks (or the document records when there is no task), the reverification date, and the
+ * keep-until date. Overdue rows first.
  */
 export function i9Rows(db: DB, date: ISODate): I9Row[] {
   return db.people
-    .filter((p) => isEmployedOn(p, date) || p.startDate > date)
+    .filter((p) => !(p.endDate && p.endDate < p.startDate))
     .map((p): I9Row => {
       const section1 = i9Step(db, p.id, 'section1', date)
       const section2 = i9Step(db, p.id, 'section2', date)
       const reverifyOn = p.i9ReverifyOn
-      const reverify = !reverifyOn
-        ? 'none'
-        : reverifyOn < date
-          ? 'overdue'
-          : daysBetween(date, reverifyOn) <= REVERIFY_SOON_DAYS
-            ? 'soon'
-            : 'later'
+      // Counts only while they still work here on that date: the same test as the compliance calendar's I-9 items.
+      const reverify =
+        !reverifyOn || !(isEmployedOn(p, reverifyOn) || p.startDate > reverifyOn)
+          ? 'none'
+          : reverifyOn < date
+            ? 'overdue'
+            : daysBetween(date, reverifyOn) <= REVERIFY_SOON_DAYS
+              ? 'soon'
+              : 'later'
       const steps = [section1.state, section2.state]
       const state: I9RowState =
         steps.includes('overdue') || reverify === 'overdue'
@@ -765,9 +770,13 @@ export function i9Rows(db: DB, date: ISODate): I9Row[] {
             ? 'reverify_soon'
             : steps.includes('due')
               ? 'due'
-              : 'done'
-      return { person: p, section1, section2, reverifyOn, reverify, keepAtLeastUntil: addMonths(p.startDate, 36), state }
+              : steps.includes('unknown')
+                ? 'not_tracked'
+                : 'done'
+      return { person: p, section1, section2, reverifyOn, reverify, keepAtLeastUntil: i9RetainUntil(p.startDate, p.endDate), state }
     })
+    // Someone who left stays listed while section 1 or 2 is still open: that obligation survives the exit.
+    .filter((r) => isEmployedOn(r.person, date) || r.person.startDate > date || [r.section1, r.section2].some((s) => s.state === 'overdue' || s.state === 'due'))
     .sort((a, b) => I9_ROW_ORDER[a.state] - I9_ROW_ORDER[b.state] || a.person.startDate.localeCompare(b.person.startDate))
 }
 
