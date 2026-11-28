@@ -1523,10 +1523,8 @@ function calendarItems(ctx: Ctx): InboxItem[] {
         }
         break
       case 'i9_reverify':
-        if (c.personId) {
-          href = links.person(c.personId)
-          primary = { kind: 'navigate', label: 'Open profile', href }
-        }
+        href = links.compliance('i9')
+        primary = { kind: 'navigate', label: 'Open I-9', href }
         break
       case 'valuation_409a':
         href = links.comp('equity')
