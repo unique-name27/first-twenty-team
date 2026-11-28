@@ -18,7 +18,7 @@
         } catch (e) {}
         // Renamed looks load as their new id (src/themes/ids.ts, RENAMED_LOOKS).
         var saved = p.look === 'ledger' ? 'trading' : p.look
-        var look = ['sleek', 'web90s', 'comic', 'trading'].indexOf(saved) >= 0 ? saved : 'sleek'
+        var look = ['sleek', 'web90s', 'comic', 'trading', 'tiedye'].indexOf(saved) >= 0 ? saved : 'sleek'
         root.setAttribute('data-look', look)
         if (look === 'sleek' && (p.theme === 'light' || p.theme === 'dark') && !root.hasAttribute('data-theme')) {
           root.setAttribute('data-theme', p.theme)
