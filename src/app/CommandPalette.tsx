@@ -225,7 +225,7 @@ export function CommandPalette() {
     if (query) {
       const words = query.split(/\s+/)
       for (const l of LOOK_LIST) {
-        const hay = `look ${l.name} theme style skin appearance display ${l.blurb}`.toLowerCase()
+        const hay = `look ${l.id} ${l.name} theme style skin appearance display ${l.blurb}`.toLowerCase()
         if (!words.every((w) => hay.includes(w))) continue
         out.push({
           id: `look-${l.id}`,
