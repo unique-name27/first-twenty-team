@@ -32,7 +32,7 @@ Most confusion comes from mixing these up.
 | --- | --- | --- |
 | Your codespace | Only you | A computer in the cloud with your own copy of the repo. Until you push, your work exists only here. |
 | GitHub | The whole team, and the public | The shared copy: branches, pull requests, reviews and the CI checks. |
-| The two websites | Everyone | [Staging](https://staging-77-112-161-54.sslip.io) runs the newest `main` that passed CI. [Live](https://hr-77-112-161-54.sslip.io) runs the last release. Both deploy on their own; team members never deploy by hand. |
+| The two websites | Everyone | [Staging](https://staging-77-112-161-54.sslip.io) updates to the newest `main` once its CI passes. [Live](https://hr-77-112-161-54.sslip.io) runs the last release. Both deploy on their own; team members never deploy by hand. |
 
 Codespaces never talk to each other. Your teammates cannot see your work until you push it, and you do not
 get their merged work until you pull it.
@@ -80,8 +80,9 @@ issue's number and name.
 
 Review within two days. Run the change, not just read it.
 
-1. Check out their branch and try it: `gh pr checkout 29` (the pull request's number). `npm run stack`
-   runs the app with their change.
+1. Check out their branch and try it: `gh pr checkout 29` (the pull request's number). The app already
+   running in your codespace reloads with their change. If it looks stuck, press Ctrl+C in that terminal
+   and run `npm run stack` again.
 2. On GitHub, open the pull request and click the **Files changed** tab.
 3. To comment on a line, hover over it and click the blue **+**. **Start a review** collects several
    comments into one.
@@ -116,6 +117,9 @@ These rules are switched on for `main`. If you cannot merge, one of these is usu
 - **The `verify` check must pass.** It passes only when all four CI jobs pass: typecheck and builds, the
   unit tests, the server tests and journeys, and the deploy kit's tests.
 - **One teammate must approve.** You cannot approve your own pull request.
+- **Request changes holds the merge** until that same reviewer approves, even if someone else already
+  approved. After your fix, click the circle-arrow next to their name under **Reviewers** to ask them again.
+- **A draft cannot merge.** Click **Ready for review** at the bottom of the pull request first.
 - **New commits can clear an approval**, including the one **Update branch** adds. If the approval
   disappears, ask for a fresh one.
 - **Every review conversation must be resolved.**
