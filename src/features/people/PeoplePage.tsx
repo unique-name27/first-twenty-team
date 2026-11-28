@@ -1,4 +1,4 @@
-// People: Directory (list with filters), Org chart, First twenty wall, Checklists, Time off and
+// People: Directory (list with filters), Org chart, Checklists, Time off and
 // Contractors tabs. '#people.new' opens Add person; '#people.contractors.new' opens Add contractor.
 import { useEffect, useMemo, useState } from 'react'
 import type { PageProps } from '@/app/routes'
@@ -8,7 +8,7 @@ import { TimeOffTab, WhosOutStrip } from '@/features/timeoff'
 import { canSeePerson, canSeeSeparation } from '@/domain/access'
 import { headcountOn, incomingOn } from '@/domain/people'
 import type { ChecklistKind, DB, Viewer } from '@/domain/types'
-import { addDays, fmtDate, fmtMonth, fmtQuarter, fmtShort, today } from '@/lib/dates'
+import { addDays, fmtDate, fmtShort, today } from '@/lib/dates'
 import { plural } from '@/lib/format'
 import { useDB } from '@/store/db'
 import {
@@ -20,7 +20,6 @@ import {
   cx,
   DataTable,
   EmptyState,
-  Icon,
   Meter,
   PageHeader,
   Panel,
@@ -43,15 +42,13 @@ import {
   type DirStatus,
   filterDirectory,
   nextAnniversary,
-  type Seat,
-  wallSeats,
   WORKER_KIND_LABEL,
   type WorkerKind,
 } from './helpers'
 import { OrgChart } from './OrgChart'
 import { anchorText, ContractorStatusBadge, EmpNo, PersonStatusBadge } from './parts'
 
-type TabKey = 'directory' | 'org' | 'wall' | 'checklists' | 'timeoff' | 'contractors'
+type TabKey = 'directory' | 'org' | 'checklists' | 'timeoff' | 'contractors'
 
 // ---------------------------------------------------------------------------------------------
 // Directory
@@ -187,123 +184,6 @@ function Directory({ db, viewer }: { db: DB; viewer: Viewer }) {
         />
       </Panel>
     </div>
-  )
-}
-
-// ---------------------------------------------------------------------------------------------
-// First twenty wall
-// ---------------------------------------------------------------------------------------------
-
-function SeatCard({ seat, db, viewer }: { seat: Seat; db: DB; viewer: Viewer }) {
-  const base = 'relative flex min-h-[132px] flex-col rounded-2xl px-3.5 py-3 text-left'
-  const num = <span className="ft-seat__pos absolute top-2.5 right-3 font-mono text-[12px] font-semibold text-ink-3">{seat.n}</span>
-  if (seat.person) {
-    const p = seat.person
-    const name = `${p.preferredName || p.firstName} ${p.lastName}`
-    const alumni = seat.kind === 'alumni'
-    const incoming = seat.kind === 'incoming'
-    // A rehire's two seats point at each other: "Back as #18" on the old one, "Rehire of #10" on the new.
-    const backAs = db.people.find((x) => x.rehireOfPersonId === p.id)
-    const earlier = p.rehireOfPersonId ? db.people.find((x) => x.id === p.rehireOfPersonId) : undefined
-    const link = backAs ? `Back as #${backAs.hireNumber}` : earlier ? `Rehire of #${earlier.hireNumber}` : ''
-    return (
-      <a
-        href={links.person(p.id)}
-        className={cx(
-          base,
-          'ft-seat',
-          alumni ? 'ft-seat--alumni' : incoming ? 'ft-seat--incoming' : 'ft-seat--current',
-          'transition-colors',
-          alumni
-            ? 'border-2 border-line-strong bg-transparent hover:bg-surface-2/50'
-            : incoming
-              ? 'border-2 border-accent bg-surface shadow-card hover:bg-surface-2/50'
-              : 'border border-line bg-surface shadow-card hover:border-line-strong',
-        )}
-        aria-label={`Seat ${seat.n}: #${p.hireNumber} ${name}${alumni ? ', alumni' : incoming ? `, starts ${fmtShort(p.startDate)}` : ''}${link ? `, ${link.toLowerCase()}` : ''}`}
-      >
-        <Avatar name={name} size={44} muted={alumni} />
-        <span className="ft-seat__num mt-2 font-mono text-[12.5px] font-bold text-ink-3">#{p.hireNumber}</span>
-        <span className={cx('ft-seat__name font-semibold leading-snug', alumni ? 'text-ink-3' : 'text-ink')}>{name}</span>
-        <span className="ft-seat__date mt-auto pt-1 text-[12.5px] text-ink-3">
-          {alumni && p.endDate ? `${fmtMonth(p.startDate)} to ${fmtMonth(p.endDate)}` : incoming ? `Starts ${fmtShort(p.startDate)}` : `Since ${fmtDate(p.startDate)}`}
-          {link && <span className="block">{link}</span>}
-        </span>
-        {incoming && (
-          <Badge tone="accent" className="absolute top-2.5 right-3">
-            Incoming
-          </Badge>
-        )}
-        {alumni && (
-          <Badge tone="outline" className="absolute top-2.5 right-3">
-            Alumni
-          </Badge>
-        )}
-      </a>
-    )
-  }
-  if (seat.kind === 'planned' && seat.slot) {
-    const s = seat.slot
-    const job = s.jobId ? db.jobs.find((j) => j.id === s.jobId) : undefined
-    const content = (
-      <>
-        {num}
-        <span aria-hidden className="inline-flex h-11 w-11 items-center justify-center rounded-full border-2 border-dashed border-line-strong text-ink-3">
-          <Icon name="plus" size={18} />
-        </span>
-        <span className="ft-seat__name mt-2 font-semibold leading-snug text-ink-2">{s.title}</span>
-        <span className="ft-seat__date mt-auto pt-1 text-[12.5px] text-ink-3">
-          {fmtQuarter(s.quarter)}
-          {seat.slotStatus === 'open' ? ', hiring now' : seat.slotStatus === 'offer' ? ', offer stage' : ', planned'}
-        </span>
-      </>
-    )
-    const cls = cx(base, 'ft-seat ft-seat--planned border-2 border-dashed border-line-strong bg-transparent')
-    const label = `Seat ${seat.n}: planned ${s.title}, ${fmtQuarter(s.quarter)}`
-    if (viewer.role === 'admin') {
-      return (
-        <a href={job ? links.job(job.id) : links.comp('plan')} className={cx(cls, 'transition-colors hover:bg-surface-2/50')} aria-label={label}>
-          {content}
-        </a>
-      )
-    }
-    return (
-      <div className={cls} aria-label={label} role="group">
-        {content}
-      </div>
-    )
-  }
-  return (
-    <div className={cx(base, 'ft-seat ft-seat--open items-center justify-center border-2 border-dashed border-line bg-transparent text-ink-3')} role="group" aria-label={`Seat ${seat.n}: open`}>
-      {num}
-      <span className="text-[13px]">Open seat</span>
-    </div>
-  )
-}
-
-function Wall({ db, viewer }: { db: DB; viewer: Viewer }) {
-  const t = today()
-  const seats = useMemo(() => wallSeats(db, t), [db, t])
-  const here = seats.filter((s) => s.kind === 'filled').length
-  const incoming = seats.filter((s) => s.kind === 'incoming').length
-  const alumni = seats.filter((s) => s.kind === 'alumni').length
-  const planned = seats.filter((s) => s.kind === 'planned').length
-  const visibleSeats = viewer.role === 'employee' ? seats.filter((s) => s.kind !== 'planned') : seats
-  return (
-    <Panel
-      title="The first twenty"
-      subtitle={`${here} here today, ${incoming} starting soon, ${alumni} ${alumni === 1 ? 'alumnus' : 'alumni'}${viewer.role !== 'employee' ? `, ${planned} planned` : ''}. Employee numbers in hire order; #1 is the founder.`}
-    >
-      <ol className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        {visibleSeats.map((s) => (
-          <li key={s.n} className={cx(s.n === 20 && 'relative')}>
-            <SeatCard seat={s} db={db} viewer={viewer} />
-            {s.n === 20 && <span className="mt-1 block text-center text-[12px] font-semibold text-ink-3">Seat 20</span>}
-          </li>
-        ))}
-      </ol>
-      <p className="mt-4 text-[13px] text-ink-3">Alumni keep their seat as an outline. Empty seats show the next planned roles from the headcount plan.</p>
-    </Panel>
   )
 }
 
@@ -476,7 +356,6 @@ export function PeoplePage({ route }: PageProps) {
   const tabs: Array<{ key: TabKey; label: string; show: boolean }> = [
     { key: 'directory', label: 'Directory', show: true },
     { key: 'org', label: 'Org chart', show: true },
-    { key: 'wall', label: 'First twenty', show: true },
     { key: 'checklists', label: 'Checklists', show: viewer.role !== 'employee' },
     { key: 'timeoff', label: 'Time off', show: viewer.role !== 'employee' },
     { key: 'contractors', label: 'Contractors and advisors', show: admin },
@@ -542,8 +421,6 @@ export function PeoplePage({ route }: PageProps) {
         <Panel>
           <OrgChart />
         </Panel>
-      ) : tab === 'wall' ? (
-        <Wall db={db} viewer={viewer} />
       ) : tab === 'checklists' ? (
         <ChecklistsTab db={db} viewer={viewer} />
       ) : tab === 'timeoff' ? (

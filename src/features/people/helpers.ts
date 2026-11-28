@@ -1,6 +1,6 @@
-// Pure helpers for the People feature: directory rows and filters, the org tree, the First twenty
-// wall, checklist phases and self-explaining due dates, the AB5 check, contractor paperwork flags and
-// who may see or act on which checklist task. No React here, so everything is unit tested.
+// Pure helpers for the People feature: directory rows and filters, the org tree, checklist phases and
+// self-explaining due dates, the AB5 check, contractor paperwork flags and who may see or act on which
+// checklist task. No React here, so everything is unit tested.
 import { canSeePerson, isInReportingLine } from '@/domain/access'
 import {
   checklistProgress,
@@ -332,36 +332,6 @@ export function allOrgIds(roots: OrgNode[]): string[] {
   }
   walk(roots)
   return out
-}
-
-// ---------------------------------------------------------------------------------------------
-// First twenty wall
-// ---------------------------------------------------------------------------------------------
-
-export type Seat = {
-  /** Seat number, 1-based, in hire order. */
-  n: number
-  kind: 'filled' | 'incoming' | 'alumni' | 'planned' | 'empty'
-  person?: Person
-  slot?: PlanSlot
-  slotStatus?: PlanSlot['status']
-}
-
-/** Seats in hire order: employees (alumni stay as outlined seats), then plan lines, then empty seats to `min`. */
-export function wallSeats(db: DB, date: ISODate, min = 20): Seat[] {
-  const seats: Seat[] = []
-  const people = [...db.people].sort((a, b) => a.hireNumber - b.hireNumber)
-  for (const p of people) {
-    const st = employmentState(p, date)
-    seats.push({ n: seats.length + 1, kind: st === 'former' ? 'alumni' : st === 'incoming' ? 'incoming' : 'filled', person: p })
-  }
-  const open = db.plan
-    .map((s) => ({ s, status: planSlotStatus(db, s) }))
-    .filter((x) => x.status === 'planned' || x.status === 'open' || x.status === 'offer')
-    .sort((a, b) => a.s.targetStart.localeCompare(b.s.targetStart) || a.s.quarter.localeCompare(b.s.quarter))
-  for (const { s, status } of open) seats.push({ n: seats.length + 1, kind: 'planned', slot: s, slotStatus: status })
-  while (seats.length < min) seats.push({ n: seats.length + 1, kind: 'empty' })
-  return seats
 }
 
 // ---------------------------------------------------------------------------------------------

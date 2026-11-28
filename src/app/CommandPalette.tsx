@@ -37,7 +37,6 @@ const PAGES: Array<{
   { label: 'Interview kits', href: links.hiring('kits'), keywords: 'role templates scorecards questions', section: 'hiring' },
   { label: 'Directory', href: links.people('directory'), keywords: 'people employees team', section: 'people' },
   { label: 'Org chart', href: links.people('org'), keywords: 'people managers reporting', section: 'people' },
-  { label: 'First twenty wall', href: links.people('wall'), keywords: 'people seats employee numbers', section: 'people' },
   { label: 'Checklists', href: links.people('checklists'), keywords: 'onboarding offboarding tasks i-9 de 34', section: 'people', show: notEmployee },
   { label: 'Time off', href: links.people('timeoff'), keywords: 'vacation sick leave pto calendar holidays', section: 'people', show: notEmployee },
   { label: 'Contractors and advisors', href: links.people('contractors'), keywords: 'ab5 1099 de 542 w-9', section: 'people', show: isAdmin },

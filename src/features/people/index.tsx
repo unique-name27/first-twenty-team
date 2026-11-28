@@ -1,4 +1,4 @@
-// People feature: directory, org chart, First twenty wall, profiles, checklists, offboarding,
+// People feature: directory, org chart, profiles, checklists, offboarding,
 // contractors and advisors. Pages are routed from src/app/routes.tsx; the panels are shared with
 // Home and Me (see ARCHITECTURE.md, Cross-feature panels).
 export { ChecklistPage } from './ChecklistPage'
