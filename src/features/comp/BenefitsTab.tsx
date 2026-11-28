@@ -107,7 +107,10 @@ export function BenefitsTab() {
               <ul className="mt-1 flex flex-col">
                 {s.belowHours.map((p) => (
                   <li key={p.personId} className="flex flex-wrap items-center justify-between gap-x-3 text-[14px]">
-                    <a href={links.person(p.personId)} className="ft-link inline-flex min-h-10 items-center font-semibold text-ink hover:text-accent">
+                    <a
+                      href={links.person(p.personId)}
+                      className="ft-link inline-flex min-h-10 items-center font-semibold text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink"
+                    >
                       {p.name}
                     </a>
                     <span className="text-ink-3">{plural(p.hoursPerWeek, 'hour')} a week</span>
